@@ -1,0 +1,8 @@
+node_modules
+dist
+*.log
+web/dist
+web/node_modules
+core/pkg
+core/target
+.DS_Store
