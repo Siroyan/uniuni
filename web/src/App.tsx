@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BoardCanvas } from "./BoardCanvas";
 import { canPlacePart, findPartAtGrid, nextRot } from "./parts";
 import type { Board, GridPt, PartDef, PartInst, Rot, ToolMode } from "./types";
@@ -36,37 +36,13 @@ export function App(): JSX.Element {
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [parts, setParts] = useState<PartInst[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
+  const [moveArmedPartId, setMoveArmedPartId] = useState<string | null>(null);
+  const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
 
   const selectedDefId = partDefs[0].id;
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), []);
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
-
-  const handleGridClick = (grid: GridPt): void => {
-    if (tool === "place") {
-      const newPart: PartInst = {
-        id: newPartId(),
-        defId: selectedDefId,
-        at: grid,
-        rot: activeRot,
-        refdes: `R${parts.length + 1}`
-      };
-      if (!canPlacePart(board, parts, defsById, newPart)) return;
-      setParts((prev) => [...prev, newPart]);
-      setSelectedPartId(newPart.id);
-      return;
-    }
-
-    const clickedPartId = findPartAtGrid(grid, parts, defsById);
-    if (clickedPartId) {
-      setSelectedPartId(clickedPartId);
-      return;
-    }
-
-    if (!selectedPart) return;
-    const moved: PartInst = { ...selectedPart, at: grid };
-    if (!canPlacePart(board, parts, defsById, moved, selectedPart.id)) return;
-    setParts((prev) => prev.map((part) => (part.id === selectedPart.id ? moved : part)));
-  };
+  const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
 
   const handleRotateSelected = (): void => {
     if (!selectedPart) return;
@@ -78,34 +54,113 @@ export function App(): JSX.Element {
   const handleDeleteSelected = (): void => {
     if (!selectedPartId) return;
     setParts((prev) => prev.filter((part) => part.id !== selectedPartId));
+    if (moveArmedPartId === selectedPartId) {
+      setMoveArmedPartId(null);
+    }
     setSelectedPartId(null);
   };
+
+  const handleGridClick = (grid: GridPt): void => {
+    if (moveArmedPart) {
+      const moved: PartInst = { ...moveArmedPart, at: grid };
+      if (!canPlacePart(board, parts, defsById, moved, moveArmedPart.id)) return;
+      setParts((prev) => prev.map((part) => (part.id === moveArmedPart.id ? moved : part)));
+      setMoveArmedPartId(null);
+      setTool("select");
+      return;
+    }
+
+    const clickedPartId = findPartAtGrid(grid, parts, defsById);
+    if (clickedPartId) {
+      setSelectedPartId(clickedPartId);
+      return;
+    }
+
+    if (tool !== "place") {
+      setSelectedPartId(null);
+      return;
+    }
+
+    const newPart: PartInst = {
+      id: newPartId(),
+      defId: selectedDefId,
+      at: grid,
+      rot: activeRot,
+      refdes: `R${parts.length + 1}`
+    };
+    if (!canPlacePart(board, parts, defsById, newPart)) return;
+    setParts((prev) => [...prev, newPart]);
+    setSelectedPartId(newPart.id);
+    setTool("select");
+  };
+
+  const movePreviewPart = useMemo(() => {
+    if (!moveArmedPart || !hoverGrid) return null;
+    return { ...moveArmedPart, at: hoverGrid };
+  }, [hoverGrid, moveArmedPart]);
+
+  const movePreviewValid = useMemo(() => {
+    if (!movePreviewPart || !moveArmedPart) return true;
+    return canPlacePart(board, parts, defsById, movePreviewPart, moveArmedPart.id);
+  }, [defsById, moveArmedPart, movePreviewPart, parts]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "r") {
+        event.preventDefault();
+        handleRotateSelected();
+      }
+
+      if (key === "m") {
+        if (!selectedPartId) return;
+        event.preventDefault();
+        setMoveArmedPartId(selectedPartId);
+        setTool("select");
+      }
+
+      if (key === "escape") {
+        setMoveArmedPartId(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleRotateSelected, selectedPartId]);
 
   return (
     <main className="app-root">
       <header className="toolbar">
         <h1>uniuni</h1>
-        <p>Step1: part placement / select / move / rotate / delete</p>
+        <p>選択中ショートカット: R=回転 / M=移動 / Esc=移動キャンセル</p>
         <div className="toolbar-row">
           <button
             type="button"
             className={tool === "place" ? "btn active" : "btn"}
-            onClick={() => setTool("place")}
+            onClick={() => {
+              setTool("place");
+              setMoveArmedPartId(null);
+            }}
           >
             Place
           </button>
           <button
             type="button"
             className={tool === "select" ? "btn active" : "btn"}
-            onClick={() => setTool("select")}
+            onClick={() => {
+              setTool("select");
+              setMoveArmedPartId(null);
+            }}
           >
-            Select/Move
+            Select
           </button>
           <button type="button" className="btn" onClick={() => setActiveRot((prev) => nextRot(prev))}>
             Rotate Place: {activeRot}
-          </button>
-          <button type="button" className="btn" onClick={handleRotateSelected}>
-            Rotate Selected
           </button>
           <button type="button" className="btn danger" onClick={handleDeleteSelected}>
             Delete Selected
@@ -118,6 +173,9 @@ export function App(): JSX.Element {
         partDefs={partDefs}
         selectedPartId={selectedPartId}
         onGridClick={handleGridClick}
+        onHoverGridChange={setHoverGrid}
+        movePreviewPart={movePreviewPart}
+        movePreviewValid={movePreviewValid}
       />
     </main>
   );
