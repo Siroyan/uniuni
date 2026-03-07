@@ -9,16 +9,50 @@ type Props = {
   partDefs: PartDef[];
   selectedPartId: string | null;
   onGridClick: (grid: GridPt) => void;
+  onHoverGridChange: (grid: GridPt | null) => void;
+  movePreviewPart: PartInst | null;
+  movePreviewValid: boolean;
+  placePreviewPart: PartInst | null;
+  placePreviewValid: boolean;
 };
 
 const CELL_SIZE = 24;
+
+function drawPart(
+  ctx: CanvasRenderingContext2D,
+  part: PartInst,
+  def: PartDef,
+  viewport: Viewport,
+  fillColor: string,
+  pinColor: string
+): void {
+  ctx.fillStyle = fillColor;
+  for (const cell of absoluteOccupied(def, part)) {
+    const base = worldToScreen(gridToWorld(cell, CELL_SIZE), viewport);
+    const unit = CELL_SIZE * viewport.zoom;
+    ctx.fillRect(base.x - unit / 2, base.y - unit / 2, unit, unit);
+  }
+
+  ctx.fillStyle = pinColor;
+  for (const pin of absolutePins(def, part)) {
+    const p = worldToScreen(gridToWorld(pin, CELL_SIZE), viewport);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(3, viewport.zoom * 2.5), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 export function BoardCanvas({
   board,
   parts,
   partDefs,
   selectedPartId,
-  onGridClick
+  onGridClick,
+  onHoverGridChange,
+  movePreviewPart,
+  movePreviewValid,
+  placePreviewPart,
+  placePreviewValid
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({
@@ -94,21 +128,42 @@ export function BoardCanvas({
     for (const part of parts) {
       const def = partDefMap.get(part.defId);
       if (!def) continue;
-
       const isSelected = part.id === selectedPartId;
-      ctx.fillStyle = isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)";
-      for (const cell of absoluteOccupied(def, part)) {
-        const base = worldToScreen(gridToWorld(cell, CELL_SIZE), viewport);
-        const unit = CELL_SIZE * viewport.zoom;
-        ctx.fillRect(base.x - unit / 2, base.y - unit / 2, unit, unit);
-      }
+      drawPart(
+        ctx,
+        part,
+        def,
+        viewport,
+        isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)",
+        "#ff9f1c"
+      );
+    }
 
-      ctx.fillStyle = "#ff9f1c";
-      for (const pin of absolutePins(def, part)) {
-        const p = worldToScreen(gridToWorld(pin, CELL_SIZE), viewport);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, Math.max(3, viewport.zoom * 2.5), 0, Math.PI * 2);
-        ctx.fill();
+    if (movePreviewPart) {
+      const def = partDefMap.get(movePreviewPart.defId);
+      if (def) {
+        drawPart(
+          ctx,
+          movePreviewPart,
+          def,
+          viewport,
+          movePreviewValid ? "rgba(102, 217, 125, 0.35)" : "rgba(217, 102, 102, 0.4)",
+          movePreviewValid ? "#6fe893" : "#ff9090"
+        );
+      }
+    }
+
+    if (placePreviewPart) {
+      const def = partDefMap.get(placePreviewPart.defId);
+      if (def) {
+        drawPart(
+          ctx,
+          placePreviewPart,
+          def,
+          viewport,
+          placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
+          placePreviewValid ? "#99f2b0" : "#ffb0b0"
+        );
       }
     }
 
@@ -126,8 +181,12 @@ export function BoardCanvas({
     boardPx.height,
     boardPx.width,
     hoverGrid,
+    movePreviewPart,
+    movePreviewValid,
     partDefMap,
     parts,
+    placePreviewPart,
+    placePreviewValid,
     selectedPartId,
     viewport
   ]);
@@ -164,7 +223,9 @@ export function BoardCanvas({
         { x: event.clientX - rect.left, y: event.clientY - rect.top },
         viewport
       );
-      setHoverGrid(worldToGrid(world, CELL_SIZE));
+      const snapped = worldToGrid(world, CELL_SIZE);
+      setHoverGrid(snapped);
+      onHoverGridChange(snapped);
 
       if (!isPanning) return;
       const dx = event.clientX - lastX;
@@ -178,6 +239,11 @@ export function BoardCanvas({
       if (!isPanning) return;
       isPanning = false;
       canvas.releasePointerCapture(event.pointerId);
+    };
+
+    const onPointerLeave = (): void => {
+      setHoverGrid(null);
+      onHoverGridChange(null);
     };
 
     const onWheel = (event: WheelEvent): void => {
@@ -199,15 +265,17 @@ export function BoardCanvas({
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointerleave", onPointerLeave);
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [onGridClick, viewport]);
+  }, [onGridClick, onHoverGridChange, viewport]);
 
   return (
     <section className="canvas-wrap">
