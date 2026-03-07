@@ -37,9 +37,36 @@ body,
 }
 
 .toolbar p {
-  margin: 4px 0 0;
+  margin: 4px 0 8px;
   color: #9eb5d2;
   font-size: 12px;
+}
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn {
+  border: 1px solid #3b5578;
+  background: #132034;
+  color: #d8e8ff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn.active {
+  border-color: #66b0ff;
+  background: #1e314d;
+}
+
+.btn.danger {
+  border-color: #8b3f3f;
+  background: #3a1d1d;
+  color: #ffd0d0;
 }
 
 .canvas-wrap {
