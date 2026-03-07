@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { absoluteOccupied, absolutePins } from "./parts";
 import { clampZoom, gridToWorld, screenToWorld, worldToGrid, worldToScreen } from "./coords";
-import type { Board, GridPt, PartDef, PartInst, Viewport } from "./types";
+import type { Board, GridPt, PartDef, PartInst, Viewport, Wire } from "./types";
 
 type Props = {
   board: Board;
   parts: PartInst[];
   partDefs: PartDef[];
+  wires: Wire[];
+  wireDraftPath: GridPt[];
   selectedPartId: string | null;
   onGridClick: (grid: GridPt) => void;
   onHoverGridChange: (grid: GridPt | null) => void;
@@ -17,6 +19,47 @@ type Props = {
 };
 
 const CELL_SIZE = 24;
+const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+
+function colorForNet(netId: string): string {
+  let hash = 0;
+  for (let i = 0; i < netId.length; i += 1) {
+    hash = (hash * 31 + netId.charCodeAt(i)) >>> 0;
+  }
+  return NET_COLORS[hash % NET_COLORS.length];
+}
+
+function drawWirePath(
+  ctx: CanvasRenderingContext2D,
+  path: GridPt[],
+  viewport: Viewport,
+  stroke: string,
+  point: string,
+  width = 2
+): void {
+  if (path.length < 1) return;
+
+  if (path.length > 1) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    const start = worldToScreen(gridToWorld(path[0], CELL_SIZE), viewport);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < path.length; i += 1) {
+      const p = worldToScreen(gridToWorld(path[i], CELL_SIZE), viewport);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = point;
+  for (const pt of path) {
+    const p = worldToScreen(gridToWorld(pt, CELL_SIZE), viewport);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(2.5, viewport.zoom * 2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 function drawPart(
   ctx: CanvasRenderingContext2D,
@@ -46,6 +89,8 @@ export function BoardCanvas({
   board,
   parts,
   partDefs,
+  wires,
+  wireDraftPath,
   selectedPartId,
   onGridClick,
   onHoverGridChange,
@@ -125,6 +170,15 @@ export function BoardCanvas({
       bottomRight.y - topLeft.y
     );
 
+    for (const wire of wires) {
+      const color = colorForNet(wire.netId);
+      drawWirePath(ctx, wire.path, viewport, color, color, 2.2);
+    }
+
+    if (wireDraftPath.length > 0) {
+      drawWirePath(ctx, wireDraftPath, viewport, "#ffd166", "#ffd166", 2.4);
+    }
+
     for (const part of parts) {
       const def = partDefMap.get(part.defId);
       if (!def) continue;
@@ -188,7 +242,9 @@ export function BoardCanvas({
     placePreviewPart,
     placePreviewValid,
     selectedPartId,
-    viewport
+    viewport,
+    wireDraftPath,
+    wires
   ]);
 
   useEffect(() => {

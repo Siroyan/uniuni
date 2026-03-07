@@ -31,7 +31,18 @@ export type PartInst = {
   refdes: string;
 };
 
-export type ToolMode = "place" | "select";
+export type Net = {
+  id: string;
+  name: string;
+};
+
+export type Wire = {
+  id: string;
+  netId: string;
+  path: GridPt[];
+};
+
+export type ToolMode = "place" | "select" | "wire";
 
 export type Viewport = {
   panX: number;
