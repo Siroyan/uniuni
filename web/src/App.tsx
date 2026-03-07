@@ -84,6 +84,10 @@ export function App(): JSX.Element {
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), []);
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
+  const hoveredPartId = useMemo(() => {
+    if (!hoverGrid) return null;
+    return findPartAtGrid(hoverGrid, parts, defsById);
+  }, [defsById, hoverGrid, parts]);
 
   const armPlacement = (defId: string): void => {
     setPlaceArmedDefId(defId);
@@ -94,11 +98,22 @@ export function App(): JSX.Element {
     setTool("place");
   };
 
-  const handleRotateSelected = (): void => {
-    if (!selectedPart) return;
-    const rotated: PartInst = { ...selectedPart, rot: nextRot(selectedPart.rot) };
-    if (!canPlacePart(board, parts, defsById, rotated, selectedPart.id)) return;
-    setParts((prev) => prev.map((part) => (part.id === selectedPart.id ? rotated : part)));
+  const rotatePartAtCurrentPosition = (partId: string): void => {
+    const part = parts.find((candidate) => candidate.id === partId);
+    if (!part) return;
+    const rotated: PartInst = { ...part, rot: nextRot(part.rot) };
+    if (!canPlacePart(board, parts, defsById, rotated, part.id)) return;
+    setParts((prev) => prev.map((candidate) => (candidate.id === part.id ? rotated : candidate)));
+  };
+
+  const armMoveForPart = (partId: string): void => {
+    const part = parts.find((candidate) => candidate.id === partId);
+    if (!part) return;
+    setMoveArmedPartId(partId);
+    setMoveArmedRot(part.rot);
+    setPlaceArmedDefId(null);
+    setSelectedPartId(partId);
+    setTool("select");
   };
 
   const handleDeleteSelected = (): void => {
@@ -222,7 +237,12 @@ export function App(): JSX.Element {
         }
 
         if (selectedPart) {
-          handleRotateSelected();
+          rotatePartAtCurrentPosition(selectedPart.id);
+          return;
+        }
+
+        if (hoveredPartId) {
+          rotatePartAtCurrentPosition(hoveredPartId);
           return;
         }
 
@@ -243,12 +263,15 @@ export function App(): JSX.Element {
       }
 
       if (key === "m") {
-        if (!selectedPartId) return;
         event.preventDefault();
-        setMoveArmedPartId(selectedPartId);
-        setMoveArmedRot(selectedPart?.rot ?? null);
-        setPlaceArmedDefId(null);
-        setTool("select");
+        if (moveArmedPart) return;
+        if (selectedPartId) {
+          armMoveForPart(selectedPartId);
+          return;
+        }
+        if (hoveredPartId) {
+          armMoveForPart(hoveredPartId);
+        }
         return;
       }
 
@@ -264,8 +287,8 @@ export function App(): JSX.Element {
   }, [
     activeRot,
     defsById,
-    handleRotateSelected,
     hoverGrid,
+    hoveredPartId,
     moveArmedPart,
     moveArmedRot,
     parts,
