@@ -90,7 +90,13 @@ impl Default for ProjectState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
     CommitWire { net_id: Uuid, path: Vec<GridPt> },
+    DeleteWire { wire_id: Uuid },
     AssignNetName { net_id: Uuid, name: String },
+    AssignPinToNet {
+        part_id: Uuid,
+        pin_name: String,
+        net_id: Uuid,
+    },
     AddPartInst {
         def_id: Uuid,
         at: GridPt,
@@ -183,6 +189,7 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
         }
         Command::CommitWire { net_id, path } => {
             validate_wire_path(&path)?;
+            ensure_net_exists(state, net_id);
             state.wires.push(Wire {
                 id: Uuid::new_v4(),
                 net_id,
@@ -190,12 +197,40 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             });
             Ok(())
         }
+        Command::DeleteWire { wire_id } => {
+            let before = state.wires.len();
+            state.wires.retain(|wire| wire.id != wire_id);
+            if state.wires.len() == before {
+                return Err("wire not found".to_owned());
+            }
+            Ok(())
+        }
         Command::AssignNetName { net_id, name } => {
             if let Some(net) = state.nets.iter_mut().find(|n| n.id == net_id) {
                 net.name = name;
                 return Ok(());
             }
-            Err("net not found".to_owned())
+            state.nets.push(Net { id: net_id, name });
+            Ok(())
+        }
+        Command::AssignPinToNet {
+            part_id,
+            pin_name,
+            net_id,
+        } => {
+            let Some(index) = state.part_insts.iter().position(|part| part.id == part_id) else {
+                return Err("part instance not found".to_owned());
+            };
+            let part = state.part_insts[index].clone();
+            let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+                return Err("part definition not found".to_owned());
+            };
+            if !part_def.pins.iter().any(|pin| pin.name == pin_name) {
+                return Err("pin not found in part definition".to_owned());
+            }
+            ensure_net_exists(state, net_id);
+            state.part_insts[index].net_assign.insert(pin_name, net_id);
+            Ok(())
         }
     }
 }
@@ -257,14 +292,41 @@ pub fn run_drc(state: &ProjectState) -> Vec<DrcIssue> {
         }
     }
 
-    for (pt, nets) in occ_wire {
+    for (pt, nets) in &occ_wire {
         if nets.len() > 1 {
             issues.push(DrcIssue {
                 level: IssueLevel::Error,
                 code: "SHORT".to_owned(),
                 message: "multiple nets share one grid point".to_owned(),
-                at: Some(pt),
+                at: Some(*pt),
             });
+        }
+    }
+
+    for part in &state.part_insts {
+        let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+            continue;
+        };
+        for (pin_name, net_id) in &part.net_assign {
+            let Some(pin_def) = part_def.pins.iter().find(|pin| &pin.name == pin_name) else {
+                continue;
+            };
+            let pin_pt = absolute_pin_point(part.at, part.rot, pin_def.pos);
+            let connected = occ_wire
+                .get(&pin_pt)
+                .map(|nets| nets.contains(net_id))
+                .unwrap_or(false);
+            if !connected {
+                issues.push(DrcIssue {
+                    level: IssueLevel::Warning,
+                    code: "UNCONNECTED_PIN".to_owned(),
+                    message: format!(
+                        "{}.{} assigned to net but not connected by wire",
+                        part.refdes, pin_name
+                    ),
+                    at: Some(pin_pt),
+                });
+            }
         }
     }
 
@@ -315,6 +377,14 @@ fn absolute_occupied_points(part_def: &PartDef, at: GridPt, rot: Rot) -> Vec<Gri
         .collect()
 }
 
+fn absolute_pin_point(at: GridPt, rot: Rot, rel_pin: GridPt) -> GridPt {
+    let turned = rotate_relative(rel_pin, rot);
+    GridPt {
+        x: at.x + turned.x,
+        y: at.y + turned.y,
+    }
+}
+
 fn rotate_relative(pt: GridPt, rot: Rot) -> GridPt {
     match rot {
         Rot::Deg0 => pt,
@@ -326,4 +396,20 @@ fn rotate_relative(pt: GridPt, rot: Rot) -> GridPt {
 
 fn is_inside_board(board: &Board, pt: GridPt) -> bool {
     pt.x >= 0 && pt.y >= 0 && pt.x < board.width && pt.y < board.height
+}
+
+fn ensure_net_exists(state: &mut ProjectState, net_id: Uuid) {
+    if state.nets.iter().any(|net| net.id == net_id) {
+        return;
+    }
+    state.nets.push(Net {
+        id: net_id,
+        name: default_net_name(net_id),
+    });
+}
+
+fn default_net_name(net_id: Uuid) -> String {
+    let compact = net_id.as_simple().to_string();
+    let short = compact.get(..8).unwrap_or(&compact);
+    format!("N-{short}")
 }
