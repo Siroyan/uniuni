@@ -37,6 +37,7 @@ export function App(): JSX.Element {
   const [parts, setParts] = useState<PartInst[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [moveArmedPartId, setMoveArmedPartId] = useState<string | null>(null);
+  const [moveArmedRot, setMoveArmedRot] = useState<Rot | null>(null);
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
 
   const selectedDefId = partDefs[0].id;
@@ -56,16 +57,22 @@ export function App(): JSX.Element {
     setParts((prev) => prev.filter((part) => part.id !== selectedPartId));
     if (moveArmedPartId === selectedPartId) {
       setMoveArmedPartId(null);
+      setMoveArmedRot(null);
     }
     setSelectedPartId(null);
   };
 
   const handleGridClick = (grid: GridPt): void => {
     if (moveArmedPart) {
-      const moved: PartInst = { ...moveArmedPart, at: grid };
+      const moved: PartInst = {
+        ...moveArmedPart,
+        at: grid,
+        rot: moveArmedRot ?? moveArmedPart.rot
+      };
       if (!canPlacePart(board, parts, defsById, moved, moveArmedPart.id)) return;
       setParts((prev) => prev.map((part) => (part.id === moveArmedPart.id ? moved : part)));
       setMoveArmedPartId(null);
+      setMoveArmedRot(null);
       setTool("select");
       return;
     }
@@ -96,8 +103,12 @@ export function App(): JSX.Element {
 
   const movePreviewPart = useMemo(() => {
     if (!moveArmedPart || !hoverGrid) return null;
-    return { ...moveArmedPart, at: hoverGrid };
-  }, [hoverGrid, moveArmedPart]);
+    return {
+      ...moveArmedPart,
+      at: hoverGrid,
+      rot: moveArmedRot ?? moveArmedPart.rot
+    };
+  }, [hoverGrid, moveArmedPart, moveArmedRot]);
 
   const movePreviewValid = useMemo(() => {
     if (!movePreviewPart || !moveArmedPart) return true;
@@ -114,6 +125,18 @@ export function App(): JSX.Element {
       const key = event.key.toLowerCase();
       if (key === "r") {
         event.preventDefault();
+        if (moveArmedPart) {
+          if (!hoverGrid) return;
+          const currentRot = moveArmedRot ?? moveArmedPart.rot;
+          const rotated: PartInst = {
+            ...moveArmedPart,
+            at: hoverGrid,
+            rot: nextRot(currentRot)
+          };
+          if (!canPlacePart(board, parts, defsById, rotated, moveArmedPart.id)) return;
+          setMoveArmedRot(rotated.rot);
+          return;
+        }
         handleRotateSelected();
       }
 
@@ -121,17 +144,28 @@ export function App(): JSX.Element {
         if (!selectedPartId) return;
         event.preventDefault();
         setMoveArmedPartId(selectedPartId);
+        setMoveArmedRot(selectedPart?.rot ?? null);
         setTool("select");
       }
 
       if (key === "escape") {
         setMoveArmedPartId(null);
+        setMoveArmedRot(null);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleRotateSelected, selectedPartId]);
+  }, [
+    defsById,
+    handleRotateSelected,
+    hoverGrid,
+    moveArmedPart,
+    moveArmedRot,
+    parts,
+    selectedPart,
+    selectedPartId
+  ]);
 
   return (
     <main className="app-root">
@@ -145,6 +179,7 @@ export function App(): JSX.Element {
             onClick={() => {
               setTool("place");
               setMoveArmedPartId(null);
+              setMoveArmedRot(null);
             }}
           >
             Place
@@ -155,6 +190,7 @@ export function App(): JSX.Element {
             onClick={() => {
               setTool("select");
               setMoveArmedPartId(null);
+              setMoveArmedRot(null);
             }}
           >
             Select
