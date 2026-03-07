@@ -70,7 +70,7 @@ function nextRefdes(parts: PartInst[], defId: string): string {
 }
 
 export function App(): JSX.Element {
-  const [tool, setTool] = useState<ToolMode>("place");
+  const [tool, setTool] = useState<ToolMode>("select");
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [parts, setParts] = useState<PartInst[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
@@ -80,7 +80,6 @@ export function App(): JSX.Element {
   const [placeArmedRot, setPlaceArmedRot] = useState<Rot>("Deg0");
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
 
-  const selectedDefId = partDefs[0].id;
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), []);
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
@@ -164,22 +163,7 @@ export function App(): JSX.Element {
       return;
     }
 
-    if (tool !== "place") {
-      setSelectedPartId(null);
-      return;
-    }
-
-    const newPart: PartInst = {
-      id: newPartId(),
-      defId: selectedDefId,
-      at: grid,
-      rot: activeRot,
-      refdes: nextRefdes(parts, selectedDefId)
-    };
-    if (!canPlacePart(board, parts, defsById, newPart)) return;
-    setParts((prev) => [...prev, newPart]);
-    setSelectedPartId(newPart.id);
-    setTool("select");
+    setSelectedPartId(null);
   };
 
   const movePreviewPart = useMemo(() => {
