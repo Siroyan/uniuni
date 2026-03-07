@@ -22,13 +22,51 @@ const partDefs: PartDef[] = [
       { x: 1, y: 0 },
       { x: 2, y: 0 }
     ]
+  },
+  {
+    id: "capacitor_radial",
+    name: "Capacitor Radial",
+    pins: [
+      { name: "1", pos: { x: 0, y: 0 } },
+      { name: "2", pos: { x: 1, y: 0 } }
+    ],
+    occupied: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 }
+    ]
+  },
+  {
+    id: "inductor_axial",
+    name: "Inductor Axial",
+    pins: [
+      { name: "1", pos: { x: 0, y: 0 } },
+      { name: "2", pos: { x: 3, y: 0 } }
+    ],
+    occupied: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 }
+    ]
   }
 ];
+
+const defPrefixById: Record<string, string> = {
+  resistor_axial: "R",
+  capacitor_radial: "C",
+  inductor_axial: "L"
+};
 
 function newPartId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `part_${Date.now()}`;
+}
+
+function nextRefdes(parts: PartInst[], defId: string): string {
+  const prefix = defPrefixById[defId] ?? "U";
+  const used = parts.filter((part) => part.refdes.startsWith(prefix)).length;
+  return `${prefix}${used + 1}`;
 }
 
 export function App(): JSX.Element {
@@ -38,12 +76,23 @@ export function App(): JSX.Element {
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [moveArmedPartId, setMoveArmedPartId] = useState<string | null>(null);
   const [moveArmedRot, setMoveArmedRot] = useState<Rot | null>(null);
+  const [placeArmedDefId, setPlaceArmedDefId] = useState<string | null>(null);
+  const [placeArmedRot, setPlaceArmedRot] = useState<Rot>("Deg0");
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
 
   const selectedDefId = partDefs[0].id;
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), []);
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
+
+  const armPlacement = (defId: string): void => {
+    setPlaceArmedDefId(defId);
+    setPlaceArmedRot(activeRot);
+    setMoveArmedPartId(null);
+    setMoveArmedRot(null);
+    setSelectedPartId(null);
+    setTool("place");
+  };
 
   const handleRotateSelected = (): void => {
     if (!selectedPart) return;
@@ -74,6 +123,23 @@ export function App(): JSX.Element {
       setMoveArmedPartId(null);
       setMoveArmedRot(null);
       setTool("select");
+      setSelectedPartId(moved.id);
+      return;
+    }
+
+    if (placeArmedDefId) {
+      const newPart: PartInst = {
+        id: newPartId(),
+        defId: placeArmedDefId,
+        at: grid,
+        rot: placeArmedRot,
+        refdes: nextRefdes(parts, placeArmedDefId)
+      };
+      if (!canPlacePart(board, parts, defsById, newPart)) return;
+      setParts((prev) => [...prev, newPart]);
+      setPlaceArmedDefId(null);
+      setSelectedPartId(newPart.id);
+      setTool("select");
       return;
     }
 
@@ -93,7 +159,7 @@ export function App(): JSX.Element {
       defId: selectedDefId,
       at: grid,
       rot: activeRot,
-      refdes: `R${parts.length + 1}`
+      refdes: nextRefdes(parts, selectedDefId)
     };
     if (!canPlacePart(board, parts, defsById, newPart)) return;
     setParts((prev) => [...prev, newPart]);
@@ -115,6 +181,22 @@ export function App(): JSX.Element {
     return canPlacePart(board, parts, defsById, movePreviewPart, moveArmedPart.id);
   }, [defsById, moveArmedPart, movePreviewPart, parts]);
 
+  const placePreviewPart = useMemo(() => {
+    if (!placeArmedDefId || !hoverGrid) return null;
+    return {
+      id: "__place_preview__",
+      defId: placeArmedDefId,
+      at: hoverGrid,
+      rot: placeArmedRot,
+      refdes: ""
+    } as PartInst;
+  }, [hoverGrid, placeArmedDefId, placeArmedRot]);
+
+  const placePreviewValid = useMemo(() => {
+    if (!placePreviewPart) return true;
+    return canPlacePart(board, parts, defsById, placePreviewPart);
+  }, [defsById, parts, placePreviewPart]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
@@ -123,6 +205,7 @@ export function App(): JSX.Element {
       }
 
       const key = event.key.toLowerCase();
+
       if (key === "r") {
         event.preventDefault();
         if (moveArmedPart) {
@@ -137,7 +220,26 @@ export function App(): JSX.Element {
           setMoveArmedRot(rotated.rot);
           return;
         }
-        handleRotateSelected();
+
+        if (selectedPart) {
+          handleRotateSelected();
+          return;
+        }
+
+        armPlacement("resistor_axial");
+        return;
+      }
+
+      if (key === "c") {
+        event.preventDefault();
+        armPlacement("capacitor_radial");
+        return;
+      }
+
+      if (key === "l") {
+        event.preventDefault();
+        armPlacement("inductor_axial");
+        return;
       }
 
       if (key === "m") {
@@ -145,18 +247,22 @@ export function App(): JSX.Element {
         event.preventDefault();
         setMoveArmedPartId(selectedPartId);
         setMoveArmedRot(selectedPart?.rot ?? null);
+        setPlaceArmedDefId(null);
         setTool("select");
+        return;
       }
 
       if (key === "escape") {
         setMoveArmedPartId(null);
         setMoveArmedRot(null);
+        setPlaceArmedDefId(null);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    activeRot,
     defsById,
     handleRotateSelected,
     hoverGrid,
@@ -171,7 +277,7 @@ export function App(): JSX.Element {
     <main className="app-root">
       <header className="toolbar">
         <h1>uniuni</h1>
-        <p>選択中ショートカット: R=回転 / M=移動 / Esc=移動キャンセル</p>
+        <p>選択中ショートカット: R=回転 / M=移動 / Esc=移動キャンセル | 配置: R/C/L</p>
         <div className="toolbar-row">
           <button
             type="button"
@@ -191,12 +297,32 @@ export function App(): JSX.Element {
               setTool("select");
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
+              setPlaceArmedDefId(null);
             }}
           >
             Select
           </button>
-          <button type="button" className="btn" onClick={() => setActiveRot((prev) => nextRot(prev))}>
-            Rotate Place: {activeRot}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              const next = nextRot(activeRot);
+              setActiveRot(next);
+              if (placeArmedDefId) {
+                setPlaceArmedRot(next);
+              }
+            }}
+          >
+            Rotate Place: {placeArmedDefId ? placeArmedRot : activeRot}
+          </button>
+          <button type="button" className="btn" onClick={() => armPlacement("resistor_axial")}>
+            Arm R
+          </button>
+          <button type="button" className="btn" onClick={() => armPlacement("capacitor_radial")}>
+            Arm C
+          </button>
+          <button type="button" className="btn" onClick={() => armPlacement("inductor_axial")}>
+            Arm L
           </button>
           <button type="button" className="btn danger" onClick={handleDeleteSelected}>
             Delete Selected
@@ -212,6 +338,8 @@ export function App(): JSX.Element {
         onHoverGridChange={setHoverGrid}
         movePreviewPart={movePreviewPart}
         movePreviewValid={movePreviewValid}
+        placePreviewPart={placePreviewPart}
+        placePreviewValid={placePreviewValid}
       />
     </main>
   );

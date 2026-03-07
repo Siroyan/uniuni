@@ -12,6 +12,8 @@ type Props = {
   onHoverGridChange: (grid: GridPt | null) => void;
   movePreviewPart: PartInst | null;
   movePreviewValid: boolean;
+  placePreviewPart: PartInst | null;
+  placePreviewValid: boolean;
 };
 
 const CELL_SIZE = 24;
@@ -48,7 +50,9 @@ export function BoardCanvas({
   onGridClick,
   onHoverGridChange,
   movePreviewPart,
-  movePreviewValid
+  movePreviewValid,
+  placePreviewPart,
+  placePreviewValid
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({
@@ -149,6 +153,20 @@ export function BoardCanvas({
       }
     }
 
+    if (placePreviewPart) {
+      const def = partDefMap.get(placePreviewPart.defId);
+      if (def) {
+        drawPart(
+          ctx,
+          placePreviewPart,
+          def,
+          viewport,
+          placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
+          placePreviewValid ? "#99f2b0" : "#ffb0b0"
+        );
+      }
+    }
+
     if (hoverGrid) {
       const snappedWorld = gridToWorld(hoverGrid, CELL_SIZE);
       const snapped = worldToScreen(snappedWorld, viewport);
@@ -167,6 +185,8 @@ export function BoardCanvas({
     movePreviewValid,
     partDefMap,
     parts,
+    placePreviewPart,
+    placePreviewValid,
     selectedPartId,
     viewport
   ]);
