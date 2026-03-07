@@ -246,6 +246,11 @@ export function App(): JSX.Element {
           return;
         }
 
+        if (placeArmedDefId) {
+          setPlaceArmedRot((prev) => nextRot(prev));
+          return;
+        }
+
         armPlacement("resistor_axial");
         return;
       }
@@ -292,6 +297,7 @@ export function App(): JSX.Element {
     moveArmedPart,
     moveArmedRot,
     parts,
+    placeArmedDefId,
     selectedPart,
     selectedPartId
   ]);
