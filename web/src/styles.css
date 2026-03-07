@@ -48,6 +48,22 @@ body,
   gap: 8px;
 }
 
+.net-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: #b9cbe3;
+}
+
+.net-select {
+  border: 1px solid #3b5578;
+  background: #132034;
+  color: #d8e8ff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
 .btn {
   border: 1px solid #3b5578;
   background: #132034;

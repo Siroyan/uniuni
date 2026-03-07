@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BoardCanvas } from "./BoardCanvas";
 import { canPlacePart, findPartAtGrid, nextRot } from "./parts";
-import type { Board, GridPt, PartDef, PartInst, Rot, ToolMode } from "./types";
+import type { Board, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 
 const board: Board = {
   width: 64,
@@ -57,10 +57,11 @@ const defPrefixById: Record<string, string> = {
   inductor_axial: "L"
 };
 
-function newPartId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `part_${Date.now()}`;
+function newId(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}`;
 }
 
 function nextRefdes(parts: PartInst[], defId: string): string {
@@ -69,10 +70,18 @@ function nextRefdes(parts: PartInst[], defId: string): string {
   return `${prefix}${used + 1}`;
 }
 
+function isAdjacent(a: GridPt, b: GridPt): boolean {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+}
+
 export function App(): JSX.Element {
   const [tool, setTool] = useState<ToolMode>("select");
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [parts, setParts] = useState<PartInst[]>([]);
+  const [wires, setWires] = useState<Wire[]>([]);
+  const [nets, setNets] = useState<Net[]>([{ id: "net_1", name: "N-1" }]);
+  const [selectedNetId, setSelectedNetId] = useState<string>("net_1");
+  const [wireDraftPath, setWireDraftPath] = useState<GridPt[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [moveArmedPartId, setMoveArmedPartId] = useState<string | null>(null);
   const [moveArmedRot, setMoveArmedRot] = useState<Rot | null>(null);
@@ -94,6 +103,7 @@ export function App(): JSX.Element {
     setMoveArmedPartId(null);
     setMoveArmedRot(null);
     setSelectedPartId(null);
+    setWireDraftPath([]);
     setTool("place");
   };
 
@@ -111,8 +121,31 @@ export function App(): JSX.Element {
     setMoveArmedPartId(partId);
     setMoveArmedRot(part.rot);
     setPlaceArmedDefId(null);
+    setWireDraftPath([]);
     setSelectedPartId(partId);
     setTool("select");
+  };
+
+  const commitWireDraft = (): void => {
+    if (wireDraftPath.length < 2 || !selectedNetId) return;
+    setWires((prev) => [
+      ...prev,
+      {
+        id: newId("wire"),
+        netId: selectedNetId,
+        path: wireDraftPath
+      }
+    ]);
+    setWireDraftPath([]);
+  };
+
+  const addNet = (): void => {
+    const newNet: Net = {
+      id: newId("net"),
+      name: `N-${nets.length + 1}`
+    };
+    setNets((prev) => [...prev, newNet]);
+    setSelectedNetId(newNet.id);
   };
 
   const handleDeleteSelected = (): void => {
@@ -126,6 +159,19 @@ export function App(): JSX.Element {
   };
 
   const handleGridClick = (grid: GridPt): void => {
+    if (tool === "wire") {
+      if (!selectedNetId) return;
+      const last = wireDraftPath[wireDraftPath.length - 1];
+      if (!last) {
+        setWireDraftPath([grid]);
+        return;
+      }
+      if (last.x === grid.x && last.y === grid.y) return;
+      if (!isAdjacent(last, grid)) return;
+      setWireDraftPath((prev) => [...prev, grid]);
+      return;
+    }
+
     if (moveArmedPart) {
       const moved: PartInst = {
         ...moveArmedPart,
@@ -143,7 +189,7 @@ export function App(): JSX.Element {
 
     if (placeArmedDefId) {
       const newPart: PartInst = {
-        id: newPartId(),
+        id: newId("part"),
         defId: placeArmedDefId,
         at: grid,
         rot: placeArmedRot,
@@ -204,6 +250,21 @@ export function App(): JSX.Element {
       }
 
       const key = event.key.toLowerCase();
+
+      if (key === "enter" && tool === "wire") {
+        event.preventDefault();
+        commitWireDraft();
+        return;
+      }
+
+      if (key === "w") {
+        event.preventDefault();
+        setTool("wire");
+        setMoveArmedPartId(null);
+        setMoveArmedRot(null);
+        setPlaceArmedDefId(null);
+        return;
+      }
 
       if (key === "r") {
         event.preventDefault();
@@ -268,6 +329,10 @@ export function App(): JSX.Element {
         setMoveArmedPartId(null);
         setMoveArmedRot(null);
         setPlaceArmedDefId(null);
+        setWireDraftPath([]);
+        if (tool === "wire") {
+          setTool("select");
+        }
       }
     };
 
@@ -283,14 +348,19 @@ export function App(): JSX.Element {
     parts,
     placeArmedDefId,
     selectedPart,
-    selectedPartId
+    selectedPartId,
+    tool,
+    wireDraftPath,
+    selectedNetId
   ]);
 
   return (
     <main className="app-root">
       <header className="toolbar">
         <h1>uniuni</h1>
-        <p>選択中ショートカット: R=回転 / M=移動 / Esc=移動キャンセル | 配置: R/C/L</p>
+        <p>
+          Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消
+        </p>
         <div className="toolbar-row">
           <button
             type="button"
@@ -299,6 +369,7 @@ export function App(): JSX.Element {
               setTool("place");
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
+              setWireDraftPath([]);
             }}
           >
             Place
@@ -311,9 +382,22 @@ export function App(): JSX.Element {
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
               setPlaceArmedDefId(null);
+              setWireDraftPath([]);
             }}
           >
             Select
+          </button>
+          <button
+            type="button"
+            className={tool === "wire" ? "btn active" : "btn"}
+            onClick={() => {
+              setTool("wire");
+              setMoveArmedPartId(null);
+              setMoveArmedRot(null);
+              setPlaceArmedDefId(null);
+            }}
+          >
+            Wire
           </button>
           <button
             type="button"
@@ -341,11 +425,39 @@ export function App(): JSX.Element {
             Delete Selected
           </button>
         </div>
+        <div className="toolbar-row">
+          <label className="net-label" htmlFor="net-select">
+            Net:
+          </label>
+          <select
+            id="net-select"
+            className="net-select"
+            value={selectedNetId}
+            onChange={(event) => setSelectedNetId(event.target.value)}
+          >
+            {nets.map((net) => (
+              <option key={net.id} value={net.id}>
+                {net.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn" onClick={addNet}>
+            Add Net
+          </button>
+          <button type="button" className="btn" onClick={commitWireDraft}>
+            Commit Wire
+          </button>
+          <button type="button" className="btn" onClick={() => setWireDraftPath([])}>
+            Cancel Wire
+          </button>
+        </div>
       </header>
       <BoardCanvas
         board={board}
         parts={parts}
         partDefs={partDefs}
+        wires={wires}
+        wireDraftPath={wireDraftPath}
         selectedPartId={selectedPartId}
         onGridClick={handleGridClick}
         onHoverGridChange={setHoverGrid}
