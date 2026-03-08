@@ -29,6 +29,7 @@ export type PartInst = {
   at: GridPt;
   rot: Rot;
   refdes: string;
+  netAssign: Record<string, string>;
 };
 
 export type Net = {
@@ -48,4 +49,13 @@ export type Viewport = {
   panX: number;
   panY: number;
   zoom: number;
+};
+
+export type IssueLevel = "Error" | "Warning";
+
+export type DrcIssue = {
+  level: IssueLevel;
+  code: string;
+  message: string;
+  at: GridPt | null;
 };

@@ -199,16 +199,26 @@ Include:
 - `schema_version: u32`
 - Prepare for migrations.
 
-## 11. MVP Implementation Order (Recommended)
+## 11. MVP Implementation Roadmap (Step 1-7)
+The implementation is managed as one PR per step.
+
+Completed:
 1. Coordinate system: screen ↔ world ↔ grid, pan/zoom, snap
-2. Part placement with rotation (using pins + occupied cells)
-3. Wire routing tool (Manhattan, one-grid step), JS preview → `CommitWire`
-4. DRC minimal set (collision, short, unconnected)
-5. Undo/Redo (command log)
-6. Part editor:
+2. Part placement with rotation (pins + occupied cells, command-driven)
+3. Wire routing + net editing (manual one-step Manhattan routing, net naming, pin-net assignment)
+4. DRC and command validation strengthening (SHORT, wire-vs-part occupancy, unconnected pin warning path, board bounds checks)
+5. Undo/Redo and persistence baseline (history snapshot, IndexedDB autosave, JSON export/import)
+
+Planned:
+6. Part editor and part-library persistence
    - edit pins (add/move/remove)
    - paint occupied cells
    - attach/position image (transparent PNG recommended)
+   - persist reusable PartDef library in IndexedDB
+7. Packaging and UX polish for MVP completion
+   - ZIP export/import (`project.json` + `assets/`)
+   - WASM production wiring flow (reduce fallback dependency)
+   - hit-test priority/cycle selection polish (pin priority, candidate cycling)
 
 ## 12. Non-goals for MVP
 - Auto-routing

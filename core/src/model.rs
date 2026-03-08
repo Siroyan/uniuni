@@ -189,6 +189,7 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
         }
         Command::CommitWire { net_id, path } => {
             validate_wire_path(&path)?;
+            validate_wire_inside_board(state, &path)?;
             ensure_net_exists(state, net_id);
             state.wires.push(Wire {
                 id: Uuid::new_v4(),
@@ -276,19 +277,43 @@ pub fn validate_wire_path(path: &[GridPt]) -> Result<(), String> {
 pub fn run_drc(state: &ProjectState) -> Vec<DrcIssue> {
     let mut issues = Vec::new();
     let mut occ_wire: HashMap<GridPt, HashSet<Uuid>> = HashMap::new();
+    let mut occ_part_hard: HashMap<GridPt, Uuid> = HashMap::new();
+    let mut part_pin_points: HashSet<GridPt> = HashSet::new();
 
-    if let Err(err) = rebuild_part_occupancy_map(state) {
-        issues.push(DrcIssue {
-            level: IssueLevel::Error,
-            code: "PART_COLLISION".to_owned(),
-            message: err,
-            at: None,
-        });
+    match rebuild_part_occupancy_map(state) {
+        Ok(map) => {
+            occ_part_hard = map;
+        }
+        Err(err) => {
+            issues.push(DrcIssue {
+                level: IssueLevel::Error,
+                code: "PART_COLLISION".to_owned(),
+                message: err,
+                at: None,
+            });
+        }
+    }
+
+    for part in &state.part_insts {
+        let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+            continue;
+        };
+        for pin in &part_def.pins {
+            part_pin_points.insert(absolute_pin_point(part.at, part.rot, pin.pos));
+        }
     }
 
     for wire in &state.wires {
         for pt in &wire.path {
             occ_wire.entry(*pt).or_default().insert(wire.net_id);
+            if occ_part_hard.contains_key(pt) && !part_pin_points.contains(pt) {
+                issues.push(DrcIssue {
+                    level: IssueLevel::Error,
+                    code: "WIRE_PART_COLLISION".to_owned(),
+                    message: "wire point overlaps part occupied cell".to_owned(),
+                    at: Some(*pt),
+                });
+            }
         }
     }
 
@@ -361,6 +386,15 @@ fn part_collision_at(state: &ProjectState, self_id: Uuid, pt: GridPt) -> bool {
         };
         absolute_occupied_points(part_def, part.at, part.rot).contains(&pt)
     })
+}
+
+fn validate_wire_inside_board(state: &ProjectState, path: &[GridPt]) -> Result<(), String> {
+    for pt in path {
+        if !is_inside_board(&state.board, *pt) {
+            return Err("wire path is outside board".to_owned());
+        }
+    }
+    Ok(())
 }
 
 fn absolute_occupied_points(part_def: &PartDef, at: GridPt, rot: Rot) -> Vec<GridPt> {
