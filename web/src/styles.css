@@ -48,6 +48,14 @@ body,
   gap: 8px;
 }
 
+.error-text {
+  color: #ffb3b3;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
 .net-label {
   display: inline-flex;
   align-items: center;
@@ -62,6 +70,16 @@ body,
   border-radius: 8px;
   padding: 6px 8px;
   font-size: 12px;
+}
+
+.net-input {
+  border: 1px solid #3b5578;
+  background: #132034;
+  color: #d8e8ff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  min-width: 120px;
 }
 
 .btn {

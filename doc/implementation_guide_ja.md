@@ -19,18 +19,22 @@
 
 - `web`（React + TypeScript + Canvas 2D）
 - `core`（Rust + wasm-bindgen）
-- 盤面グリッド描画
-- pan / zoom / snap の基本操作
-- コマンド適用の最小実装（`CommitWire`, `AssignNetName`）
-- 配線ルール検証（1グリッドの Manhattan 制約）
-- 最小 DRC（異なるネットの同一点共有 = SHORT）
+- 盤面グリッド描画、pan / zoom / snap
+- 部品の配置/移動/回転/削除（コマンド経由）
+- 手動配線（1ステップ Manhattan）と wire 削除
+- ネット編集（追加/改名）と pin へのネット割当
+- DRC（SHORT, wire-vs-part occupancy, 未接続 pin 警告）
+- Undo/Redo（履歴スナップショット）
+- IndexedDB 永続化（自動保存/復元）
+- JSON Export/Import（`project.json` 最小版）
 
 未実装（これから）:
 
-- 部品配置・回転
-- Undo/Redo
-- IndexedDB 永続化
-- Rust WASM と Web UI の実接続
+- Part editor（PartDef の pin/occupied/image 編集）
+- Part ライブラリ永続化（IndexedDB）
+- ZIP Export/Import（`project.json` + `assets/`）
+- WASM 本接続フロー整備（fallback 依存の縮小）
+- ヒットテスト優先順位と候補サイクル選択の仕上げ
 
 ## 3. ディレクトリ構成
 
@@ -170,11 +174,11 @@ cargo build
 
 ## 9. 直近の実装候補（Issue化しやすい単位）
 
-- `PartInst` の配置・移動・回転コマンド追加
-- `CommitWire` の既存ワイヤとのマージ/重複処理
-- `run_drc` に部品占有衝突と未接続ピン警告を追加
-- Undo/Redo のためのコマンドログ構造導入
-- `web` と `core`（WASM）を実配線
+- PartDef editor UI（pin 追加/移動/削除、occupied 塗り）
+- Part ライブラリの IndexedDB 永続化 API
+- ZIP Export/Import（`project.json` + `assets/`）実装
+- WASM 生成物を使った本番接続導線の整備
+- ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）追加
 
 ## 10. 参考ドキュメント
 
@@ -182,11 +186,11 @@ cargo build
 - 進捗ログ: [progress.md](./progress.md)
 - 起動方法: [README.md](../README.md)
 
-## 11. 基本機能完成までの3Step提案
+## 11. 基本機能完成までの7Stepロードマップ
 
-以下は「ユニバーサル基板CADとして最低限使える状態」までの実装を、3段階で進める提案です。
+以下は「ユニバーサル基板CADとして最低限使える状態」までの実装を、1Step=1PR で進める計画です。
 
-### Step 1: 部品配置と編集の基盤を完成させる
+### Step 1: 部品配置と編集の基盤を完成させる（完了）
 
 目的:
 
@@ -210,7 +214,7 @@ cargo build
 - 重なり配置や盤面外配置が禁止される
 - 状態変更はすべて `Command` 経由で反映される
 
-### Step 2: 手動配線とネット編集を完成させる
+### Step 2: 手動配線とネット編集を完成させる（完了）
 
 目的:
 
@@ -234,7 +238,7 @@ cargo build
 - ピンへのネット割当とネット名編集ができる
 - 不正配線は `core` 側で拒否され、UIにエラー表示される
 
-### Step 3: DRC/UndoRedo/保存で「日常利用可能」へ仕上げる
+### Step 3: DRC/UndoRedo/保存で「日常利用可能」へ仕上げる（完了）
 
 目的:
 
@@ -257,3 +261,65 @@ cargo build
 - DRC 実行で主要エラー/警告が確認できる
 - Undo/Redo が主要操作（部品編集・配線編集）で機能する
 - 保存→再読込で状態が復元される
+
+### Step 4: Part editor（定義編集）を実装する（予定）
+
+目的:
+
+- ユーザー定義部品の pin / occupied / 画像を編集可能にする
+
+実装仕様:
+
+- `web`:
+  - PartDef 編集 UI（pin 編集、occupied 編集、画像設定）
+- `core`:
+  - PartDef 編集の検証ロジック整備
+
+完了条件:
+
+- PartDef を GUI で編集し、配置に反映できる
+
+### Step 5: Part ライブラリ永続化を実装する（予定）
+
+目的:
+
+- プロジェクトとは独立した部品ライブラリの再利用を可能にする
+
+実装仕様:
+
+- IndexedDB に PartDef と画像アセットを保存
+- ライブラリ読込/保存 API を `web` へ接続
+
+完了条件:
+
+- ブラウザ再起動後も Part ライブラリが復元される
+
+### Step 6: ZIP Import/Export を実装する（予定）
+
+目的:
+
+- 仕様通り `project.json + assets` 形式で外部入出力する
+
+実装仕様:
+
+- Export: ZIP 生成（`project.json`, `assets/*`）
+- Import: ZIP 展開と project/asset 復元
+
+完了条件:
+
+- JSON 単体ではなく ZIP 形式で相互移行できる
+
+### Step 7: WASM本接続と選択UX仕上げを行う（予定）
+
+目的:
+
+- 運用時の接続経路と編集 UX の最終調整を行う
+
+実装仕様:
+
+- WASM 生成物を前提にした接続導線を整備（fallback 依存を縮小）
+- ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）を実装
+
+完了条件:
+
+- MVP として日常利用できる操作品質・入出力品質を満たす

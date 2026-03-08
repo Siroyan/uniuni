@@ -8,6 +8,7 @@ type Props = {
   parts: PartInst[];
   partDefs: PartDef[];
   wires: Wire[];
+  selectedWireId: string | null;
   wireDraftPath: GridPt[];
   selectedPartId: string | null;
   onGridClick: (grid: GridPt) => void;
@@ -90,6 +91,7 @@ export function BoardCanvas({
   parts,
   partDefs,
   wires,
+  selectedWireId,
   wireDraftPath,
   selectedPartId,
   onGridClick,
@@ -172,7 +174,8 @@ export function BoardCanvas({
 
     for (const wire of wires) {
       const color = colorForNet(wire.netId);
-      drawWirePath(ctx, wire.path, viewport, color, color, 2.2);
+      const isSelected = wire.id === selectedWireId;
+      drawWirePath(ctx, wire.path, viewport, isSelected ? "#ffd166" : color, isSelected ? "#ffd166" : color, isSelected ? 3.2 : 2.2);
     }
 
     if (wireDraftPath.length > 0) {
