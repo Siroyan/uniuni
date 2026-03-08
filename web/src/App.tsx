@@ -13,9 +13,11 @@ import {
   createInitialCoreStateJson,
   extractViewStateFromCoreJson,
   newUuid,
+  replacePartDefsInStateJson,
   runCoreDrcJson
 } from "./coreBridge";
 import { canPlacePart, findPartAtGrid, nextRot } from "./parts";
+import { loadPartLibrary, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 
@@ -25,7 +27,7 @@ const board: Board = {
   gridPitchMm: 2.54
 };
 
-const partDefs: PartDef[] = [
+const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
     name: "Resistor Axial",
@@ -73,6 +75,12 @@ const defPrefixById: Record<string, string> = {
   "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L"
 };
 
+const builtInPartIds = {
+  resistor: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
+  capacitor: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
+  inductor: "01d260e9-ea3a-488f-9e8a-031ca0d679ce"
+};
+
 function nextRefdes(parts: PartInst[], defId: string): string {
   const prefix = defPrefixById[defId] ?? "U";
   const used = parts.filter((part) => part.refdes.startsWith(prefix)).length;
@@ -101,6 +109,14 @@ function findWireAtGrid(pt: GridPt, wires: Wire[]): string | null {
   return null;
 }
 
+function partLabel(name: string): string {
+  const tokens = name.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return "PT";
+  const first = tokens[0].slice(0, 1);
+  const second = tokens.length > 1 ? tokens[1].slice(0, 1) : tokens[0].slice(1, 2);
+  return `${first}${second}`.toUpperCase();
+}
+
 type HistoryEntry = {
   stateJson: string;
   selectedPartId: string | null;
@@ -110,12 +126,21 @@ type HistoryEntry = {
 export function App(): JSX.Element {
   const [tool, setTool] = useState<ToolMode>("select");
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
+  const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
   const [parts, setParts] = useState<PartInst[]>([]);
   const [wires, setWires] = useState<Wire[]>([]);
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
   const [selectedNetId, setSelectedNetId] = useState<string>(() => nets[0]?.id ?? "");
   const [netNameDraft, setNetNameDraft] = useState<string>("");
   const [pinNameDraft, setPinNameDraft] = useState<string>("");
+  const [editorDefId, setEditorDefId] = useState<string>(defaultPartDefs[0].id);
+  const [editorDefName, setEditorDefName] = useState<string>(defaultPartDefs[0].name);
+  const [editorPinName, setEditorPinName] = useState<string>("");
+  const [editorPinX, setEditorPinX] = useState<string>("0");
+  const [editorPinY, setEditorPinY] = useState<string>("0");
+  const [editorOccX, setEditorOccX] = useState<string>("0");
+  const [editorOccY, setEditorOccY] = useState<string>("0");
+  const [placeDefId, setPlaceDefId] = useState<string>(defaultPartDefs[0].id);
   const [wireDraftPath, setWireDraftPath] = useState<GridPt[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
@@ -135,7 +160,8 @@ export function App(): JSX.Element {
   const selectedWireIdRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
-  const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), []);
+  const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
+  const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const selectedPartDef = selectedPart ? defsById.get(selectedPart.defId) ?? null : null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
@@ -174,6 +200,28 @@ export function App(): JSX.Element {
     const selected = nets.find((net) => net.id === selectedNetId);
     setNetNameDraft(selected?.name ?? "");
   }, [nets, selectedNetId]);
+
+  useEffect(() => {
+    if (!editorDefId || !partDefs.some((def) => def.id === editorDefId)) {
+      const first = partDefs[0];
+      if (first) {
+        setEditorDefId(first.id);
+        setEditorDefName(first.name);
+      }
+      return;
+    }
+    const current = partDefs.find((def) => def.id === editorDefId);
+    if (current) {
+      setEditorDefName(current.name);
+    }
+  }, [editorDefId, partDefs]);
+
+  useEffect(() => {
+    if (!partDefs.some((def) => def.id === placeDefId)) {
+      const first = partDefs[0];
+      if (first) setPlaceDefId(first.id);
+    }
+  }, [partDefs, placeDefId]);
 
   useEffect(() => {
     if (!selectedPartDef || selectedPartDef.pins.length === 0) {
@@ -243,13 +291,19 @@ export function App(): JSX.Element {
     const init = async (): Promise<void> => {
       try {
         const snapshot = await loadSnapshot();
+        const library = await loadPartLibrary();
+        const effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+        if (!cancelled) {
+          setPartDefs(effectivePartDefs);
+        }
         let nextState: string;
         let nextSelectedNetId = selectedNetId;
         if (snapshot?.coreStateJson) {
           nextState = snapshot.coreStateJson;
           nextSelectedNetId = snapshot.selectedNetId ?? "";
+          nextState = replacePartDefsInStateJson(nextState, effectivePartDefs);
         } else {
-          nextState = await createInitialCoreStateJson(board, partDefs);
+          nextState = await createInitialCoreStateJson(board, effectivePartDefs);
           for (const net of nets) {
             nextState = await applyCoreCommandJson(nextState, commandAssignNetNameJson(net.id, net.name));
           }
@@ -305,7 +359,34 @@ export function App(): JSX.Element {
     };
   }, [coreStateJson, selectedNetId]);
 
+  useEffect(() => {
+    if (partDefs.length === 0) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await savePartLibrary(partDefs);
+          const currentState = coreStateJsonRef.current;
+          if (!currentState) return;
+          const nextState = replacePartDefsInStateJson(currentState, partDefs);
+          syncFromCoreState(nextState);
+          await refreshDrcForState(nextState);
+        } catch {
+          if (!cancelled) {
+            setCoreError("part library save failed");
+          }
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [partDefs]);
+
   const armPlacement = (defId: string): void => {
+    if (!defId) return;
+    setPlaceDefId(defId);
     setPlaceArmedDefId(defId);
     setPlaceArmedRot(activeRot);
     setMoveArmedPartId(null);
@@ -314,6 +395,7 @@ export function App(): JSX.Element {
     setSelectedWireId(null);
     setWireDraftPath([]);
     setTool("place");
+    setCoreError(null);
   };
 
   const rotatePartAtCurrentPosition = (partId: string): void => {
@@ -421,6 +503,118 @@ export function App(): JSX.Element {
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "assign pin to net failed");
     }
+  };
+
+  const renameEditorPartDef = (): void => {
+    const name = editorDefName.trim();
+    if (!editorDefId || !name) return;
+    setPartDefs((prev) =>
+      prev.map((def) => (def.id === editorDefId ? { ...def, name } : def))
+    );
+  };
+
+  const addEditorPin = (): void => {
+    if (!editorDefId) return;
+    const name = editorPinName.trim();
+    const x = Number(editorPinX);
+    const y = Number(editorPinY);
+    if (!name || Number.isNaN(x) || Number.isNaN(y)) return;
+    setPartDefs((prev) =>
+      prev.map((def) => {
+        if (def.id !== editorDefId) return def;
+        if (def.pins.some((pin) => pin.name === name)) return def;
+        return {
+          ...def,
+          pins: [...def.pins, { name, pos: { x, y } }]
+        };
+      })
+    );
+    setEditorPinName("");
+  };
+
+  const removeEditorPin = (pinName: string): void => {
+    if (!editorDefId) return;
+    setPartDefs((prev) =>
+      prev.map((def) =>
+        def.id === editorDefId
+          ? { ...def, pins: def.pins.filter((pin) => pin.name !== pinName) }
+          : def
+      )
+    );
+  };
+
+  const addEditorOccupied = (): void => {
+    if (!editorDefId) return;
+    const x = Number(editorOccX);
+    const y = Number(editorOccY);
+    if (Number.isNaN(x) || Number.isNaN(y)) return;
+    const key = `${x}:${y}`;
+    setPartDefs((prev) =>
+      prev.map((def) => {
+        if (def.id !== editorDefId) return def;
+        const exists = def.occupied.some((pt) => `${pt.x}:${pt.y}` === key);
+        if (exists) return def;
+        return {
+          ...def,
+          occupied: [...def.occupied, { x, y }]
+        };
+      })
+    );
+  };
+
+  const removeEditorOccupied = (x: number, y: number): void => {
+    if (!editorDefId) return;
+    setPartDefs((prev) =>
+      prev.map((def) =>
+        def.id === editorDefId
+          ? {
+              ...def,
+              occupied: def.occupied.filter((pt) => !(pt.x === x && pt.y === y))
+            }
+          : def
+      )
+    );
+  };
+
+  const createEditorPartDef = (): void => {
+    const baseName = editorDefName.trim() || "New Part";
+    const nextId = newUuid();
+    const nextDef: PartDef = {
+      id: nextId,
+      name: baseName,
+      pins: [{ name: "1", pos: { x: 0, y: 0 } }],
+      occupied: [{ x: 0, y: 0 }]
+    };
+    setPartDefs((prev) => [...prev, nextDef]);
+    setEditorDefId(nextId);
+    setEditorDefName(baseName);
+    setEditorPinName("1");
+    setEditorPinX("0");
+    setEditorPinY("0");
+    setEditorOccX("0");
+    setEditorOccY("0");
+  };
+
+  const deleteEditorPartDef = (): void => {
+    if (!editorDefId) return;
+    if (parts.some((part) => part.defId === editorDefId)) {
+      setCoreError("cannot delete: part definition is used by placed parts");
+      return;
+    }
+    if (partDefs.length <= 1) {
+      setCoreError("cannot delete: at least one part definition is required");
+      return;
+    }
+    setPartDefs((prev) => prev.filter((def) => def.id !== editorDefId));
+    if (placeArmedDefId === editorDefId) {
+      setPlaceArmedDefId(null);
+      setTool("select");
+    }
+    if (placeDefId === editorDefId) {
+      const next = partDefs.find((def) => def.id !== editorDefId);
+      if (next) setPlaceDefId(next.id);
+    }
+    setCoreError(null);
   };
 
   const runDrc = async (): Promise<void> => {
@@ -623,7 +817,6 @@ export function App(): JSX.Element {
         refdes: nextRefdes(parts, placeArmedDefId),
         netAssign: {}
       };
-      if (!canPlacePart(board, parts, defsById, preview)) return;
       const state = coreStateJsonRef.current;
       if (!state) return;
       void (async () => {
@@ -634,10 +827,9 @@ export function App(): JSX.Element {
           );
           const nextView = commitStateTransition(state, nextState);
           const addedPartId = findAddedPartId(parts, nextView.parts);
-          setPlaceArmedDefId(null);
           setSelectedPartId(addedPartId);
           setSelectedWireId(null);
-          setTool("select");
+          setTool("place");
           await refreshDrcForState(nextState);
           setCoreError(null);
         } catch (err) {
@@ -767,24 +959,36 @@ export function App(): JSX.Element {
           return;
         }
 
+        const resistorDef = partDefs.find((def) => def.id === builtInPartIds.resistor) ?? partDefs[0];
+        if (!resistorDef) return;
         if (placeArmedDefId) {
+          if (tool !== "place") {
+            setTool("place");
+          }
           setPlaceArmedRot((prev) => nextRot(prev));
           return;
         }
-
-        armPlacement(partDefs[0].id);
+        armPlacement(resistorDef.id);
         return;
       }
 
       if (key === "c") {
         event.preventDefault();
-        armPlacement(partDefs[1].id);
+        const target =
+          partDefs.find((def) => def.id === builtInPartIds.capacitor) ?? partDefs[0];
+        if (target) {
+          armPlacement(target.id);
+        }
         return;
       }
 
       if (key === "l") {
         event.preventDefault();
-        armPlacement(partDefs[2].id);
+        const target =
+          partDefs.find((def) => def.id === builtInPartIds.inductor) ?? partDefs[0];
+        if (target) {
+          armPlacement(target.id);
+        }
         return;
       }
 
@@ -835,171 +1039,331 @@ export function App(): JSX.Element {
 
   return (
     <main className="app-root">
-      <header className="toolbar">
+      <aside className="sidebar">
+        <header className="toolbar">
         <h1>uniuni</h1>
         <p>
           Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消
         </p>
-        <div className="toolbar-row">
-          <button
-            type="button"
-            className={tool === "place" ? "btn active" : "btn"}
-            onClick={() => {
+        <div className="toolbar-grid">
+          <section className="tool-card">
+            <h2 className="card-title">編集操作</h2>
+            <div className="toolbar-row">
+              <button
+                type="button"
+                className={tool === "place" ? "btn active" : "btn"}
+                onClick={() => {
               setTool("place");
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
               setWireDraftPath([]);
+              if (placeDefId) {
+                setPlaceArmedDefId(placeDefId);
+                setPlaceArmedRot(activeRot);
+              }
             }}
           >
             Place
-          </button>
-          <button
-            type="button"
-            className={tool === "select" ? "btn active" : "btn"}
-            onClick={() => {
+              </button>
+              <button
+                type="button"
+                className={tool === "select" ? "btn active" : "btn"}
+                onClick={() => {
               setTool("select");
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
               setPlaceArmedDefId(null);
               setWireDraftPath([]);
             }}
-          >
-            Select
-          </button>
-          <button
-            type="button"
-            className={tool === "wire" ? "btn active" : "btn"}
-            onClick={() => {
+              >
+                Select
+              </button>
+              <button
+                type="button"
+                className={tool === "wire" ? "btn active" : "btn"}
+                onClick={() => {
               setTool("wire");
               setMoveArmedPartId(null);
               setMoveArmedRot(null);
               setPlaceArmedDefId(null);
             }}
-          >
-            Wire
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              const next = nextRot(activeRot);
-              setActiveRot(next);
-              if (placeArmedDefId) {
-                setPlaceArmedRot(next);
-              }
-            }}
-          >
-            Rotate Place: {placeArmedDefId ? placeArmedRot : activeRot}
-          </button>
-          <button type="button" className="btn" onClick={() => armPlacement(partDefs[0].id)}>
-            Arm R
-          </button>
-          <button type="button" className="btn" onClick={() => armPlacement(partDefs[1].id)}>
-            Arm C
-          </button>
-          <button type="button" className="btn" onClick={() => armPlacement(partDefs[2].id)}>
-            Arm L
-          </button>
-          <button type="button" className="btn danger" onClick={handleDeleteSelected}>
-            Delete Selected
-          </button>
-          <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
-            Undo
-          </button>
-          <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
-            Redo
-          </button>
-        </div>
-        <div className="toolbar-row">
-          <label className="net-label" htmlFor="net-select">
-            Net:
-          </label>
-          <select
-            id="net-select"
-            className="net-select"
-            value={selectedNetId}
-            onChange={(event) => {
-              setSelectedNetId(event.target.value);
-            }}
-          >
-            {nets.map((net) => (
-              <option key={net.id} value={net.id}>
-                {net.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            className="net-input"
-            value={netNameDraft}
-            placeholder="Net name"
-            onChange={(event) => setNetNameDraft(event.target.value)}
-          />
-          <button type="button" className="btn" onClick={() => void addNet()}>
-            Add Net
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void renameSelectedNet()}
-            disabled={!selectedNetId || netNameDraft.trim().length === 0}
-          >
-            Rename Net
-          </button>
-          <select
-            className="net-select"
-            value={pinNameDraft}
-            onChange={(event) => setPinNameDraft(event.target.value)}
-            disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
-          >
-            {(selectedPartDef?.pins ?? []).map((pin) => (
-              <option key={pin.name} value={pin.name}>
-                Pin {pin.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void assignSelectedPinToNet()}
-            disabled={!selectedPart || !selectedNetId || !pinNameDraft}
-          >
-            Assign Pin To Net
-          </button>
-          <button type="button" className="btn" onClick={() => void commitWireDraft()}>
-            Commit Wire
-          </button>
-          <button type="button" className="btn" onClick={() => setWireDraftPath([])}>
-            Cancel Wire
-          </button>
-          <button type="button" className="btn" onClick={() => void runDrc()}>
-            Run DRC
-          </button>
-          <button type="button" className="btn" onClick={exportProjectJson}>
-            Export JSON
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              importInputRef.current?.click();
-            }}
-          >
-            Import JSON
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden-file-input"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                void importProjectJson(file);
-              }
-              event.currentTarget.value = "";
-            }}
-          />
+              >
+                Wire
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  const next = nextRot(activeRot);
+                  setActiveRot(next);
+                  if (placeArmedDefId) {
+                    setPlaceArmedRot(next);
+                  }
+                }}
+              >
+                Rotate Place: {placeArmedDefId ? placeArmedRot : activeRot}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  const target = partDefs.find((def) => def.id === builtInPartIds.resistor) ?? partDefs[0];
+                  if (target) armPlacement(target.id);
+                }}
+              >
+                Arm R
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  const target = partDefs.find((def) => def.id === builtInPartIds.capacitor);
+                  if (target) armPlacement(target.id);
+                }}
+              >
+                Arm C
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  const target = partDefs.find((def) => def.id === builtInPartIds.inductor);
+                  if (target) armPlacement(target.id);
+                }}
+              >
+                Arm L
+              </button>
+              <select
+                className="net-select"
+                value={placeDefId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setPlaceDefId(id);
+                  if (tool === "place") {
+                    setPlaceArmedDefId(id);
+                  }
+                }}
+              >
+                {partDefs.map((def) => (
+                  <option key={def.id} value={def.id}>
+                    Place: {def.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn danger" onClick={handleDeleteSelected}>
+                Delete Selected
+              </button>
+              <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
+                Undo
+              </button>
+              <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
+                Redo
+              </button>
+            </div>
+          </section>
+
+          <section className="tool-card">
+            <h2 className="card-title">配線とネット</h2>
+            <div className="toolbar-row">
+              <label className="net-label" htmlFor="net-select">
+                Net
+              </label>
+              <select
+                id="net-select"
+                className="net-select"
+                value={selectedNetId}
+                onChange={(event) => {
+                  setSelectedNetId(event.target.value);
+                }}
+              >
+                {nets.map((net) => (
+                  <option key={net.id} value={net.id}>
+                    {net.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                className="net-input"
+                value={netNameDraft}
+                placeholder="Net name"
+                onChange={(event) => setNetNameDraft(event.target.value)}
+              />
+              <button type="button" className="btn" onClick={() => void addNet()}>
+                Add Net
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void renameSelectedNet()}
+                disabled={!selectedNetId || netNameDraft.trim().length === 0}
+              >
+                Rename Net
+              </button>
+            </div>
+            <div className="toolbar-row">
+              <select
+                className="net-select"
+                value={pinNameDraft}
+                onChange={(event) => setPinNameDraft(event.target.value)}
+                disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
+              >
+                {(selectedPartDef?.pins ?? []).map((pin) => (
+                  <option key={pin.name} value={pin.name}>
+                    Pin {pin.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void assignSelectedPinToNet()}
+                disabled={!selectedPart || !selectedNetId || !pinNameDraft}
+              >
+                Assign Pin To Net
+              </button>
+              <button type="button" className="btn" onClick={() => void commitWireDraft()}>
+                Commit Wire
+              </button>
+              <button type="button" className="btn" onClick={() => setWireDraftPath([])}>
+                Cancel Wire
+              </button>
+              <button type="button" className="btn" onClick={() => void runDrc()}>
+                Run DRC
+              </button>
+              <button type="button" className="btn" onClick={exportProjectJson}>
+                Export JSON
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  importInputRef.current?.click();
+                }}
+              >
+                Import JSON
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importProjectJson(file);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+          </section>
+
+          <section className="tool-card part-editor-card">
+            <h2 className="card-title">Part Editor</h2>
+            <div className="toolbar-row">
+              <select
+                className="net-select"
+                value={editorDefId}
+                onChange={(event) => setEditorDefId(event.target.value)}
+              >
+                {partDefs.map((def) => (
+                  <option key={def.id} value={def.id}>
+                    {def.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                className="net-input"
+                value={editorDefName}
+                placeholder="PartDef name"
+                onChange={(event) => setEditorDefName(event.target.value)}
+              />
+              <button type="button" className="btn" onClick={renameEditorPartDef}>
+                Rename Part
+              </button>
+              <button type="button" className="btn" onClick={createEditorPartDef}>
+                New Part
+              </button>
+              <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
+                Delete Part
+              </button>
+            </div>
+            <div className="editor-grid">
+              <div className="editor-block">
+                <h3 className="editor-title">Pin設定</h3>
+                <div className="toolbar-row">
+                  <input
+                    type="text"
+                    className="coord-input"
+                    value={editorPinName}
+                    placeholder="Pin name"
+                    onChange={(event) => setEditorPinName(event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="coord-input"
+                    value={editorPinX}
+                    onChange={(event) => setEditorPinX(event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="coord-input"
+                    value={editorPinY}
+                    onChange={(event) => setEditorPinY(event.target.value)}
+                  />
+                  <button type="button" className="btn" onClick={addEditorPin}>
+                    Add Pin
+                  </button>
+                </div>
+                <div className="chip-row">
+                  {(editorDef?.pins ?? []).map((pin) => (
+                    <button
+                      key={pin.name}
+                      type="button"
+                      className="btn chip-btn"
+                      onClick={() => removeEditorPin(pin.name)}
+                    >
+                      {pin.name} ({pin.pos.x},{pin.pos.y}) x
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="editor-block">
+                <h3 className="editor-title">Occupied設定</h3>
+                <div className="toolbar-row">
+                  <input
+                    type="number"
+                    className="coord-input"
+                    value={editorOccX}
+                    onChange={(event) => setEditorOccX(event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="coord-input"
+                    value={editorOccY}
+                    onChange={(event) => setEditorOccY(event.target.value)}
+                  />
+                  <button type="button" className="btn" onClick={addEditorOccupied}>
+                    Add Occ
+                  </button>
+                </div>
+                <div className="chip-row">
+                  {(editorDef?.occupied ?? []).map((pt) => (
+                    <button
+                      key={`${pt.x}:${pt.y}`}
+                      type="button"
+                      className="btn chip-btn"
+                      onClick={() => removeEditorOccupied(pt.x, pt.y)}
+                    >
+                      ({pt.x},{pt.y}) x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
         <div className="toolbar-row">
           <span>Core Bridge: {coreBridgeMode === "unknown" ? "initializing" : "ready"}</span>
@@ -1016,22 +1380,53 @@ export function App(): JSX.Element {
             ))}
           </div>
         ) : null}
-      </header>
-      <BoardCanvas
-        board={board}
-        parts={parts}
-        partDefs={partDefs}
-        wires={wires}
-        selectedWireId={selectedWireId}
-        wireDraftPath={wireDraftPath}
-        selectedPartId={selectedPartId}
-        onGridClick={handleGridClick}
-        onHoverGridChange={setHoverGrid}
-        movePreviewPart={movePreviewPart}
-        movePreviewValid={movePreviewValid}
-        placePreviewPart={placePreviewPart}
-        placePreviewValid={placePreviewValid}
-      />
+        </header>
+      </aside>
+      <section className="main-pane">
+        <section className="workspace-pane">
+          <BoardCanvas
+            board={board}
+            parts={parts}
+            partDefs={partDefs}
+            wires={wires}
+            selectedWireId={selectedWireId}
+            wireDraftPath={wireDraftPath}
+            selectedPartId={selectedPartId}
+            onGridClick={handleGridClick}
+            onHoverGridChange={setHoverGrid}
+            movePreviewPart={movePreviewPart}
+            movePreviewValid={movePreviewValid}
+            placePreviewPart={placePreviewPart}
+            placePreviewValid={placePreviewValid}
+          />
+        </section>
+        <section className="library-pane">
+          <header className="library-header">
+            <h2>部品ライブラリ</h2>
+            <span>{partDefs.length} items</span>
+          </header>
+          <div className="library-list">
+            {partDefs.map((def) => {
+              const armed = placeArmedDefId === def.id && tool === "place";
+              return (
+                <button
+                  key={def.id}
+                  type="button"
+                  className={armed ? "part-card armed" : "part-card"}
+                  onClick={() => armPlacement(def.id)}
+                >
+                  <div className="part-thumb">{partLabel(def.name)}</div>
+                  <div className="part-meta">
+                    <strong>{def.name}</strong>
+                    <span>Pins: {def.pins.length}</span>
+                    <span>Occupied: {def.occupied.length}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </section>
     </main>
   );
 }

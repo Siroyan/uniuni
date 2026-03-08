@@ -307,6 +307,12 @@ function partDefsToCore(partDefs: PartDef[]): CorePartDef[] {
   }));
 }
 
+export function replacePartDefsInStateJson(stateJson: string, partDefs: PartDef[]): string {
+  const state = JSON.parse(stateJson) as CoreProjectState;
+  state.part_defs = partDefsToCore(partDefs);
+  return JSON.stringify(state);
+}
+
 export function newUuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();

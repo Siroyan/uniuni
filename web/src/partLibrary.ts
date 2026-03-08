@@ -1,12 +1,13 @@
+import type { PartDef } from "./types";
+
 const DB_NAME = "uniuni-db";
 const DB_VERSION = 2;
-const STORE_NAME = "project_snapshots";
-const SNAPSHOT_KEY = "active_project";
+const STORE_NAME = "part_library";
+const KEY = "default_library";
 
-export type PersistedSnapshot = {
+type LibrarySnapshot = {
   schemaVersion: number;
-  coreStateJson: string;
-  selectedNetId: string | null;
+  partDefs: PartDef[];
 };
 
 function openDb(version = DB_VERSION): Promise<IDBDatabase> {
@@ -33,29 +34,31 @@ async function openDbEnsuringStore(): Promise<IDBDatabase> {
   return openDb(nextVersion);
 }
 
-export async function loadSnapshot(): Promise<PersistedSnapshot | null> {
+export async function loadPartLibrary(): Promise<PartDef[] | null> {
   const db = await openDbEnsuringStore();
   try {
-    return await new Promise<PersistedSnapshot | null>((resolve, reject) => {
+    return await new Promise<PartDef[] | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(SNAPSHOT_KEY);
-      req.onsuccess = () => resolve((req.result as PersistedSnapshot | undefined) ?? null);
-      req.onerror = () => reject(req.error ?? new Error("failed to read snapshot"));
+      const req = tx.objectStore(STORE_NAME).get(KEY);
+      req.onsuccess = () => {
+        const snapshot = req.result as LibrarySnapshot | undefined;
+        resolve(snapshot?.partDefs ?? null);
+      };
+      req.onerror = () => reject(req.error ?? new Error("failed to load part library"));
     });
   } finally {
     db.close();
   }
 }
 
-export async function saveSnapshot(snapshot: PersistedSnapshot): Promise<void> {
+export async function savePartLibrary(partDefs: PartDef[]): Promise<void> {
   const db = await openDbEnsuringStore();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("failed to save snapshot"));
-      tx.objectStore(STORE_NAME).put(snapshot, SNAPSHOT_KEY);
+      tx.onerror = () => reject(tx.error ?? new Error("failed to save part library"));
+      tx.objectStore(STORE_NAME).put({ schemaVersion: 1, partDefs } satisfies LibrarySnapshot, KEY);
     });
   } finally {
     db.close();
