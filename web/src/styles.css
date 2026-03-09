@@ -334,6 +334,15 @@ body,
   color: #bfd7f3;
 }
 
+.editor-notice {
+  border: 1px solid #3b5578;
+  background: rgba(20, 33, 52, 0.7);
+  color: #c7dcf5;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+
 .editor-table {
   width: 100%;
   border-collapse: collapse;

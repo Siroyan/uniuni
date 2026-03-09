@@ -142,6 +142,7 @@ export function App(): JSX.Element {
   const [editorOccY, setEditorOccY] = useState<string>("0");
   const [placeDefId, setPlaceDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorPreviewZoom, setEditorPreviewZoom] = useState<number>(1);
+  const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const [wireDraftPath, setWireDraftPath] = useState<GridPt[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
@@ -509,10 +510,19 @@ export function App(): JSX.Element {
 
   const renameEditorPartDef = (): void => {
     const name = editorDefName.trim();
-    if (!editorDefId || !name) return;
+    if (!editorDefId) return;
+    if (!name) {
+      setEditorNotice("部品名を入力してください。");
+      return;
+    }
+    if (partDefs.some((def) => def.id !== editorDefId && def.name === name)) {
+      setEditorNotice("同名の部品が既に存在します。");
+      return;
+    }
     setPartDefs((prev) =>
       prev.map((def) => (def.id === editorDefId ? { ...def, name } : def))
     );
+    setEditorNotice("部品名を更新しました。");
   };
 
   const addEditorPin = (): void => {
@@ -520,11 +530,25 @@ export function App(): JSX.Element {
     const name = editorPinName.trim();
     const x = Number(editorPinX);
     const y = Number(editorPinY);
-    if (!name || Number.isNaN(x) || Number.isNaN(y)) return;
+    if (!name) {
+      setEditorNotice("Pin名を入力してください。");
+      return;
+    }
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
+      setEditorNotice("Pin座標は整数で入力してください。");
+      return;
+    }
+    if (Math.abs(x) > 999 || Math.abs(y) > 999) {
+      setEditorNotice("Pin座標は -999〜999 の範囲で入力してください。");
+      return;
+    }
+    if (editorDef?.pins.some((pin) => pin.name === name)) {
+      setEditorNotice("同名のPinが既に存在します。");
+      return;
+    }
     setPartDefs((prev) =>
       prev.map((def) => {
         if (def.id !== editorDefId) return def;
-        if (def.pins.some((pin) => pin.name === name)) return def;
         return {
           ...def,
           pins: [...def.pins, { name, pos: { x, y } }]
@@ -532,10 +556,15 @@ export function App(): JSX.Element {
       })
     );
     setEditorPinName("");
+    setEditorNotice("Pinを追加しました。");
   };
 
   const removeEditorPin = (pinName: string): void => {
     if (!editorDefId) return;
+    if ((editorDef?.pins.length ?? 0) <= 1) {
+      setEditorNotice("Pinは最低1つ必要です。");
+      return;
+    }
     setPartDefs((prev) =>
       prev.map((def) =>
         def.id === editorDefId
@@ -543,29 +572,44 @@ export function App(): JSX.Element {
           : def
       )
     );
+    setEditorNotice(`Pin ${pinName} を削除しました。`);
   };
 
   const addEditorOccupied = (): void => {
     if (!editorDefId) return;
     const x = Number(editorOccX);
     const y = Number(editorOccY);
-    if (Number.isNaN(x) || Number.isNaN(y)) return;
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
+      setEditorNotice("Occupied座標は整数で入力してください。");
+      return;
+    }
+    if (Math.abs(x) > 999 || Math.abs(y) > 999) {
+      setEditorNotice("Occupied座標は -999〜999 の範囲で入力してください。");
+      return;
+    }
     const key = `${x}:${y}`;
+    if (editorDef?.occupied.some((pt) => `${pt.x}:${pt.y}` === key)) {
+      setEditorNotice("同じOccupied座標が既に存在します。");
+      return;
+    }
     setPartDefs((prev) =>
       prev.map((def) => {
         if (def.id !== editorDefId) return def;
-        const exists = def.occupied.some((pt) => `${pt.x}:${pt.y}` === key);
-        if (exists) return def;
         return {
           ...def,
           occupied: [...def.occupied, { x, y }]
         };
       })
     );
+    setEditorNotice("Occupied座標を追加しました。");
   };
 
   const removeEditorOccupied = (x: number, y: number): void => {
     if (!editorDefId) return;
+    if ((editorDef?.occupied.length ?? 0) <= 1) {
+      setEditorNotice("Occupiedは最低1セル必要です。");
+      return;
+    }
     setPartDefs((prev) =>
       prev.map((def) =>
         def.id === editorDefId
@@ -576,6 +620,7 @@ export function App(): JSX.Element {
           : def
       )
     );
+    setEditorNotice(`Occupied (${x},${y}) を削除しました。`);
   };
 
   const setEditorPartImage = (dataUrl: string): void => {
@@ -624,16 +669,17 @@ export function App(): JSX.Element {
     setEditorPinY("0");
     setEditorOccX("0");
     setEditorOccY("0");
+    setEditorNotice("新しい部品を作成しました。");
   };
 
   const deleteEditorPartDef = (): void => {
     if (!editorDefId) return;
     if (parts.some((part) => part.defId === editorDefId)) {
-      setCoreError("cannot delete: part definition is used by placed parts");
+      setEditorNotice("配置済み部品で使用中のため削除できません。");
       return;
     }
     if (partDefs.length <= 1) {
-      setCoreError("cannot delete: at least one part definition is required");
+      setEditorNotice("部品定義は最低1件必要です。");
       return;
     }
     setPartDefs((prev) => prev.filter((def) => def.id !== editorDefId));
@@ -645,7 +691,7 @@ export function App(): JSX.Element {
       const next = partDefs.find((def) => def.id !== editorDefId);
       if (next) setPlaceDefId(next.id);
     }
-    setCoreError(null);
+    setEditorNotice("部品を削除しました。");
   };
 
   const runDrc = async (): Promise<void> => {
@@ -1495,6 +1541,7 @@ export function App(): JSX.Element {
                 }}
               />
             </div>
+            {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
             <div className="editor-grid">
               <div className="editor-block">
                 <h3 className="editor-title">Pin設定</h3>
