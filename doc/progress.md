@@ -124,6 +124,21 @@
   - 既存部品（デフォルト/オリジナル問わず）の選択中・ホバー中に `R` を押すと、その部品を回転
   - 配置アーム中の `R` は配置対象を回転
   - それ以外の `R` は抵抗配置開始
+- PartDef 画像対応を追加。
+  - Part Editor で `Set Image` / `Clear Image` が可能
+  - 画像は PartDef の `imageDataUrl` として保存
+  - 下部部品ライブラリカードで画像サムネイル表示
+- Part Editor に視覚プレビューを追加。
+  - occupied セルと pin をグリッド上で可視化
+  - origin / occupied / pin の凡例表示を追加
+- Part Editor プレビューを固定領域 + Zoom方式へ変更。
+  - プレビュー領域サイズを固定
+  - `Fit / + / -` で倍率調整
+  - pin/occupied変更時は自動で Fit 倍率へ戻して全体表示
+- Part Editor の Pin/Occ 一覧を表形式に変更。
+  - Pin: `Pin名 | X座標 | Y座標`
+  - Occ: `X座標 | Y座標`
+  - 各行の右端にゴミ箱アイコンを配置し、削除可能にした
 
 検証:
 - `npm run build -w web` 成功。

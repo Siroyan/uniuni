@@ -141,6 +141,7 @@ export function App(): JSX.Element {
   const [editorOccX, setEditorOccX] = useState<string>("0");
   const [editorOccY, setEditorOccY] = useState<string>("0");
   const [placeDefId, setPlaceDefId] = useState<string>(defaultPartDefs[0].id);
+  const [editorPreviewZoom, setEditorPreviewZoom] = useState<number>(1);
   const [wireDraftPath, setWireDraftPath] = useState<GridPt[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
@@ -159,6 +160,7 @@ export function App(): JSX.Element {
   const selectedPartIdRef = useRef<string | null>(null);
   const selectedWireIdRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const partImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
   const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
@@ -576,6 +578,34 @@ export function App(): JSX.Element {
     );
   };
 
+  const setEditorPartImage = (dataUrl: string): void => {
+    if (!editorDefId) return;
+    setPartDefs((prev) =>
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl } : def))
+    );
+  };
+
+  const clearEditorPartImage = (): void => {
+    if (!editorDefId) return;
+    setPartDefs((prev) =>
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null } : def))
+    );
+  };
+
+  const onPartImagePicked = (file: File): void => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        setEditorPartImage(result);
+      } else {
+        setCoreError("image load failed");
+      }
+    };
+    reader.onerror = () => setCoreError("image load failed");
+    reader.readAsDataURL(file);
+  };
+
   const createEditorPartDef = (): void => {
     const baseName = editorDefName.trim() || "New Part";
     const nextId = newUuid();
@@ -583,7 +613,8 @@ export function App(): JSX.Element {
       id: nextId,
       name: baseName,
       pins: [{ name: "1", pos: { x: 0, y: 0 } }],
-      occupied: [{ x: 0, y: 0 }]
+      occupied: [{ x: 0, y: 0 }],
+      imageDataUrl: null
     };
     setPartDefs((prev) => [...prev, nextDef]);
     setEditorDefId(nextId);
@@ -887,6 +918,47 @@ export function App(): JSX.Element {
     if (!placePreviewPart) return true;
     return canPlacePart(board, parts, defsById, placePreviewPart);
   }, [defsById, parts, placePreviewPart]);
+
+  const editorPreview = useMemo(() => {
+    if (!editorDef) return null;
+    const points: GridPt[] = [{ x: 0, y: 0 }];
+    for (const pin of editorDef.pins) {
+      points.push(pin.pos);
+    }
+    for (const occ of editorDef.occupied) {
+      points.push(occ);
+    }
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const fitSpan = Math.max(width, height) + 2;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    return { minX, maxX, minY, maxY, width, height, fitSpan, centerX, centerY };
+  }, [editorDef]);
+
+  const editorPreviewFingerprint = useMemo(() => {
+    if (!editorDef) return "";
+    const pins = editorDef.pins
+      .map((p) => `${p.name}:${p.pos.x},${p.pos.y}`)
+      .sort()
+      .join("|");
+    const occupied = editorDef.occupied
+      .map((p) => `${p.x},${p.y}`)
+      .sort()
+      .join("|");
+    return `${editorDef.id}:${pins}:${occupied}`;
+  }, [editorDef]);
+
+  useEffect(() => {
+    if (!editorPreviewFingerprint) return;
+    setEditorPreviewZoom(1);
+  }, [editorPreviewFingerprint]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1261,6 +1333,114 @@ export function App(): JSX.Element {
 
           <section className="tool-card part-editor-card">
             <h2 className="card-title">Part Editor</h2>
+            {editorDef && editorPreview ? (
+              <div className="editor-preview-wrap">
+                <div className="editor-preview-header">
+                  <div className="editor-preview-title">Preview</div>
+                  <div className="preview-zoom-tools">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setEditorPreviewZoom(1)}
+                    >
+                      Fit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        setEditorPreviewZoom((prev) => Math.max(0.5, Number((prev / 1.25).toFixed(2))))
+                      }
+                    >
+                      -
+                    </button>
+                    <span className="zoom-label">{editorPreviewZoom.toFixed(2)}x</span>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        setEditorPreviewZoom((prev) => Math.min(8, Number((prev * 1.25).toFixed(2))))
+                      }
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="editor-preview-canvas">
+                  {(() => {
+                    const span = editorPreview.fitSpan / editorPreviewZoom;
+                    const viewMinX = editorPreview.centerX - span / 2;
+                    const viewMinY = editorPreview.centerY - span / 2;
+                    const gridStartX = Math.floor(viewMinX) - 1;
+                    const gridEndX = Math.ceil(viewMinX + span) + 1;
+                    const gridStartY = Math.floor(viewMinY) - 1;
+                    const gridEndY = Math.ceil(viewMinY + span) + 1;
+                    const gridXs = Array.from({ length: gridEndX - gridStartX + 1 }, (_, i) => gridStartX + i);
+                    const gridYs = Array.from({ length: gridEndY - gridStartY + 1 }, (_, i) => gridStartY + i);
+                    return (
+                      <svg
+                        viewBox={`${viewMinX - 0.5} ${viewMinY - 0.5} ${span} ${span}`}
+                        className="editor-preview-svg"
+                      >
+                        {gridXs.map((x) => (
+                          <line
+                            key={`gx-${x}`}
+                            x1={x}
+                            y1={gridStartY}
+                            x2={x}
+                            y2={gridEndY}
+                            className="preview-grid-line"
+                          />
+                        ))}
+                        {gridYs.map((y) => (
+                          <line
+                            key={`gy-${y}`}
+                            x1={gridStartX}
+                            y1={y}
+                            x2={gridEndX}
+                            y2={y}
+                            className="preview-grid-line"
+                          />
+                        ))}
+                        {editorDef.occupied.map((pt) => (
+                          <rect
+                            key={`occ-${pt.x}-${pt.y}`}
+                            x={pt.x - 0.5}
+                            y={pt.y - 0.5}
+                            width={1}
+                            height={1}
+                            className="preview-occ-cell"
+                          />
+                        ))}
+                        <rect
+                          x={-0.5}
+                          y={-0.5}
+                          width={1}
+                          height={1}
+                          className="preview-origin-cell"
+                        />
+                        {editorDef.pins.map((pin) => (
+                          <circle
+                            key={`pin-${pin.name}`}
+                            cx={pin.pos.x}
+                            cy={pin.pos.y}
+                            r={0.22}
+                            className="preview-pin-dot"
+                          >
+                            <title>{`Pin ${pin.name} (${pin.pos.x}, ${pin.pos.y})`}</title>
+                          </circle>
+                        ))}
+                      </svg>
+                    );
+                  })()}
+                </div>
+                <div className="editor-preview-legend">
+                  <span><i className="legend-box origin" /> Origin</span>
+                  <span><i className="legend-box occupied" /> Occupied</span>
+                  <span><i className="legend-pin" /> Pin</span>
+                </div>
+              </div>
+            ) : null}
             <div className="toolbar-row">
               <select
                 className="net-select"
@@ -1289,6 +1469,31 @@ export function App(): JSX.Element {
               <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
                 Delete Part
               </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  partImageInputRef.current?.click();
+                }}
+              >
+                Set Image
+              </button>
+              <button type="button" className="btn" onClick={clearEditorPartImage}>
+                Clear Image
+              </button>
+              <input
+                ref={partImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    onPartImagePicked(file);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
             </div>
             <div className="editor-grid">
               <div className="editor-block">
@@ -1317,18 +1522,38 @@ export function App(): JSX.Element {
                     Add Pin
                   </button>
                 </div>
-                <div className="chip-row">
-                  {(editorDef?.pins ?? []).map((pin) => (
-                    <button
-                      key={pin.name}
-                      type="button"
-                      className="btn chip-btn"
-                      onClick={() => removeEditorPin(pin.name)}
-                    >
-                      {pin.name} ({pin.pos.x},{pin.pos.y}) x
-                    </button>
-                  ))}
-                </div>
+                <table className="editor-table">
+                  <thead>
+                    <tr>
+                      <th>Pin名</th>
+                      <th>X座標</th>
+                      <th>Y座標</th>
+                      <th className="action-col" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(editorDef?.pins ?? []).map((pin) => (
+                      <tr key={pin.name}>
+                        <td>{pin.name}</td>
+                        <td>{pin.pos.x}</td>
+                        <td>{pin.pos.y}</td>
+                        <td className="action-col">
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            onClick={() => removeEditorPin(pin.name)}
+                            aria-label={`remove pin ${pin.name}`}
+                            title="Delete"
+                          >
+                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               <div className="editor-block">
                 <h3 className="editor-title">Occupied設定</h3>
@@ -1349,18 +1574,36 @@ export function App(): JSX.Element {
                     Add Occ
                   </button>
                 </div>
-                <div className="chip-row">
-                  {(editorDef?.occupied ?? []).map((pt) => (
-                    <button
-                      key={`${pt.x}:${pt.y}`}
-                      type="button"
-                      className="btn chip-btn"
-                      onClick={() => removeEditorOccupied(pt.x, pt.y)}
-                    >
-                      ({pt.x},{pt.y}) x
-                    </button>
-                  ))}
-                </div>
+                <table className="editor-table">
+                  <thead>
+                    <tr>
+                      <th>X座標</th>
+                      <th>Y座標</th>
+                      <th className="action-col" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(editorDef?.occupied ?? []).map((pt) => (
+                      <tr key={`${pt.x}:${pt.y}`}>
+                        <td>{pt.x}</td>
+                        <td>{pt.y}</td>
+                        <td className="action-col">
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            onClick={() => removeEditorOccupied(pt.x, pt.y)}
+                            aria-label={`remove occupied ${pt.x},${pt.y}`}
+                            title="Delete"
+                          >
+                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
@@ -1415,7 +1658,13 @@ export function App(): JSX.Element {
                   className={armed ? "part-card armed" : "part-card"}
                   onClick={() => armPlacement(def.id)}
                 >
-                  <div className="part-thumb">{partLabel(def.name)}</div>
+                  <div className="part-thumb">
+                    {def.imageDataUrl ? (
+                      <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" />
+                    ) : (
+                      partLabel(def.name)
+                    )}
+                  </div>
                   <div className="part-meta">
                     <strong>{def.name}</strong>
                     <span>Pins: {def.pins.length}</span>
