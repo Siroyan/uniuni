@@ -178,6 +178,9 @@ export function App(): JSX.Element {
 
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
   const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
+  const imageScaleSlider = Math.min(4, Math.max(0.1, Number(editorImageScale) || 1));
+  const imageOffsetXSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetX) || 0));
+  const imageOffsetYSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetY) || 0));
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const selectedPartDef = selectedPart ? defsById.get(selectedPart.defId) ?? null : null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
@@ -1662,71 +1665,6 @@ export function App(): JSX.Element {
               <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
                 Delete Part
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  partImageInputRef.current?.click();
-                }}
-              >
-                Set Image
-              </button>
-              <button type="button" className="btn" onClick={clearEditorPartImage}>
-                Clear Image
-              </button>
-              <input
-                type="number"
-                step="0.1"
-                className="coord-input"
-                value={editorImageScale}
-                onChange={(event) => setEditorImageScale(event.target.value)}
-                title="Image scale"
-              />
-              <input
-                type="number"
-                step="0.1"
-                className="coord-input"
-                value={editorImageOffsetX}
-                onChange={(event) => setEditorImageOffsetX(event.target.value)}
-                title="Image offset X"
-              />
-              <input
-                type="number"
-                step="0.1"
-                className="coord-input"
-                value={editorImageOffsetY}
-                onChange={(event) => setEditorImageOffsetY(event.target.value)}
-                title="Image offset Y"
-              />
-              <button type="button" className="btn" onClick={applyEditorImageTransform}>
-                Apply Image Transform
-              </button>
-              <input
-                ref={partImageInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden-file-input"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    onPartImagePicked(file);
-                  }
-                  event.currentTarget.value = "";
-                }}
-              />
-              <input
-                ref={partLibraryInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden-file-input"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    void importPartLibraryJson(file);
-                  }
-                  event.currentTarget.value = "";
-                }}
-              />
             </div>
             {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
             <div className="editor-grid">
@@ -1838,6 +1776,116 @@ export function App(): JSX.Element {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="editor-block">
+                <h3 className="editor-title">画像設定</h3>
+                <div className="toolbar-row">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      partImageInputRef.current?.click();
+                    }}
+                  >
+                    Set Image
+                  </button>
+                  <button type="button" className="btn" onClick={clearEditorPartImage}>
+                    Clear Image
+                  </button>
+                  <span className="net-label">
+                    {editorDef?.imageDataUrl ? "画像: 設定済み" : "画像: 未設定"}
+                  </span>
+                </div>
+                <div className="image-control-row">
+                  <label className="net-label" htmlFor="editor-image-scale">
+                    Scale
+                  </label>
+                  <input
+                    id="editor-image-scale"
+                    type="range"
+                    min="0.1"
+                    max="4"
+                    step="0.05"
+                    className="image-range"
+                    value={imageScaleSlider}
+                    onChange={(event) => setEditorImageScale(event.target.value)}
+                    title="Image scale"
+                  />
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="coord-input"
+                    value={editorImageScale}
+                    onChange={(event) => setEditorImageScale(event.target.value)}
+                    title="Image scale"
+                  />
+                </div>
+                <div className="image-control-row">
+                  <label className="net-label" htmlFor="editor-image-offset-x">
+                    Offset X
+                  </label>
+                  <input
+                    id="editor-image-offset-x"
+                    type="range"
+                    min="-10"
+                    max="10"
+                    step="0.1"
+                    className="image-range"
+                    value={imageOffsetXSlider}
+                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                    title="Image offset X"
+                  />
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="coord-input"
+                    value={editorImageOffsetX}
+                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                    title="Image offset X"
+                  />
+                </div>
+                <div className="image-control-row">
+                  <label className="net-label" htmlFor="editor-image-offset-y">
+                    Offset Y
+                  </label>
+                  <input
+                    id="editor-image-offset-y"
+                    type="range"
+                    min="-10"
+                    max="10"
+                    step="0.1"
+                    className="image-range"
+                    value={imageOffsetYSlider}
+                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                    title="Image offset Y"
+                  />
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="coord-input"
+                    value={editorImageOffsetY}
+                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                    title="Image offset Y"
+                  />
+                </div>
+                <div className="toolbar-row">
+                  <button type="button" className="btn" onClick={applyEditorImageTransform}>
+                    Apply
+                  </button>
+                </div>
+                <input
+                  ref={partImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden-file-input"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      onPartImagePicked(file);
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
               </div>
             </div>
             <div className="toolbar-row">

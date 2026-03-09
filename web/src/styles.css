@@ -434,6 +434,18 @@ body,
   font-size: 12px;
 }
 
+.image-control-row {
+  display: grid;
+  grid-template-columns: 64px minmax(120px, 1fr) 78px;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-range {
+  width: 100%;
+  accent-color: #6fb4ff;
+}
+
 .btn {
   border: 1px solid #456082;
   background: linear-gradient(180deg, #16263d 0%, #112033 100%);
