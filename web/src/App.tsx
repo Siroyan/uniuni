@@ -162,6 +162,7 @@ export function App(): JSX.Element {
   const selectedWireIdRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const partImageInputRef = useRef<HTMLInputElement | null>(null);
+  const partLibraryInputRef = useRef<HTMLInputElement | null>(null);
 
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
   const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
@@ -670,6 +671,76 @@ export function App(): JSX.Element {
     setEditorOccX("0");
     setEditorOccY("0");
     setEditorNotice("新しい部品を作成しました。");
+  };
+
+  const exportPartLibraryJson = (): void => {
+    const blob = new Blob([JSON.stringify({ schemaVersion: 1, partDefs }, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/:/g, "-");
+    a.href = url;
+    a.download = `uniuni-part-library-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setEditorNotice("部品ライブラリをエクスポートしました。");
+  };
+
+  const importPartLibraryJson = async (file: File): Promise<void> => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { partDefs?: unknown };
+      if (!parsed.partDefs || !Array.isArray(parsed.partDefs)) {
+        throw new Error("invalid library json");
+      }
+      const normalized = parsed.partDefs
+        .map((raw) => {
+          const def = raw as Partial<PartDef>;
+          if (typeof def.id !== "string" || typeof def.name !== "string") return null;
+          const pins = Array.isArray(def.pins)
+            ? def.pins
+                .filter((p): p is { name: string; pos: GridPt } => {
+                  const pin = p as { name?: unknown; pos?: { x?: unknown; y?: unknown } };
+                  return (
+                    typeof pin.name === "string" &&
+                    typeof pin.pos?.x === "number" &&
+                    typeof pin.pos?.y === "number"
+                  );
+                })
+                .map((pin) => ({ name: pin.name, pos: { x: pin.pos.x, y: pin.pos.y } }))
+            : [];
+          const occupied = Array.isArray(def.occupied)
+            ? def.occupied
+                .filter((pt): pt is GridPt => {
+                  const cell = pt as { x?: unknown; y?: unknown };
+                  return typeof cell.x === "number" && typeof cell.y === "number";
+                })
+                .map((pt) => ({ x: pt.x, y: pt.y }))
+            : [];
+          if (pins.length === 0 || occupied.length === 0) return null;
+          return {
+            id: def.id,
+            name: def.name,
+            pins,
+            occupied,
+            imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null
+          } as PartDef;
+        })
+        .filter((def): def is PartDef => Boolean(def));
+      if (normalized.length === 0) {
+        throw new Error("library has no valid part definitions");
+      }
+      setPartDefs(normalized);
+      setEditorDefId(normalized[0].id);
+      setEditorDefName(normalized[0].name);
+      setEditorNotice("部品ライブラリをインポートしました。");
+      setCoreError(null);
+    } catch (err) {
+      setEditorNotice(err instanceof Error ? err.message : "library import failed");
+    }
   };
 
   const deleteEditorPartDef = (): void => {
@@ -1527,6 +1598,18 @@ export function App(): JSX.Element {
               <button type="button" className="btn" onClick={clearEditorPartImage}>
                 Clear Image
               </button>
+              <button type="button" className="btn" onClick={exportPartLibraryJson}>
+                Export Library
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  partLibraryInputRef.current?.click();
+                }}
+              >
+                Import Library
+              </button>
               <input
                 ref={partImageInputRef}
                 type="file"
@@ -1536,6 +1619,19 @@ export function App(): JSX.Element {
                   const file = event.target.files?.[0];
                   if (file) {
                     onPartImagePicked(file);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+              <input
+                ref={partLibraryInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importPartLibraryJson(file);
                   }
                   event.currentTarget.value = "";
                 }}

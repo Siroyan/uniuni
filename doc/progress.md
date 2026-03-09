@@ -143,6 +143,10 @@
   - 無効入力や重複入力を通知表示
   - Pin/Occupied の最小件数制約（最低1件）を導入
   - 部品名重複チェックを導入
+- Part ライブラリの JSON Export/Import を追加。
+  - `Export Library` で PartDef 一覧を JSON 出力
+  - `Import Library` で PartDef 一覧を読み込み
+  - 最低限の妥当性チェック（id/name/pins/occupied）を通した定義のみ採用
 
 検証:
 - `npm run build -w web` 成功。
