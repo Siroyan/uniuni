@@ -68,13 +68,52 @@ function drawPart(
   def: PartDef,
   viewport: Viewport,
   fillColor: string,
-  pinColor: string
+  pinColor: string,
+  partImage: HTMLImageElement | null
 ): void {
+  const occupied = absoluteOccupied(def, part);
+
   ctx.fillStyle = fillColor;
-  for (const cell of absoluteOccupied(def, part)) {
+  for (const cell of occupied) {
     const base = worldToScreen(gridToWorld(cell, CELL_SIZE), viewport);
     const unit = CELL_SIZE * viewport.zoom;
     ctx.fillRect(base.x - unit / 2, base.y - unit / 2, unit, unit);
+  }
+
+  if (partImage && occupied.length > 0) {
+    const xs = occupied.map((pt) => pt.x);
+    const ys = occupied.map((pt) => pt.y);
+    const minX = Math.min(...xs) - 0.5;
+    const maxX = Math.max(...xs) + 0.5;
+    const minY = Math.min(...ys) - 0.5;
+    const maxY = Math.max(...ys) + 0.5;
+    const scale = def.imageScale ?? 1;
+    const offsetX = def.imageOffsetX ?? 0;
+    const offsetY = def.imageOffsetY ?? 0;
+    const topLeft = worldToScreen(
+      { x: (minX + offsetX) * CELL_SIZE, y: (minY + offsetY) * CELL_SIZE },
+      viewport
+    );
+    const bottomRight = worldToScreen(
+      { x: (maxX + offsetX) * CELL_SIZE, y: (maxY + offsetY) * CELL_SIZE },
+      viewport
+    );
+    const baseW = bottomRight.x - topLeft.x;
+    const baseH = bottomRight.y - topLeft.y;
+    const drawW = baseW * scale;
+    const drawH = baseH * scale;
+    const cx = topLeft.x + baseW / 2;
+    const cy = topLeft.y + baseH / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(
+      partImage,
+      cx - drawW / 2,
+      cy - drawH / 2,
+      drawW,
+      drawH
+    );
+    ctx.restore();
   }
 
   ctx.fillStyle = pinColor;
@@ -102,6 +141,7 @@ export function BoardCanvas({
   placePreviewValid
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const [viewport, setViewport] = useState<Viewport>({
     panX: 120,
     panY: 80,
@@ -114,6 +154,18 @@ export function BoardCanvas({
     () => ({ width: board.width * CELL_SIZE, height: board.height * CELL_SIZE }),
     [board.height, board.width]
   );
+
+  useEffect(() => {
+    for (const def of partDefs) {
+      const src = def.imageDataUrl;
+      if (!src) continue;
+      const cached = imageCacheRef.current.get(def.id);
+      if (cached && cached.src === src) continue;
+      const img = new Image();
+      img.src = src;
+      imageCacheRef.current.set(def.id, img);
+    }
+  }, [partDefs]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -192,7 +244,8 @@ export function BoardCanvas({
         def,
         viewport,
         isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)",
-        "#ff9f1c"
+        "#ff9f1c",
+        imageCacheRef.current.get(def.id) ?? null
       );
     }
 
@@ -205,7 +258,8 @@ export function BoardCanvas({
           def,
           viewport,
           movePreviewValid ? "rgba(102, 217, 125, 0.35)" : "rgba(217, 102, 102, 0.4)",
-          movePreviewValid ? "#6fe893" : "#ff9090"
+          movePreviewValid ? "#6fe893" : "#ff9090",
+          imageCacheRef.current.get(def.id) ?? null
         );
       }
     }
@@ -219,7 +273,8 @@ export function BoardCanvas({
           def,
           viewport,
           placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
-          placePreviewValid ? "#99f2b0" : "#ffb0b0"
+          placePreviewValid ? "#99f2b0" : "#ffb0b0",
+          imageCacheRef.current.get(def.id) ?? null
         );
       }
     }

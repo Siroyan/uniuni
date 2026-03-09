@@ -189,9 +189,9 @@ body,
 }
 
 .tool-card {
-  border: 1px solid #2c3f5b;
-  border-radius: 10px;
-  background: rgba(12, 20, 32, 0.75);
+  border: 1px solid #304864;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(13, 23, 36, 0.88) 0%, rgba(10, 18, 29, 0.88) 100%);
   padding: 10px;
   display: grid;
   gap: 8px;
@@ -270,6 +270,10 @@ body,
 .preview-occ-cell {
   fill: #2f81d6;
   opacity: 0.88;
+}
+
+.preview-part-image {
+  opacity: 0.72;
 }
 
 .preview-origin-cell {
@@ -371,9 +375,9 @@ body,
 .icon-btn {
   width: 24px;
   height: 24px;
-  border: 1px solid #3b5578;
-  background: #132034;
-  border-radius: 6px;
+  border: 1px solid #456082;
+  background: linear-gradient(180deg, #15263d 0%, #112034 100%);
+  border-radius: 4px;
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -402,53 +406,69 @@ body,
 }
 
 .net-select {
-  border: 1px solid #3b5578;
-  background: #132034;
+  border: 1px solid #456082;
+  background: #0f1b2c;
   color: #d8e8ff;
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: 4px;
+  padding: 6px 8px 5px;
   font-size: 12px;
 }
 
 .net-input {
-  border: 1px solid #3b5578;
-  background: #132034;
+  border: 1px solid #456082;
+  background: #0f1b2c;
   color: #d8e8ff;
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: 4px;
+  padding: 6px 8px 5px;
   font-size: 12px;
   min-width: 120px;
 }
 
 .coord-input {
   width: 72px;
-  border: 1px solid #3b5578;
-  background: #132034;
+  border: 1px solid #456082;
+  background: #0f1b2c;
   color: #d8e8ff;
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: 4px;
+  padding: 6px 8px 5px;
   font-size: 12px;
 }
 
 .btn {
-  border: 1px solid #3b5578;
-  background: #132034;
+  border: 1px solid #456082;
+  background: linear-gradient(180deg, #16263d 0%, #112033 100%);
   color: #d8e8ff;
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 4px;
+  padding: 6px 10px 5px;
   font-size: 12px;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
 .btn.active {
-  border-color: #66b0ff;
-  background: #1e314d;
+  border-color: #7ec0ff;
+  background: linear-gradient(180deg, #2b4669 0%, #1e3551 100%);
 }
 
 .btn.danger {
-  border-color: #8b3f3f;
-  background: #3a1d1d;
+  border-color: #a64f4f;
+  background: linear-gradient(180deg, #4b2323 0%, #3b1d1d 100%);
   color: #ffd0d0;
+}
+
+.btn:hover:enabled {
+  border-color: #6e96c7;
+  background: linear-gradient(180deg, #1b2f49 0%, #15263c 100%);
+}
+
+.btn:active:enabled {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .canvas-wrap {

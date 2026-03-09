@@ -39,7 +39,10 @@ const defaultPartDefs: PartDef[] = [
       { x: 0, y: 0 },
       { x: 1, y: 0 },
       { x: 2, y: 0 }
-    ]
+    ],
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
   },
   {
     id: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
@@ -51,7 +54,10 @@ const defaultPartDefs: PartDef[] = [
     occupied: [
       { x: 0, y: 0 },
       { x: 1, y: 0 }
-    ]
+    ],
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
   },
   {
     id: "01d260e9-ea3a-488f-9e8a-031ca0d679ce",
@@ -65,7 +71,10 @@ const defaultPartDefs: PartDef[] = [
       { x: 1, y: 0 },
       { x: 2, y: 0 },
       { x: 3, y: 0 }
-    ]
+    ],
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
   }
 ];
 
@@ -143,6 +152,9 @@ export function App(): JSX.Element {
   const [placeDefId, setPlaceDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorPreviewZoom, setEditorPreviewZoom] = useState<number>(1);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
+  const [editorImageScale, setEditorImageScale] = useState<string>("1");
+  const [editorImageOffsetX, setEditorImageOffsetX] = useState<string>("0");
+  const [editorImageOffsetY, setEditorImageOffsetY] = useState<string>("0");
   const [wireDraftPath, setWireDraftPath] = useState<GridPt[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
@@ -226,6 +238,13 @@ export function App(): JSX.Element {
       if (first) setPlaceDefId(first.id);
     }
   }, [partDefs, placeDefId]);
+
+  useEffect(() => {
+    if (!editorDef) return;
+    setEditorImageScale(String(editorDef.imageScale ?? 1));
+    setEditorImageOffsetX(String(editorDef.imageOffsetX ?? 0));
+    setEditorImageOffsetY(String(editorDef.imageOffsetY ?? 0));
+  }, [editorDef]);
 
   useEffect(() => {
     if (!selectedPartDef || selectedPartDef.pins.length === 0) {
@@ -638,6 +657,29 @@ export function App(): JSX.Element {
     );
   };
 
+  const applyEditorImageTransform = (): void => {
+    if (!editorDefId) return;
+    const scale = Number(editorImageScale);
+    const ox = Number(editorImageOffsetX);
+    const oy = Number(editorImageOffsetY);
+    if (!Number.isFinite(scale) || scale <= 0) {
+      setEditorNotice("Image scale は 0 より大きい数値にしてください。");
+      return;
+    }
+    if (!Number.isFinite(ox) || !Number.isFinite(oy)) {
+      setEditorNotice("Image offset は数値で入力してください。");
+      return;
+    }
+    setPartDefs((prev) =>
+      prev.map((def) =>
+        def.id === editorDefId
+          ? { ...def, imageScale: scale, imageOffsetX: ox, imageOffsetY: oy }
+          : def
+      )
+    );
+    setEditorNotice("画像表示設定を更新しました。");
+  };
+
   const onPartImagePicked = (file: File): void => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -660,7 +702,10 @@ export function App(): JSX.Element {
       name: baseName,
       pins: [{ name: "1", pos: { x: 0, y: 0 } }],
       occupied: [{ x: 0, y: 0 }],
-      imageDataUrl: null
+      imageDataUrl: null,
+      imageScale: 1,
+      imageOffsetX: 0,
+      imageOffsetY: 0
     };
     setPartDefs((prev) => [...prev, nextDef]);
     setEditorDefId(nextId);
@@ -726,7 +771,10 @@ export function App(): JSX.Element {
             name: def.name,
             pins,
             occupied,
-            imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null
+            imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null,
+            imageScale: typeof def.imageScale === "number" && def.imageScale > 0 ? def.imageScale : 1,
+            imageOffsetX: typeof def.imageOffsetX === "number" ? def.imageOffsetX : 0,
+            imageOffsetY: typeof def.imageOffsetY === "number" ? def.imageOffsetY : 0
           } as PartDef;
         })
         .filter((def): def is PartDef => Boolean(def));
@@ -1519,6 +1567,34 @@ export function App(): JSX.Element {
                             className="preview-grid-line"
                           />
                         ))}
+                        {editorDef.imageDataUrl ? (
+                          (() => {
+                            const scale = editorDef.imageScale ?? 1;
+                            const ox = editorDef.imageOffsetX ?? 0;
+                            const oy = editorDef.imageOffsetY ?? 0;
+                            const minX = editorPreview.minX - 0.5 + ox;
+                            const maxX = editorPreview.maxX + 0.5 + ox;
+                            const minY = editorPreview.minY - 0.5 + oy;
+                            const maxY = editorPreview.maxY + 0.5 + oy;
+                            const baseW = maxX - minX;
+                            const baseH = maxY - minY;
+                            const drawW = baseW * scale;
+                            const drawH = baseH * scale;
+                            const cx = minX + baseW / 2;
+                            const cy = minY + baseH / 2;
+                            return (
+                              <image
+                                href={editorDef.imageDataUrl}
+                                x={cx - drawW / 2}
+                                y={cy - drawH / 2}
+                                width={drawW}
+                                height={drawH}
+                                preserveAspectRatio="none"
+                                className="preview-part-image"
+                              />
+                            );
+                          })()
+                        ) : null}
                         {editorDef.occupied.map((pt) => (
                           <rect
                             key={`occ-${pt.x}-${pt.y}`}
@@ -1598,17 +1674,32 @@ export function App(): JSX.Element {
               <button type="button" className="btn" onClick={clearEditorPartImage}>
                 Clear Image
               </button>
-              <button type="button" className="btn" onClick={exportPartLibraryJson}>
-                Export Library
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  partLibraryInputRef.current?.click();
-                }}
-              >
-                Import Library
+              <input
+                type="number"
+                step="0.1"
+                className="coord-input"
+                value={editorImageScale}
+                onChange={(event) => setEditorImageScale(event.target.value)}
+                title="Image scale"
+              />
+              <input
+                type="number"
+                step="0.1"
+                className="coord-input"
+                value={editorImageOffsetX}
+                onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                title="Image offset X"
+              />
+              <input
+                type="number"
+                step="0.1"
+                className="coord-input"
+                value={editorImageOffsetY}
+                onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                title="Image offset Y"
+              />
+              <button type="button" className="btn" onClick={applyEditorImageTransform}>
+                Apply Image Transform
               </button>
               <input
                 ref={partImageInputRef}
@@ -1749,6 +1840,33 @@ export function App(): JSX.Element {
                 </table>
               </div>
             </div>
+            <div className="toolbar-row">
+              <button type="button" className="btn" onClick={exportPartLibraryJson}>
+                Export Library
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  partLibraryInputRef.current?.click();
+                }}
+              >
+                Import Library
+              </button>
+            </div>
+            <input
+              ref={partLibraryInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden-file-input"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void importPartLibraryJson(file);
+                }
+                event.currentTarget.value = "";
+              }}
+            />
           </section>
         </div>
         <div className="toolbar-row">

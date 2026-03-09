@@ -147,6 +147,9 @@
   - `Export Library` で PartDef 一覧を JSON 出力
   - `Import Library` で PartDef 一覧を読み込み
   - 最低限の妥当性チェック（id/name/pins/occupied）を通した定義のみ採用
+- PartDef 画像の表示調整項目を追加。
+  - `imageScale`, `imageOffsetX`, `imageOffsetY` を編集可能
+  - キャンバス上の部品描画に画像変換（拡大縮小・オフセット）を反映
 
 検証:
 - `npm run build -w web` 成功。
