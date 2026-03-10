@@ -75,6 +75,24 @@
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
+## 2026-03-11 (Step4継続)
+実装内容:
+- Part Editor の画像設定UIを整理。
+  - 画像設定を `Pin設定` / `Occupied設定` と同じ粒度のブロックに分離
+  - `Scale` / `Offset X` / `Offset Y` を各1行に分離
+  - 各項目を `スライダー + 数値入力` の操作形式に変更
+- 画像削除時のCAD反映不具合を修正。
+  - PartDef の `imageDataUrl` が空になったとき、`BoardCanvas` の画像キャッシュから即時削除
+  - 削除済み PartDef ID のキャッシュもクリーンアップ
+  - 画像削除後に既配置部品へ画像が残る問題と、新規配置に古い画像が再利用される問題を解消
+- 部品回転時の画像描画を修正。
+  - 部品の `rot` に合わせて画像も回転
+  - 回転時に画像アスペクト比が崩れる問題を修正（ローカルoccupied寸法基準で描画サイズを算出）
+
+検証:
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。

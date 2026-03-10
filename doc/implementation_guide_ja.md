@@ -27,14 +27,16 @@
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 永続化（自動保存/復元）
 - JSON Export/Import（`project.json` 最小版）
+- Part editor（PartDef の pin/occupied/image 編集）
+- Part ライブラリ永続化（IndexedDB）
+- Part ライブラリ JSON Export/Import
 
 未実装（これから）:
 
-- Part editor（PartDef の pin/occupied/image 編集）
-- Part ライブラリ永続化（IndexedDB）
 - ZIP Export/Import（`project.json` + `assets/`）
 - WASM 本接続フロー整備（fallback 依存の縮小）
 - ヒットテスト優先順位と候補サイクル選択の仕上げ
+- PartDef 編集に対する `core` 側検証の本格移管
 
 ## 3. ディレクトリ構成
 
@@ -123,6 +125,11 @@ uniuni/
   - pan: 中クリック / 右クリックドラッグ
   - zoom: ホイール（カーソル位置アンカー）
   - hover: 最寄りグリッド点を HUD 表示
+- 画像描画仕様（Step4 追加分）:
+  - PartDef の `imageDataUrl` を部品描画時に重ねて表示
+  - 部品の `rot`（`Deg0/90/180/270`）に合わせて画像も回転描画
+  - `imageScale` / `imageOffsetX` / `imageOffsetY` を反映
+  - 画像削除時はキャッシュを破棄し、既配置部品・新規配置部品とも古い画像を再利用しない
 
 ### 6.3 ドメインモデル（`core/src/model.rs`）
 
@@ -262,7 +269,7 @@ cargo build
 - Undo/Redo が主要操作（部品編集・配線編集）で機能する
 - 保存→再読込で状態が復元される
 
-### Step 4: Part editor（定義編集）を実装する（予定）
+### Step 4: Part editor（定義編集）を実装する（進行中）
 
 目的:
 
@@ -279,7 +286,7 @@ cargo build
 
 - PartDef を GUI で編集し、配置に反映できる
 
-### Step 5: Part ライブラリ永続化を実装する（予定）
+### Step 5: Part ライブラリ永続化を実装する（進行中）
 
 目的:
 

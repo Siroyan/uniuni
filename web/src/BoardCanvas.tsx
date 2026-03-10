@@ -81,38 +81,52 @@ function drawPart(
   }
 
   if (partImage && occupied.length > 0) {
-    const xs = occupied.map((pt) => pt.x);
-    const ys = occupied.map((pt) => pt.y);
-    const minX = Math.min(...xs) - 0.5;
-    const maxX = Math.max(...xs) + 0.5;
-    const minY = Math.min(...ys) - 0.5;
-    const maxY = Math.max(...ys) + 0.5;
+    const relXs = def.occupied.map((pt) => pt.x);
+    const relYs = def.occupied.map((pt) => pt.y);
+    const minRelX = Math.min(...relXs);
+    const maxRelX = Math.max(...relXs);
+    const minRelY = Math.min(...relYs);
+    const maxRelY = Math.max(...relYs);
     const scale = def.imageScale ?? 1;
     const offsetX = def.imageOffsetX ?? 0;
     const offsetY = def.imageOffsetY ?? 0;
-    const topLeft = worldToScreen(
-      { x: (minX + offsetX) * CELL_SIZE, y: (minY + offsetY) * CELL_SIZE },
+
+    const centerRelX = (minRelX + maxRelX) / 2 + offsetX;
+    const centerRelY = (minRelY + maxRelY) / 2 + offsetY;
+    const rotatedCenter =
+      part.rot === "Deg90"
+        ? { x: -centerRelY, y: centerRelX }
+        : part.rot === "Deg180"
+          ? { x: -centerRelX, y: -centerRelY }
+          : part.rot === "Deg270"
+            ? { x: centerRelY, y: -centerRelX }
+            : { x: centerRelX, y: centerRelY };
+
+    const center = worldToScreen(
+      {
+        x: (part.at.x + rotatedCenter.x) * CELL_SIZE,
+        y: (part.at.y + rotatedCenter.y) * CELL_SIZE
+      },
       viewport
     );
-    const bottomRight = worldToScreen(
-      { x: (maxX + offsetX) * CELL_SIZE, y: (maxY + offsetY) * CELL_SIZE },
-      viewport
-    );
-    const baseW = bottomRight.x - topLeft.x;
-    const baseH = bottomRight.y - topLeft.y;
+
+    const baseW = (maxRelX - minRelX + 1) * CELL_SIZE * viewport.zoom;
+    const baseH = (maxRelY - minRelY + 1) * CELL_SIZE * viewport.zoom;
     const drawW = baseW * scale;
     const drawH = baseH * scale;
-    const cx = topLeft.x + baseW / 2;
-    const cy = topLeft.y + baseH / 2;
+    const rotationRad =
+      part.rot === "Deg90"
+        ? Math.PI / 2
+        : part.rot === "Deg180"
+          ? Math.PI
+          : part.rot === "Deg270"
+            ? (Math.PI * 3) / 2
+            : 0;
     ctx.save();
     ctx.globalAlpha = 0.9;
-    ctx.drawImage(
-      partImage,
-      cx - drawW / 2,
-      cy - drawH / 2,
-      drawW,
-      drawH
-    );
+    ctx.translate(center.x, center.y);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(partImage, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
   }
 
