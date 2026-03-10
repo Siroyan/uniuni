@@ -156,14 +156,26 @@ export function BoardCanvas({
   );
 
   useEffect(() => {
+    const cache = imageCacheRef.current;
+    const defIds = new Set(partDefs.map((def) => def.id));
+
     for (const def of partDefs) {
       const src = def.imageDataUrl;
-      if (!src) continue;
-      const cached = imageCacheRef.current.get(def.id);
+      if (!src) {
+        cache.delete(def.id);
+        continue;
+      }
+      const cached = cache.get(def.id);
       if (cached && cached.src === src) continue;
       const img = new Image();
       img.src = src;
-      imageCacheRef.current.set(def.id, img);
+      cache.set(def.id, img);
+    }
+
+    for (const id of Array.from(cache.keys())) {
+      if (!defIds.has(id)) {
+        cache.delete(id);
+      }
     }
   }, [partDefs]);
 
