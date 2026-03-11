@@ -11,16 +11,24 @@ import {
   commandMovePartInstJson,
   commandRotatePartInstJson,
   createInitialCoreStateJson,
+  detectCoreBridgeMode,
   extractViewStateFromCoreJson,
   newUuid,
   replacePartDefsInStateJson,
   runCoreDrcJson
 } from "./coreBridge";
-import { canPlacePart, findPartAtGrid, nextRot } from "./parts";
+import {
+  buildHitCandidates,
+  canPlacePart,
+  findPartAtGrid,
+  nextHitCandidateIndex,
+  nextRot
+} from "./parts";
 import { loadPartLibrary, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
+import type { HitCandidate } from "./parts";
 
 const board: Board = {
   width: 64,
@@ -105,16 +113,6 @@ function findAddedPartId(before: PartInst[], after: PartInst[]): string | null {
   const prev = new Set(before.map((part) => part.id));
   for (const part of after) {
     if (!prev.has(part.id)) return part.id;
-  }
-  return null;
-}
-
-function findWireAtGrid(pt: GridPt, wires: Wire[]): string | null {
-  for (let i = wires.length - 1; i >= 0; i -= 1) {
-    const wire = wires[i];
-    if (wire.path.some((node) => node.x === pt.x && node.y === pt.y)) {
-      return wire.id;
-    }
   }
   return null;
 }
@@ -209,9 +207,10 @@ export function App(): JSX.Element {
   const [moveArmedRot, setMoveArmedRot] = useState<Rot | null>(null);
   const [placeArmedDefId, setPlaceArmedDefId] = useState<string | null>(null);
   const [placeArmedRot, setPlaceArmedRot] = useState<Rot>("Deg0");
+  const [selectionAnchorGrid, setSelectionAnchorGrid] = useState<GridPt | null>(null);
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
   const [coreStateJson, setCoreStateJson] = useState<string | null>(null);
-  const [coreBridgeMode, setCoreBridgeMode] = useState<"native_or_fallback" | "unknown">("unknown");
+  const [coreBridgeMode, setCoreBridgeMode] = useState<"wasm" | "fallback" | "unknown">("unknown");
   const [drcIssues, setDrcIssues] = useState<DrcIssue[]>([]);
   const [coreError, setCoreError] = useState<string | null>(null);
   const [historyPast, setHistoryPast] = useState<HistoryEntry[]>([]);
@@ -362,24 +361,62 @@ export function App(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     const init = async (): Promise<void> => {
+      const warnings: string[] = [];
+      const asMessage = (err: unknown): string =>
+        err instanceof Error && err.message ? err.message : String(err);
+
+      let effectivePartDefs: PartDef[] = defaultPartDefs;
+      let bridgeMode: "wasm" | "fallback" = "fallback";
+
       try {
-        const snapshot = await loadSnapshot();
-        const library = await loadPartLibrary();
-        const effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+        try {
+          bridgeMode = await detectCoreBridgeMode();
+        } catch (err) {
+          warnings.push(`Core 接続判定に失敗: ${asMessage(err)}`);
+        }
+        if (!cancelled) {
+          setCoreBridgeMode(bridgeMode);
+        }
+
+        try {
+          const library = await loadPartLibrary();
+          effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+        } catch (err) {
+          warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
+        }
         if (!cancelled) {
           setPartDefs(effectivePartDefs);
         }
+
+        const createFreshState = async (): Promise<string> => {
+          let fresh = await createInitialCoreStateJson(board, effectivePartDefs);
+          for (const net of nets) {
+            fresh = await applyCoreCommandJson(fresh, commandAssignNetNameJson(net.id, net.name));
+          }
+          return fresh;
+        };
+
+        let snapshot: Awaited<ReturnType<typeof loadSnapshot>> = null;
+        try {
+          snapshot = await loadSnapshot();
+        } catch (err) {
+          warnings.push(`保存スナップショット読込に失敗: ${asMessage(err)}`);
+        }
+
         let nextState: string;
         let nextSelectedNetId = selectedNetId;
         if (snapshot?.coreStateJson) {
-          nextState = snapshot.coreStateJson;
-          nextSelectedNetId = snapshot.selectedNetId ?? "";
-          nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
-        } else {
-          nextState = await createInitialCoreStateJson(board, effectivePartDefs);
-          for (const net of nets) {
-            nextState = await applyCoreCommandJson(nextState, commandAssignNetNameJson(net.id, net.name));
+          try {
+            nextState = snapshot.coreStateJson;
+            nextSelectedNetId = snapshot.selectedNetId ?? "";
+            nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
+          } catch (err) {
+            warnings.push(`保存スナップショット復元に失敗（新規開始）: ${asMessage(err)}`);
+            nextState = await createFreshState();
+            nextSelectedNetId = nets[0]?.id ?? "";
           }
+        } else {
+          nextState = await createFreshState();
         }
         if (cancelled) return;
         const view = syncFromCoreState(nextState);
@@ -390,10 +427,14 @@ export function App(): JSX.Element {
         }
         setHistoryPast([]);
         setHistoryFuture([]);
-        setCoreBridgeMode("native_or_fallback");
         const drcJson = await runCoreDrcJson(nextState);
         if (!cancelled) {
           setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
+          if (warnings.length > 0) {
+            setCoreError(warnings.join(" | "));
+          } else {
+            setCoreError(null);
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -468,9 +509,57 @@ export function App(): JSX.Element {
     setMoveArmedRot(null);
     setSelectedPartId(null);
     setSelectedWireId(null);
+    setSelectionAnchorGrid(null);
     setWireDraftPath([]);
     setTool("place");
     setCoreError(null);
+  };
+
+  const applyHitCandidate = (candidate: HitCandidate | null): void => {
+    if (!candidate) {
+      setSelectedPartId(null);
+      setSelectedWireId(null);
+      return;
+    }
+    if (candidate.kind === "part") {
+      setSelectedPartId(candidate.partId);
+      setSelectedWireId(null);
+      return;
+    }
+    setSelectedWireId(candidate.wireId);
+    setSelectedPartId(null);
+  };
+
+  const selectTopHitAtGrid = (grid: GridPt): void => {
+    const candidates = buildHitCandidates(grid, parts, wires, defsById);
+    if (candidates.length === 0) {
+      applyHitCandidate(null);
+      setSelectionAnchorGrid(null);
+      return;
+    }
+    applyHitCandidate(candidates[0]);
+    setSelectionAnchorGrid(grid);
+  };
+
+  const cycleHitSelectionAtGrid = (grid: GridPt, reverse = false): void => {
+    const candidates = buildHitCandidates(grid, parts, wires, defsById);
+    if (candidates.length === 0) {
+      applyHitCandidate(null);
+      setSelectionAnchorGrid(null);
+      return;
+    }
+
+    const currentKey =
+      selectedPartId !== null
+        ? `part:${selectedPartId}`
+        : selectedWireId !== null
+          ? `wire:${selectedWireId}`
+          : null;
+    const nextIndex = nextHitCandidateIndex(candidates, currentKey, reverse);
+    if (nextIndex >= 0) {
+      applyHitCandidate(candidates[nextIndex]);
+      setSelectionAnchorGrid(grid);
+    }
   };
 
   const rotatePartAtCurrentPosition = (partId: string): void => {
@@ -504,6 +593,7 @@ export function App(): JSX.Element {
     setWireDraftPath([]);
     setSelectedPartId(partId);
     setSelectedWireId(null);
+    setSelectionAnchorGrid(null);
     setTool("select");
   };
 
@@ -918,6 +1008,7 @@ export function App(): JSX.Element {
       setSelectedNetId(preferredNetId);
       setSelectedPartId(null);
       setSelectedWireId(null);
+      setSelectionAnchorGrid(null);
       setMoveArmedPartId(null);
       setMoveArmedRot(null);
       setPlaceArmedDefId(null);
@@ -948,6 +1039,7 @@ export function App(): JSX.Element {
     const view = syncFromCoreState(previousEntry.stateJson);
     setSelectedPartId(resolveSelectedPartId(view.parts, previousEntry.selectedPartId));
     setSelectedWireId(resolveSelectedWireId(view.wires, previousEntry.selectedWireId));
+    setSelectionAnchorGrid(null);
     setWireDraftPath([]);
     setMoveArmedPartId(null);
     setMoveArmedRot(null);
@@ -973,6 +1065,7 @@ export function App(): JSX.Element {
     const view = syncFromCoreState(nextEntry.stateJson);
     setSelectedPartId(resolveSelectedPartId(view.parts, nextEntry.selectedPartId));
     setSelectedWireId(resolveSelectedWireId(view.wires, nextEntry.selectedWireId));
+    setSelectionAnchorGrid(null);
     setWireDraftPath([]);
     setMoveArmedPartId(null);
     setMoveArmedRot(null);
@@ -1000,6 +1093,7 @@ export function App(): JSX.Element {
         }
         setSelectedPartId(null);
         setSelectedWireId(null);
+        setSelectionAnchorGrid(null);
         await refreshDrcForState(nextState);
           setCoreError(null);
         } catch (err) {
@@ -1018,6 +1112,7 @@ export function App(): JSX.Element {
         );
         commitStateTransition(state, nextState);
         setSelectedWireId(null);
+        setSelectionAnchorGrid(null);
         await refreshDrcForState(nextState);
         setCoreError(null);
       } catch (err) {
@@ -1061,6 +1156,7 @@ export function App(): JSX.Element {
           setTool("select");
           setSelectedPartId(moved.id);
           setSelectedWireId(null);
+          setSelectionAnchorGrid(grid);
           await refreshDrcForState(nextState);
           setCoreError(null);
         } catch (err) {
@@ -1091,6 +1187,7 @@ export function App(): JSX.Element {
           const addedPartId = findAddedPartId(parts, nextView.parts);
           setSelectedPartId(addedPartId);
           setSelectedWireId(null);
+          setSelectionAnchorGrid(grid);
           setTool("place");
           await refreshDrcForState(nextState);
           setCoreError(null);
@@ -1101,22 +1198,7 @@ export function App(): JSX.Element {
       return;
     }
 
-    const clickedPartId = findPartAtGrid(grid, parts, defsById);
-    if (clickedPartId) {
-      setSelectedPartId(clickedPartId);
-      setSelectedWireId(null);
-      return;
-    }
-
-    const clickedWireId = findWireAtGrid(grid, wires);
-    if (clickedWireId) {
-      setSelectedWireId(clickedWireId);
-      setSelectedPartId(null);
-      return;
-    }
-
-    setSelectedPartId(null);
-    setSelectedWireId(null);
+    selectTopHitAtGrid(grid);
   };
 
   const movePreviewPart = useMemo(() => {
@@ -1213,6 +1295,14 @@ export function App(): JSX.Element {
       if ((event.ctrlKey || event.metaKey) && key === "y") {
         event.preventDefault();
         void redo();
+        return;
+      }
+
+      if (key === "tab" && tool === "select") {
+        const targetGrid = hoverGrid ?? selectionAnchorGrid;
+        if (!targetGrid) return;
+        event.preventDefault();
+        cycleHitSelectionAtGrid(targetGrid, event.shiftKey);
         return;
       }
 
@@ -1313,6 +1403,7 @@ export function App(): JSX.Element {
         setMoveArmedRot(null);
         setPlaceArmedDefId(null);
         setWireDraftPath([]);
+        setSelectionAnchorGrid(null);
         if (tool === "wire") {
           setTool("select");
         }
@@ -1334,11 +1425,26 @@ export function App(): JSX.Element {
     selectedPart,
     selectedPartId,
     selectedWireId,
+    selectionAnchorGrid,
     tool,
     undo,
+    wires,
     wireDraftPath,
     selectedNetId
   ]);
+
+  const coreBridgeLabel =
+    coreBridgeMode === "unknown"
+      ? "初期化中"
+      : coreBridgeMode === "wasm"
+        ? "WASM"
+        : "Fallback";
+  const coreBridgeBadgeClass =
+    coreBridgeMode === "fallback"
+      ? "bridge-badge fallback"
+      : coreBridgeMode === "wasm"
+        ? "bridge-badge wasm"
+        : "bridge-badge";
 
   return (
     <main className="app-root">
@@ -1346,7 +1452,7 @@ export function App(): JSX.Element {
         <header className="toolbar">
         <h1>uniuni</h1>
         <p>
-          Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消
+          Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消 | Tab: 候補選択
         </p>
         <div className="toolbar-grid">
           <section className="tool-card">
@@ -1981,7 +2087,7 @@ export function App(): JSX.Element {
           </section>
         </div>
         <div className="toolbar-row">
-          <span>Core Bridge: {coreBridgeMode === "unknown" ? "initializing" : "ready"}</span>
+          <span className={coreBridgeBadgeClass}>Core: {coreBridgeLabel}</span>
           <span>DRC Issues: {drcIssues.length}</span>
           {coreError ? <span className="error-text">Error: {coreError}</span> : null}
         </div>

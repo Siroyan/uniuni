@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCoreCommandJson, commandReplacePartDefsJson } from "../src/coreBridge";
+import {
+  __resetCoreRuntimeForTest,
+  applyCoreCommandJson,
+  commandReplacePartDefsJson,
+  detectCoreBridgeMode
+} from "../src/coreBridge";
 import type { Rot } from "../src/types";
 
 type CoreGridPt = { x: number; y: number };
@@ -57,6 +62,33 @@ function baseState(): CoreState {
     wires: []
   };
 }
+
+test("bridge mode is fallback when wasm package is unavailable in test runtime", async () => {
+  __resetCoreRuntimeForTest();
+  const mode = await detectCoreBridgeMode();
+  assert.equal(mode, "fallback");
+});
+
+test("bridge can disable fallback via env", async () => {
+  const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process
+    ?.env;
+  if (!env) {
+    return;
+  }
+  const previous = env.UNIUNI_CORE_DISABLE_FALLBACK;
+  env.UNIUNI_CORE_DISABLE_FALLBACK = "1";
+  __resetCoreRuntimeForTest();
+  try {
+    await assert.rejects(detectCoreBridgeMode(), /fallback/i);
+  } finally {
+    if (previous === undefined) {
+      delete env.UNIUNI_CORE_DISABLE_FALLBACK;
+    } else {
+      env.UNIUNI_CORE_DISABLE_FALLBACK = previous;
+    }
+    __resetCoreRuntimeForTest();
+  }
+});
 
 test("bridge ReplacePartDefs accepts valid update", async () => {
   const state = baseState();
