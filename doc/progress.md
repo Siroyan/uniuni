@@ -147,6 +147,28 @@
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
+## 2026-03-12 (Step6着手)
+実装内容:
+- プロジェクト入出力を ZIP 形式へ拡張。
+  - `web/src/projectPackage.ts` を追加
+  - `project.json` と `part-library.json`、`assets/*` を同梱する ZIP 生成を実装
+  - ZIP 読込時に `project.json` と Part ライブラリ（画像含む）を復元する処理を実装
+- `App.tsx` のプロジェクト入出力 UI を ZIP ベースへ変更。
+  - `Export ZIP` / `Import ZIP` を追加
+  - ZIP インポート時に PartDef を先に復元し、core state へ整合反映
+- ZIP パッケージのテストを追加。
+  - `web/test/projectPackage.test.ts`
+  - 検証観点:
+    - ZIP に `project.json + part-library.json + assets/*` が入ること
+    - 同一画像の asset 重複が抑制されること
+    - 不正 ZIP（`project.json` 欠落）を拒否すること
+    - `part-library schemaVersion: 1` の互換読込ができること
+
+検証:
+- `npm run test -w web` 成功（`coreBridge.test.ts`, `partLibrary.test.ts`, `projectPackage.test.ts`）
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。

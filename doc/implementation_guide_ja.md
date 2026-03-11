@@ -27,13 +27,13 @@
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 永続化（自動保存/復元）
 - JSON Export/Import（`project.json` 最小版）
+- ZIP Export/Import（`project.json` + `part-library.json` + `assets/*`）
 - Part editor（PartDef の pin/occupied/image 編集）
 - Part ライブラリ永続化（IndexedDB）
 - Part ライブラリ JSON Export/Import
 
 未実装（これから）:
 
-- ZIP Export/Import（`project.json` + `assets/`）
 - WASM 本接続フロー整備（fallback 依存の縮小）
 - ヒットテスト優先順位と候補サイクル選択の仕上げ
 
@@ -158,6 +158,19 @@ uniuni/
   - ライブラリ更新時に未参照アセットを自動削除
   - DB は「現行バージョンを開く→不足ストアのみ version up」で衝突を回避
 
+### 6.5 プロジェクトZIP入出力（`web/src/projectPackage.ts`）
+
+- Export:
+  - `project.json`（core state）
+  - `part-library.json`（PartDef + `imageAssetId`）
+  - `assets/*`（画像Blob由来バイナリ）
+- Import:
+  - ZIP 展開後、`project.json` を読み込み
+  - `part-library.json` と `assets/*` から `PartDef.imageDataUrl` を復元
+  - 復元 PartDef を core state へ反映してから表示状態を同期
+- 互換:
+  - `part-library schemaVersion: 1` 読込をサポート
+
 ## 7. 開発・ビルド手順
 
 ### 7.1 Web
@@ -245,7 +258,7 @@ cargo check
 ## 9. 直近の実装候補（Issue化しやすい単位）
 
 - PartDef / Partライブラリ周りのテスト拡充（異常系・回帰ケース追加）
-- ZIP Export/Import（`project.json` + `assets/`）実装
+- ZIP Import/Export の互換性強化（フォーマット検証・破損ZIPハンドリング）
 - WASM 生成物を使った本番接続導線の整備
 - ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）追加
 
@@ -363,16 +376,16 @@ cargo check
 
 - ブラウザ再起動後も Part ライブラリが復元される
 
-### Step 6: ZIP Import/Export を実装する（予定）
+### Step 6: ZIP Import/Export を実装する（完了）
 
 目的:
 
-- 仕様通り `project.json + assets` 形式で外部入出力する
+- 仕様通り `project.json + part-library.json + assets` 形式で外部入出力する
 
 実装仕様:
 
-- Export: ZIP 生成（`project.json`, `assets/*`）
-- Import: ZIP 展開と project/asset 復元
+- Export: ZIP 生成（`project.json`, `part-library.json`, `assets/*`）
+- Import: ZIP 展開と project/part-library/asset 復元
 
 完了条件:
 
