@@ -361,28 +361,62 @@ export function App(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     const init = async (): Promise<void> => {
+      const warnings: string[] = [];
+      const asMessage = (err: unknown): string =>
+        err instanceof Error && err.message ? err.message : String(err);
+
+      let effectivePartDefs: PartDef[] = defaultPartDefs;
+      let bridgeMode: "wasm" | "fallback" = "fallback";
+
       try {
-        const bridgeMode = await detectCoreBridgeMode();
+        try {
+          bridgeMode = await detectCoreBridgeMode();
+        } catch (err) {
+          warnings.push(`Core 接続判定に失敗: ${asMessage(err)}`);
+        }
         if (!cancelled) {
           setCoreBridgeMode(bridgeMode);
         }
-        const snapshot = await loadSnapshot();
-        const library = await loadPartLibrary();
-        const effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+
+        try {
+          const library = await loadPartLibrary();
+          effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+        } catch (err) {
+          warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
+        }
         if (!cancelled) {
           setPartDefs(effectivePartDefs);
         }
+
+        const createFreshState = async (): Promise<string> => {
+          let fresh = await createInitialCoreStateJson(board, effectivePartDefs);
+          for (const net of nets) {
+            fresh = await applyCoreCommandJson(fresh, commandAssignNetNameJson(net.id, net.name));
+          }
+          return fresh;
+        };
+
+        let snapshot: Awaited<ReturnType<typeof loadSnapshot>> = null;
+        try {
+          snapshot = await loadSnapshot();
+        } catch (err) {
+          warnings.push(`保存スナップショット読込に失敗: ${asMessage(err)}`);
+        }
+
         let nextState: string;
         let nextSelectedNetId = selectedNetId;
         if (snapshot?.coreStateJson) {
-          nextState = snapshot.coreStateJson;
-          nextSelectedNetId = snapshot.selectedNetId ?? "";
-          nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
-        } else {
-          nextState = await createInitialCoreStateJson(board, effectivePartDefs);
-          for (const net of nets) {
-            nextState = await applyCoreCommandJson(nextState, commandAssignNetNameJson(net.id, net.name));
+          try {
+            nextState = snapshot.coreStateJson;
+            nextSelectedNetId = snapshot.selectedNetId ?? "";
+            nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
+          } catch (err) {
+            warnings.push(`保存スナップショット復元に失敗（新規開始）: ${asMessage(err)}`);
+            nextState = await createFreshState();
+            nextSelectedNetId = nets[0]?.id ?? "";
           }
+        } else {
+          nextState = await createFreshState();
         }
         if (cancelled) return;
         const view = syncFromCoreState(nextState);
@@ -396,6 +430,11 @@ export function App(): JSX.Element {
         const drcJson = await runCoreDrcJson(nextState);
         if (!cancelled) {
           setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
+          if (warnings.length > 0) {
+            setCoreError(warnings.join(" | "));
+          } else {
+            setCoreError(null);
+          }
         }
       } catch (err) {
         if (cancelled) return;

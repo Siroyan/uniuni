@@ -396,7 +396,7 @@ function fallbackAllowed(): boolean {
 
 async function loadCoreRuntime(): Promise<CoreRuntime> {
   if (!coreRuntimePromise) {
-    coreRuntimePromise = (async () => {
+    coreRuntimePromise = (async (): Promise<CoreRuntime> => {
       try {
         const modulePath = "/core/pkg/uniuni_core.js";
         const mod = (await import(
@@ -420,9 +420,16 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
           api: fallbackCoreApi
         };
       }
-    })();
+    })().catch((err) => {
+      coreRuntimePromise = null;
+      throw err;
+    });
   }
-  return coreRuntimePromise;
+  const runtimePromise = coreRuntimePromise;
+  if (!runtimePromise) {
+    throw new Error("core runtime initialization failed");
+  }
+  return runtimePromise;
 }
 
 function parseViewState(stateJson: string): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
