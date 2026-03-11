@@ -36,7 +36,6 @@
 - ZIP Export/Import（`project.json` + `assets/`）
 - WASM 本接続フロー整備（fallback 依存の縮小）
 - ヒットテスト優先順位と候補サイクル選択の仕上げ
-- PartDef 編集に対する `core` 側検証の本格移管
 
 ## 3. ディレクトリ構成
 
@@ -183,8 +182,7 @@ cargo build
 
 ## 9. 直近の実装候補（Issue化しやすい単位）
 
-- PartDef editor UI（pin 追加/移動/削除、occupied 塗り）
-- Part ライブラリの IndexedDB 永続化 API
+- PartDef / Partライブラリ周りのテスト拡充（異常系・回帰ケース追加）
 - ZIP Export/Import（`project.json` + `assets/`）実装
 - WASM 生成物を使った本番接続導線の整備
 - ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）追加
@@ -271,7 +269,7 @@ cargo build
 - Undo/Redo が主要操作（部品編集・配線編集）で機能する
 - 保存→再読込で状態が復元される
 
-### Step 4: Part editor（定義編集）を実装する（進行中）
+### Step 4: Part editor（定義編集）を実装する（完了）
 
 目的:
 

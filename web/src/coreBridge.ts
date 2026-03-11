@@ -444,6 +444,11 @@ export async function runCoreDrcJson(stateJson: string): Promise<string> {
   return drc(stateJson);
 }
 
+export const __testOnly = {
+  fallbackCreateEmptyProjectJson,
+  fallbackApplyCommandJson
+};
+
 export function commandAssignNetNameJson(netId: string, name: string): string {
   return JSON.stringify({
     AssignNetName: {

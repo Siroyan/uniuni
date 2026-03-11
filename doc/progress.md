@@ -106,6 +106,26 @@
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
+## 2026-03-12 (Step4仕上げ)
+実装内容:
+- `core` に `ReplacePartDefs` のユニットテストを追加。
+  - 正常系: 妥当な PartDef 更新を受理
+  - 異常系: 部品名重複を拒否
+  - ロールバック系: pin 削除で既存 `net_assign` が不正化する更新を拒否し、更新前 `part_defs` を保持
+  - ロールバック系: 既存配置が盤面外になる更新を拒否し、更新前 `part_defs` を保持
+- `web` fallback (`coreBridge`) の整合テストを追加。
+  - `ReplacePartDefs` の代表ケース（正常/重複/参照不整合/衝突）を Node テストで検証
+  - テスト実行基盤として `tsx` を devDependency に追加
+- Step4 完了に合わせて実装ガイドを更新。
+  - Step4 ステータスを `完了` に変更
+  - 未実装項目から「PartDef 編集に対する core 側検証移管」を削除
+
+検証:
+- `cd core && cargo test` 成功（4件 pass）
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。

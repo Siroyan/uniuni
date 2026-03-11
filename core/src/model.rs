@@ -549,3 +549,170 @@ fn default_net_name(net_id: Uuid) -> String {
     let short = compact.get(..8).unwrap_or(&compact);
     format!("N-{short}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uuid(id: &str) -> Uuid {
+        Uuid::parse_str(id).expect("valid uuid")
+    }
+
+    fn test_state() -> ProjectState {
+        let def_id = uuid("11111111-1111-1111-1111-111111111111");
+        let part_id = uuid("22222222-2222-2222-2222-222222222222");
+        let net_id = uuid("33333333-3333-3333-3333-333333333333");
+
+        ProjectState {
+            schema_version: 1,
+            board: Board {
+                grid_pitch_mm: 2.54,
+                width: 64,
+                height: 40,
+            },
+            part_defs: vec![PartDef {
+                id: def_id,
+                name: "Test Part".to_owned(),
+                pins: vec![PinDef {
+                    name: "1".to_owned(),
+                    pos: GridPt { x: 0, y: 0 },
+                }],
+                occupied: vec![GridPt { x: 0, y: 0 }],
+            }],
+            part_insts: vec![PartInst {
+                id: part_id,
+                def_id,
+                at: GridPt { x: 0, y: 0 },
+                rot: Rot::Deg0,
+                refdes: "U1".to_owned(),
+                net_assign: HashMap::from([("1".to_owned(), net_id)]),
+            }],
+            nets: vec![Net {
+                id: net_id,
+                name: "N-1".to_owned(),
+            }],
+            wires: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn replace_part_defs_accepts_valid_update() {
+        let mut state = test_state();
+        let def_id = state.part_defs[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::ReplacePartDefs {
+                part_defs: vec![PartDef {
+                    id: def_id,
+                    name: "Updated Part".to_owned(),
+                    pins: vec![
+                        PinDef {
+                            name: "1".to_owned(),
+                            pos: GridPt { x: 0, y: 0 },
+                        },
+                        PinDef {
+                            name: "2".to_owned(),
+                            pos: GridPt { x: 1, y: 0 },
+                        },
+                    ],
+                    occupied: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+                }],
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.part_defs[0].name, "Updated Part");
+        assert_eq!(state.part_defs[0].pins.len(), 2);
+    }
+
+    #[test]
+    fn replace_part_defs_rejects_duplicate_part_name() {
+        let mut state = test_state();
+
+        let result = apply_command(
+            &mut state,
+            Command::ReplacePartDefs {
+                part_defs: vec![
+                    PartDef {
+                        id: uuid("44444444-4444-4444-4444-444444444444"),
+                        name: "Dup".to_owned(),
+                        pins: vec![PinDef {
+                            name: "1".to_owned(),
+                            pos: GridPt { x: 0, y: 0 },
+                        }],
+                        occupied: vec![GridPt { x: 0, y: 0 }],
+                    },
+                    PartDef {
+                        id: uuid("55555555-5555-5555-5555-555555555555"),
+                        name: "Dup".to_owned(),
+                        pins: vec![PinDef {
+                            name: "1".to_owned(),
+                            pos: GridPt { x: 0, y: 0 },
+                        }],
+                        occupied: vec![GridPt { x: 0, y: 0 }],
+                    },
+                ],
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("duplicate part definition name"));
+    }
+
+    #[test]
+    fn replace_part_defs_rolls_back_when_existing_assignment_becomes_invalid() {
+        let mut state = test_state();
+        let previous = state.part_defs.clone();
+        let def_id = state.part_defs[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::ReplacePartDefs {
+                part_defs: vec![PartDef {
+                    id: def_id,
+                    name: "Test Part".to_owned(),
+                    pins: vec![PinDef {
+                        name: "2".to_owned(),
+                        pos: GridPt { x: 0, y: 0 },
+                    }],
+                    occupied: vec![GridPt { x: 0, y: 0 }],
+                }],
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("assigned pin not found"));
+        assert_eq!(state.part_defs[0].pins[0].name, previous[0].pins[0].name);
+    }
+
+    #[test]
+    fn replace_part_defs_rolls_back_when_existing_part_goes_outside_board() {
+        let mut state = test_state();
+        let previous = state.part_defs.clone();
+        let def_id = state.part_defs[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::ReplacePartDefs {
+                part_defs: vec![PartDef {
+                    id: def_id,
+                    name: "Test Part".to_owned(),
+                    pins: vec![PinDef {
+                        name: "1".to_owned(),
+                        pos: GridPt { x: 0, y: 0 },
+                    }],
+                    occupied: vec![GridPt { x: -1, y: 0 }],
+                }],
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result.expect_err("must fail").contains("outside board"));
+        assert_eq!(state.part_defs[0].occupied, previous[0].occupied);
+    }
+}
