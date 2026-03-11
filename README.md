@@ -6,7 +6,7 @@ Browser-based universal perfboard CAD (MVP bootstrap).
 - Implemented architecture split:
   - `web`: React + TypeScript + Canvas 2D
   - `core`: Rust domain model + command application + DRC + wasm-bindgen bridge
-- Implemented up to MVP Step 6 baseline:
+- Implemented up to MVP Step 7 baseline:
   - part placement/move/rotate/delete
   - manual one-step Manhattan wiring + wire delete
   - net rename + pin-to-net assignment
@@ -16,6 +16,8 @@ Browser-based universal perfboard CAD (MVP bootstrap).
   - Part editor (pin / occupied / image)
   - Part library persistence in IndexedDB (PartDef + image assets)
   - ZIP export/import (`project.json` + `part-library.json` + `assets/*`)
+  - WASM/fallback bridge mode detection + visibility
+  - Hit-test priority (`pin -> wire -> occupied`) + Tab candidate cycle
 
 ## Local Run
 1. Install dependencies (root workspace):
@@ -45,4 +47,4 @@ cargo build
 ```
 
 ## Notes
-- Next implementation phases are tracked in `doc/impl_brief.md` and `doc/implementation_guide_ja.md` (Step 4-7).
+- MVP Step1-7 roadmap is complete; next phase candidates are tracked in `doc/implementation_guide_ja.md`.

@@ -7,6 +7,8 @@ type CoreApi = {
   default?: () => Promise<void>;
 };
 
+export type CoreBridgeMode = "wasm" | "fallback";
+
 type CoreGridPt = { x: number; y: number };
 type CoreWire = { id: string; net_id: string; path: CoreGridPt[] };
 type CoreNet = { id: string; name: string };
@@ -32,7 +34,12 @@ type CoreProjectState = {
   wires: CoreWire[];
 };
 
-let coreApiPromise: Promise<CoreApi | null> | null = null;
+type CoreRuntime = {
+  mode: CoreBridgeMode;
+  api: CoreApi;
+};
+
+let coreRuntimePromise: Promise<CoreRuntime> | null = null;
 
 function isAdjacent(a: GridPt, b: GridPt): boolean {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
@@ -345,9 +352,42 @@ function fallbackDrcJson(stateJson: string): string {
   return JSON.stringify(issues);
 }
 
-async function loadCoreApi(): Promise<CoreApi | null> {
-  if (!coreApiPromise) {
-    coreApiPromise = (async () => {
+const fallbackCoreApi: CoreApi = {
+  create_empty_project_json: fallbackCreateEmptyProjectJson,
+  apply_command_json: fallbackApplyCommandJson,
+  drc_json: fallbackDrcJson
+};
+
+function fallbackAllowed(): boolean {
+  const nodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env;
+  if (nodeEnv?.UNIUNI_CORE_FORCE_FALLBACK === "1") {
+    return true;
+  }
+  if (nodeEnv?.UNIUNI_CORE_DISABLE_FALLBACK === "1") {
+    return false;
+  }
+
+  const metaEnv = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env;
+  if (!metaEnv) return true;
+
+  const explicit = metaEnv.VITE_CORE_ALLOW_FALLBACK;
+  if (typeof explicit === "string") {
+    const normalized = explicit.trim().toLowerCase();
+    if (normalized === "1" || normalized === "true" || normalized === "yes") {
+      return true;
+    }
+    if (normalized === "0" || normalized === "false" || normalized === "no") {
+      return false;
+    }
+  }
+
+  return metaEnv.PROD !== true;
+}
+
+async function loadCoreRuntime(): Promise<CoreRuntime> {
+  if (!coreRuntimePromise) {
+    coreRuntimePromise = (async () => {
       try {
         const modulePath = "/core/pkg/uniuni_core.js";
         const mod = (await import(
@@ -356,13 +396,24 @@ async function loadCoreApi(): Promise<CoreApi | null> {
         if (typeof mod.default === "function") {
           await mod.default();
         }
-        return mod;
+        return {
+          mode: "wasm",
+          api: mod
+        };
       } catch {
-        return null;
+        if (!fallbackAllowed()) {
+          throw new Error(
+            "WASM core の読み込みに失敗しました。`core/pkg` を生成するか、`VITE_CORE_ALLOW_FALLBACK=1` を設定してください。"
+          );
+        }
+        return {
+          mode: "fallback",
+          api: fallbackCoreApi
+        };
       }
     })();
   }
-  return coreApiPromise;
+  return coreRuntimePromise;
 }
 
 function parseViewState(stateJson: string): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
@@ -416,9 +467,18 @@ export function newUuid(): string {
   return `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 }
 
+export async function detectCoreBridgeMode(): Promise<CoreBridgeMode> {
+  const runtime = await loadCoreRuntime();
+  return runtime.mode;
+}
+
+export function __resetCoreRuntimeForTest(): void {
+  coreRuntimePromise = null;
+}
+
 export async function createInitialCoreStateJson(board: Board, partDefs: PartDef[]): Promise<string> {
-  const coreApi = await loadCoreApi();
-  const create = coreApi?.create_empty_project_json ?? fallbackCreateEmptyProjectJson;
+  const runtime = await loadCoreRuntime();
+  const create = runtime.api.create_empty_project_json;
   const state = JSON.parse(create()) as CoreProjectState;
   state.board = {
     grid_pitch_mm: board.gridPitchMm,
@@ -433,14 +493,14 @@ export async function createInitialCoreStateJson(board: Board, partDefs: PartDef
 }
 
 export async function applyCoreCommandJson(stateJson: string, cmdJson: string): Promise<string> {
-  const coreApi = await loadCoreApi();
-  const apply = coreApi?.apply_command_json ?? fallbackApplyCommandJson;
+  const runtime = await loadCoreRuntime();
+  const apply = runtime.api.apply_command_json;
   return apply(stateJson, cmdJson);
 }
 
 export async function runCoreDrcJson(stateJson: string): Promise<string> {
-  const coreApi = await loadCoreApi();
-  const drc = coreApi?.drc_json ?? fallbackDrcJson;
+  const runtime = await loadCoreRuntime();
+  const drc = runtime.api.drc_json;
   return drc(stateJson);
 }
 

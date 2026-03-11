@@ -169,6 +169,37 @@
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
+## 2026-03-12 (Step7着手〜完了)
+実装内容:
+- WASM 本接続導線を整理し、接続モードを明示化。
+  - `web/src/coreBridge.ts` に `wasm` / `fallback` 判定を追加
+  - `detectCoreBridgeMode()` を追加し、UI 側で接続モードを表示
+  - 本番想定（`PROD`）では既定で fallback を無効化し、WASM 未配置時に明示エラーを返す
+  - 開発時・テスト時は fallback を許可し、既存の開発体験を維持
+- 選択UXを仕様どおりに調整。
+  - ヒットテスト候補を `pin -> wire -> occupied` の優先順位で生成
+  - 同一点候補を `Tab` / `Shift+Tab` でサイクル選択可能に変更
+  - クリック選択とキーボード選択で同一候補列を使うよう統一
+- 選択ロジックの純関数を `web/src/parts.ts` へ集約。
+  - `buildHitCandidates`
+  - `nextHitCandidateIndex`
+- テストを追加。
+  - `web/test/partsSelection.test.ts`:
+    - pin優先
+    - wire優先（non-pin occupied 上）
+    - Tab サイクル前後
+  - `web/test/coreBridge.test.ts`:
+    - テスト環境で fallback 判定
+    - 環境変数による fallback 無効化時のエラー
+- ドキュメント更新。
+  - `doc/implementation_guide_ja.md`: Step7 を完了へ更新、6.6 節（WASM接続モード/選択ヒットテスト）を追加
+  - `README.md`: 現在到達点を Step7 へ更新
+
+検証:
+- `npm run test -w web` 成功（`coreBridge.test.ts`, `partLibrary.test.ts`, `partsSelection.test.ts`, `projectPackage.test.ts`）
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。

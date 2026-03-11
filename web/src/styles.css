@@ -182,6 +182,29 @@ body,
   gap: 8px;
 }
 
+.bridge-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #3f5f82;
+  background: rgba(20, 33, 52, 0.8);
+  color: #c5dcf8;
+  font-size: 11px;
+}
+
+.bridge-badge.wasm {
+  border-color: #3f7b5b;
+  background: rgba(19, 48, 35, 0.8);
+  color: #beeed1;
+}
+
+.bridge-badge.fallback {
+  border-color: #8a6939;
+  background: rgba(58, 43, 19, 0.8);
+  color: #ffe5b6;
+}
+
 .toolbar-grid {
   display: grid;
   gap: 10px;
