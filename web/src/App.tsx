@@ -327,7 +327,7 @@ export function App(): JSX.Element {
         if (snapshot?.coreStateJson) {
           nextState = snapshot.coreStateJson;
           nextSelectedNetId = snapshot.selectedNetId ?? "";
-          nextState = replacePartDefsInStateJson(nextState, effectivePartDefs);
+          nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
         } else {
           nextState = await createInitialCoreStateJson(board, effectivePartDefs);
           for (const net of nets) {
@@ -391,15 +391,17 @@ export function App(): JSX.Element {
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          await savePartLibrary(partDefs);
           const currentState = coreStateJsonRef.current;
           if (!currentState) return;
-          const nextState = replacePartDefsInStateJson(currentState, partDefs);
+          const nextState = await replacePartDefsInStateJson(currentState, partDefs);
           syncFromCoreState(nextState);
           await refreshDrcForState(nextState);
-        } catch {
+          await savePartLibrary(partDefs);
+        } catch (err) {
           if (!cancelled) {
-            setCoreError("part library save failed");
+            setCoreError(
+              err instanceof Error ? err.message : "part definition update failed"
+            );
           }
         }
       })();

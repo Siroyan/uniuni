@@ -89,6 +89,7 @@ impl Default for ProjectState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
+    ReplacePartDefs { part_defs: Vec<PartDef> },
     CommitWire { net_id: Uuid, path: Vec<GridPt> },
     DeleteWire { wire_id: Uuid },
     AssignNetName { net_id: Uuid, name: String },
@@ -132,6 +133,16 @@ pub enum IssueLevel {
 
 pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), String> {
     match cmd {
+        Command::ReplacePartDefs { part_defs } => {
+            validate_part_defs(&part_defs)?;
+
+            let previous = std::mem::replace(&mut state.part_defs, part_defs);
+            if let Err(err) = validate_part_instances_against_defs(state) {
+                state.part_defs = previous;
+                return Err(err);
+            }
+            Ok(())
+        }
         Command::AddPartInst {
             def_id,
             at,
@@ -374,6 +385,97 @@ fn validate_part_placement(
         }
     }
     Ok(())
+}
+
+fn validate_part_defs(part_defs: &[PartDef]) -> Result<(), String> {
+    let mut def_ids = HashSet::new();
+    let mut def_names = HashSet::new();
+
+    for def in part_defs {
+        if !def_ids.insert(def.id) {
+            return Err(format!("duplicate part definition id: {}", def.id));
+        }
+
+        let normalized_name = def.name.trim();
+        if normalized_name.is_empty() {
+            return Err(format!("part definition name is empty (id: {})", def.id));
+        }
+        if !def_names.insert(normalized_name.to_owned()) {
+            return Err(format!("duplicate part definition name: {normalized_name}"));
+        }
+
+        if def.pins.is_empty() {
+            return Err(format!(
+                "part definition must have at least one pin (id: {})",
+                def.id
+            ));
+        }
+        if def.occupied.is_empty() {
+            return Err(format!(
+                "part definition must have at least one occupied cell (id: {})",
+                def.id
+            ));
+        }
+
+        let mut pin_names = HashSet::new();
+        let mut pin_positions = HashSet::new();
+        for pin in &def.pins {
+            let normalized_pin_name = pin.name.trim();
+            if normalized_pin_name.is_empty() {
+                return Err(format!(
+                    "pin name is empty in part definition {}",
+                    def.id
+                ));
+            }
+            if !pin_names.insert(normalized_pin_name.to_owned()) {
+                return Err(format!(
+                    "duplicate pin name in part definition {}: {}",
+                    def.id, normalized_pin_name
+                ));
+            }
+            if !pin_positions.insert(pin.pos) {
+                return Err(format!(
+                    "duplicate pin position in part definition {}: ({},{})",
+                    def.id, pin.pos.x, pin.pos.y
+                ));
+            }
+        }
+
+        let mut occupied_positions = HashSet::new();
+        for occ in &def.occupied {
+            if !occupied_positions.insert(*occ) {
+                return Err(format!(
+                    "duplicate occupied position in part definition {}: ({},{})",
+                    def.id, occ.x, occ.y
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_part_instances_against_defs(state: &ProjectState) -> Result<(), String> {
+    for part in &state.part_insts {
+        let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+            return Err(format!(
+                "part definition not found for part instance {}",
+                part.id
+            ));
+        };
+
+        let pin_names: HashSet<&str> = part_def.pins.iter().map(|pin| pin.name.as_str()).collect();
+        for assigned_pin_name in part.net_assign.keys() {
+            if !pin_names.contains(assigned_pin_name.as_str()) {
+                return Err(format!(
+                    "assigned pin not found in part definition {}: {}",
+                    part.def_id, assigned_pin_name
+                ));
+            }
+        }
+    }
+
+    rebuild_part_occupancy_map(state).map(|_| ())
 }
 
 fn part_collision_at(state: &ProjectState, self_id: Uuid, pt: GridPt) -> bool {

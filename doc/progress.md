@@ -88,6 +88,19 @@
 - 部品回転時の画像描画を修正。
   - 部品の `rot` に合わせて画像も回転
   - 回転時に画像アスペクト比が崩れる問題を修正（ローカルoccupied寸法基準で描画サイズを算出）
+- PartDef 検証の `core` 側移管を実施。
+  - `core` に `ReplacePartDefs` コマンドを追加
+  - PartDef 一括更新時に以下を検証:
+    - PartDef ID 重複、部品名重複、空の部品名
+    - pin/occupied の最小件数
+    - pin 名重複、pin 座標重複、occupied 座標重複
+    - 既存 PartInst の参照整合（def 存在、net_assign の pin 存在）
+    - 既存配置が新 PartDef でも盤面内・非衝突を満たすこと
+  - 検証失敗時は更新前の `part_defs` を保持（ロールバック）
+- `web` の PartDef 同期を `ReplacePartDefs` コマンド経由へ変更。
+  - `replacePartDefsInStateJson` を `apply_command_json` 経由へ切替
+  - 初期化時の PartDef 反映も同コマンド経由へ統一
+  - 不正 PartDef が core 検証に失敗した場合、ライブラリ保存を行わない順序へ変更
 
 検証:
 - `npm run build -w web` 成功。

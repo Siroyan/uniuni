@@ -137,9 +137,11 @@ uniuni/
   - `ProjectState`
   - `Board`, `GridPt`, `Wire`, `Net`, `PartDef`, `PartInst`
 - コマンド:
+  - `ReplacePartDefs`
   - `CommitWire`
   - `AssignNetName`
 - バリデーション:
+  - `ReplacePartDefs` 適用時に PartDef 一括検証（重複/空名/最低件数/既存配置整合）
   - `validate_wire_path` が Manhattan + 1ステップ制約を検証
 - DRC:
   - `run_drc` が同一点の複数ネットを SHORT として検出
