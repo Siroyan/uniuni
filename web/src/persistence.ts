@@ -1,5 +1,4 @@
 const DB_NAME = "uniuni-db";
-const DB_VERSION = 2;
 const STORE_NAME = "project_snapshots";
 const SNAPSHOT_KEY = "active_project";
 
@@ -9,9 +8,9 @@ export type PersistedSnapshot = {
   selectedNetId: string | null;
 };
 
-function openDb(version = DB_VERSION): Promise<IDBDatabase> {
+function openDb(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, version);
+    const req = typeof version === "number" ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {

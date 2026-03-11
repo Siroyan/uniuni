@@ -145,6 +145,19 @@ uniuni/
 - DRC:
   - `run_drc` が同一点の複数ネットを SHORT として検出
 
+### 6.4 Part ライブラリ永続化（`web/src/partLibrary.ts`）
+
+- 保存方針:
+  - PartDef 本体と画像アセットを分離して IndexedDB へ保存
+  - PartDef は `imageAssetId` を保持し、画像本体は Blob として保存
+- 読込方針:
+  - 読込時に Blob を data URL へ復元し、UI 側は `PartDef.imageDataUrl` として扱う
+  - 旧フォーマット（`schemaVersion: 1`）の読込互換を維持
+- 運用上の性質:
+  - 同一画像はハッシュベース asset id で再利用
+  - ライブラリ更新時に未参照アセットを自動削除
+  - DB は「現行バージョンを開く→不足ストアのみ version up」で衝突を回避
+
 ## 7. 開発・ビルド手順
 
 ### 7.1 Web
@@ -331,7 +344,7 @@ cargo check
 
 - PartDef を GUI で編集し、配置に反映できる
 
-### Step 5: Part ライブラリ永続化を実装する（進行中）
+### Step 5: Part ライブラリ永続化を実装する（完了）
 
 目的:
 

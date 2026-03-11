@@ -1,18 +1,30 @@
 import type { PartDef } from "./types";
 
 const DB_NAME = "uniuni-db";
-const DB_VERSION = 2;
 const STORE_NAME = "part_library";
 const KEY = "default_library";
+const ASSET_PREFIX = "asset:";
 
-type LibrarySnapshot = {
-  schemaVersion: number;
+type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
+  imageDataUrl?: string | null;
+  imageAssetId?: string | null;
+};
+
+type LibrarySnapshotV1 = {
+  schemaVersion: 1;
   partDefs: PartDef[];
 };
 
-function openDb(version = DB_VERSION): Promise<IDBDatabase> {
+type LibrarySnapshotV2 = {
+  schemaVersion: 2;
+  partDefs: PersistedPartDef[];
+};
+
+type LibrarySnapshot = LibrarySnapshotV1 | LibrarySnapshotV2;
+
+function openDb(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, version);
+    const req = typeof version === "number" ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -34,18 +46,172 @@ async function openDbEnsuringStore(): Promise<IDBDatabase> {
   return openDb(nextVersion);
 }
 
+function assetKey(assetId: string): string {
+  return `${ASSET_PREFIX}${assetId}`;
+}
+
+function isDataUrl(value: string): boolean {
+  return value.startsWith("data:");
+}
+
+async function toAssetId(dataUrl: string): Promise<string> {
+  const bytes = new TextEncoder().encode(dataUrl);
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const hash = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return `sha256-${hash.slice(0, 24)}`;
+  }
+  let hash = 2166136261;
+  for (const ch of dataUrl) {
+    hash ^= ch.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv-${(hash >>> 0).toString(16)}`;
+}
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  if (!res.ok) {
+    throw new Error("failed to decode image data");
+  }
+  return res.blob();
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+      } else {
+        reject(new Error("failed to encode image data"));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("failed to encode image data"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function loadRawSnapshot(db: IDBDatabase): Promise<LibrarySnapshot | null> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).get(KEY);
+    req.onsuccess = () => resolve((req.result as LibrarySnapshot | undefined) ?? null);
+    req.onerror = () => reject(req.error ?? new Error("failed to load part library"));
+  });
+}
+
+function loadAssetBlobs(db: IDBDatabase, assetIds: string[]): Promise<Map<string, Blob>> {
+  return new Promise((resolve, reject) => {
+    const assets = new Map<string, Blob>();
+    if (assetIds.length === 0) {
+      resolve(assets);
+      return;
+    }
+
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    let pending = assetIds.length;
+
+    for (const id of assetIds) {
+      const req = store.get(assetKey(id));
+      req.onsuccess = () => {
+        const value = req.result;
+        if (value instanceof Blob) {
+          assets.set(id, value);
+        }
+        pending -= 1;
+        if (pending === 0) {
+          resolve(assets);
+        }
+      };
+      req.onerror = () => reject(req.error ?? new Error("failed to load image asset"));
+    }
+  });
+}
+
+function saveSnapshotAndAssets(
+  db: IDBDatabase,
+  snapshot: LibrarySnapshotV2,
+  assets: Map<string, Blob>
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("failed to save part library"));
+    const store = tx.objectStore(STORE_NAME);
+    store.put(snapshot, KEY);
+    for (const [id, blob] of assets.entries()) {
+      store.put(blob, assetKey(id));
+    }
+  });
+}
+
+function cleanupUnusedAssets(db: IDBDatabase, usedAssetIds: Set<string>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("failed to cleanup part library assets"));
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.openKeyCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return;
+      const key = cursor.key;
+      if (typeof key === "string" && key.startsWith(ASSET_PREFIX)) {
+        const id = key.slice(ASSET_PREFIX.length);
+        if (!usedAssetIds.has(id)) {
+          store.delete(key);
+        }
+      }
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error ?? new Error("failed to iterate part library assets"));
+  });
+}
+
 export async function loadPartLibrary(): Promise<PartDef[] | null> {
   const db = await openDbEnsuringStore();
   try {
-    return await new Promise<PartDef[] | null>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const req = tx.objectStore(STORE_NAME).get(KEY);
-      req.onsuccess = () => {
-        const snapshot = req.result as LibrarySnapshot | undefined;
-        resolve(snapshot?.partDefs ?? null);
-      };
-      req.onerror = () => reject(req.error ?? new Error("failed to load part library"));
-    });
+    const snapshot = await loadRawSnapshot(db);
+    if (!snapshot) return null;
+
+    if (snapshot.schemaVersion === 1) {
+      return snapshot.partDefs;
+    }
+
+    const assetIds = Array.from(
+      new Set(
+        snapshot.partDefs
+          .map((def) => def.imageAssetId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      )
+    );
+    const assetBlobs = await loadAssetBlobs(db, assetIds);
+    const dataUrlCache = new Map<string, string>();
+
+    for (const [id, blob] of assetBlobs.entries()) {
+      dataUrlCache.set(id, await blobToDataUrl(blob));
+    }
+
+    return snapshot.partDefs.map((def) => ({
+      id: def.id,
+      name: def.name,
+      pins: def.pins,
+      occupied: def.occupied,
+      imageScale: def.imageScale,
+      imageOffsetX: def.imageOffsetX,
+      imageOffsetY: def.imageOffsetY,
+      imageDataUrl:
+        typeof def.imageDataUrl === "string"
+          ? def.imageDataUrl
+          : typeof def.imageAssetId === "string"
+            ? (dataUrlCache.get(def.imageAssetId) ?? null)
+            : null
+    }));
   } finally {
     db.close();
   }
@@ -54,12 +220,41 @@ export async function loadPartLibrary(): Promise<PartDef[] | null> {
 export async function savePartLibrary(partDefs: PartDef[]): Promise<void> {
   const db = await openDbEnsuringStore();
   try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("failed to save part library"));
-      tx.objectStore(STORE_NAME).put({ schemaVersion: 1, partDefs } satisfies LibrarySnapshot, KEY);
-    });
+    const assetBlobs = new Map<string, Blob>();
+    const usedAssetIds = new Set<string>();
+    const persistedDefs: PersistedPartDef[] = [];
+
+    for (const def of partDefs) {
+      if (!def.imageDataUrl || !isDataUrl(def.imageDataUrl)) {
+        persistedDefs.push({
+          ...def,
+          imageDataUrl: def.imageDataUrl ?? null,
+          imageAssetId: null
+        });
+        continue;
+      }
+
+      const assetId = await toAssetId(def.imageDataUrl);
+      usedAssetIds.add(assetId);
+      if (!assetBlobs.has(assetId)) {
+        assetBlobs.set(assetId, await dataUrlToBlob(def.imageDataUrl));
+      }
+      persistedDefs.push({
+        ...def,
+        imageDataUrl: null,
+        imageAssetId: assetId
+      });
+    }
+
+    await saveSnapshotAndAssets(
+      db,
+      {
+        schemaVersion: 2,
+        partDefs: persistedDefs
+      },
+      assetBlobs
+    );
+    await cleanupUnusedAssets(db, usedAssetIds);
   } finally {
     db.close();
   }

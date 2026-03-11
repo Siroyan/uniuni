@@ -127,6 +127,23 @@
 - `npm run build -w web` 成功
 - `cd core && cargo check` 成功
 
+## 2026-03-12 (Step5着手)
+実装内容:
+- Part ライブラリ永続化の構造を改修。
+  - `web/src/partLibrary.ts` で PartDef 本体と画像アセットの保存責務を分離
+  - PartDef は `imageAssetId` 参照を保持し、画像データURLは Blob アセットとして IndexedDB へ保存
+  - 同一画像はハッシュベースの asset id で再利用し、重複保存を抑制
+  - ライブラリ更新時に未参照アセットをクリーンアップし、不要データを残さないように変更
+  - 読込時は Blob から data URL を復元して既存 UI 型（`imageDataUrl`）へ変換
+  - 旧フォーマット（`schemaVersion: 1`）読み込み互換を維持
+- IndexedDB バージョン衝突の再発防止。
+  - `partLibrary.ts` / `persistence.ts` の DB オープンを「最新バージョン取得→必要時のみ version up」方式へ統一
+  - `requested version is less than existing version` 系エラーの再発を防止
+
+検証:
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。
