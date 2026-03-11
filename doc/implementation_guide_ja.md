@@ -145,6 +145,19 @@ uniuni/
 - DRC:
   - `run_drc` が同一点の複数ネットを SHORT として検出
 
+### 6.4 Part ライブラリ永続化（`web/src/partLibrary.ts`）
+
+- 保存方針:
+  - PartDef 本体と画像アセットを分離して IndexedDB へ保存
+  - PartDef は `imageAssetId` を保持し、画像本体は Blob として保存
+- 読込方針:
+  - 読込時に Blob を data URL へ復元し、UI 側は `PartDef.imageDataUrl` として扱う
+  - 旧フォーマット（`schemaVersion: 1`）の読込互換を維持し、読込時に `schemaVersion: 2` へ自動移行
+- 運用上の性質:
+  - 同一画像はハッシュベース asset id で再利用
+  - ライブラリ更新時に未参照アセットを自動削除
+  - DB は「現行バージョンを開く→不足ストアのみ version up」で衝突を回避
+
 ## 7. 開発・ビルド手順
 
 ### 7.1 Web
@@ -182,12 +195,16 @@ cargo build
     - 既存配置との不整合（pin 割当不整合、盤面外化）時にロールバックする
 - `web`:
   - `web/test/coreBridge.test.ts`
+  - `web/test/partLibrary.test.ts`
   - `applyCoreCommandJson` + `commandReplacePartDefsJson` の公開 API 経由で、`ReplacePartDefs` の代表ケースを検証
+  - `savePartLibrary` / `loadPartLibrary` の永続化仕様（画像アセット分離、重複排除、未参照削除、旧形式互換）を検証
   - 観点:
     - 正常更新
     - 重複名の拒否
     - 既存 `net_assign` 不整合の拒否
     - 既存配置衝突の拒否
+    - 画像アセットの重複保存抑制と不要アセット削除
+    - schemaVersion 1 のライブラリ読み込み互換
 
 テスト実行コマンド:
 
@@ -331,7 +348,7 @@ cargo check
 
 - PartDef を GUI で編集し、配置に反映できる
 
-### Step 5: Part ライブラリ永続化を実装する（進行中）
+### Step 5: Part ライブラリ永続化を実装する（完了）
 
 目的:
 
