@@ -553,9 +553,14 @@ fn default_net_name(net_id: Uuid) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::to_string;
 
     fn uuid(id: &str) -> Uuid {
         Uuid::parse_str(id).expect("valid uuid")
+    }
+
+    fn as_json(state: &ProjectState) -> String {
+        to_string(state).expect("state should serialize")
     }
 
     fn test_state() -> ProjectState {
@@ -599,6 +604,7 @@ mod tests {
     fn replace_part_defs_accepts_valid_update() {
         let mut state = test_state();
         let def_id = state.part_defs[0].id;
+        let before_part_inst = state.part_insts[0].clone();
 
         let result = apply_command(
             &mut state,
@@ -624,11 +630,16 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(state.part_defs[0].name, "Updated Part");
         assert_eq!(state.part_defs[0].pins.len(), 2);
+        assert_eq!(state.part_insts[0].id, before_part_inst.id);
+        assert_eq!(state.part_insts[0].at, before_part_inst.at);
+        assert_eq!(state.part_insts[0].refdes, before_part_inst.refdes);
+        assert_eq!(state.part_insts[0].net_assign, before_part_inst.net_assign);
     }
 
     #[test]
     fn replace_part_defs_rejects_duplicate_part_name() {
         let mut state = test_state();
+        let before_json = as_json(&state);
 
         let result = apply_command(
             &mut state,
@@ -660,12 +671,13 @@ mod tests {
         assert!(result
             .expect_err("must fail")
             .contains("duplicate part definition name"));
+        assert_eq!(as_json(&state), before_json);
     }
 
     #[test]
     fn replace_part_defs_rolls_back_when_existing_assignment_becomes_invalid() {
         let mut state = test_state();
-        let previous = state.part_defs.clone();
+        let before_json = as_json(&state);
         let def_id = state.part_defs[0].id;
 
         let result = apply_command(
@@ -687,13 +699,13 @@ mod tests {
         assert!(result
             .expect_err("must fail")
             .contains("assigned pin not found"));
-        assert_eq!(state.part_defs[0].pins[0].name, previous[0].pins[0].name);
+        assert_eq!(as_json(&state), before_json);
     }
 
     #[test]
     fn replace_part_defs_rolls_back_when_existing_part_goes_outside_board() {
         let mut state = test_state();
-        let previous = state.part_defs.clone();
+        let before_json = as_json(&state);
         let def_id = state.part_defs[0].id;
 
         let result = apply_command(
@@ -713,6 +725,6 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.expect_err("must fail").contains("outside board"));
-        assert_eq!(state.part_defs[0].occupied, previous[0].occupied);
+        assert_eq!(as_json(&state), before_json);
     }
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { __testOnly, commandReplacePartDefsJson } from "../src/coreBridge";
+import { applyCoreCommandJson, commandReplacePartDefsJson } from "../src/coreBridge";
 import type { Rot } from "../src/types";
 
 type CoreGridPt = { x: number; y: number };
@@ -32,32 +32,33 @@ const PART_ID = "22222222-2222-2222-2222-222222222222";
 const NET_ID = "33333333-3333-3333-3333-333333333333";
 
 function baseState(): CoreState {
-  const state = JSON.parse(__testOnly.fallbackCreateEmptyProjectJson()) as CoreState;
-  state.board = { grid_pitch_mm: 2.54, width: 64, height: 40 };
-  state.part_defs = [
-    {
-      id: PART_DEF_ID,
-      name: "Test Part",
-      pins: [{ name: "1", pos: { x: 0, y: 0 } }],
-      occupied: [{ x: 0, y: 0 }]
-    }
-  ];
-  state.part_insts = [
-    {
-      id: PART_ID,
-      def_id: PART_DEF_ID,
-      at: { x: 0, y: 0 },
-      rot: "Deg0",
-      refdes: "U1",
-      net_assign: { "1": NET_ID }
-    }
-  ];
-  state.nets = [{ id: NET_ID, name: "N-1" }];
-  state.wires = [];
-  return state;
+  return {
+    schema_version: 1,
+    board: { grid_pitch_mm: 2.54, width: 64, height: 40 },
+    part_defs: [
+      {
+        id: PART_DEF_ID,
+        name: "Test Part",
+        pins: [{ name: "1", pos: { x: 0, y: 0 } }],
+        occupied: [{ x: 0, y: 0 }]
+      }
+    ],
+    part_insts: [
+      {
+        id: PART_ID,
+        def_id: PART_DEF_ID,
+        at: { x: 0, y: 0 },
+        rot: "Deg0",
+        refdes: "U1",
+        net_assign: { "1": NET_ID }
+      }
+    ],
+    nets: [{ id: NET_ID, name: "N-1" }],
+    wires: []
+  };
 }
 
-test("fallback ReplacePartDefs accepts valid update", () => {
+test("bridge ReplacePartDefs accepts valid update", async () => {
   const state = baseState();
   const cmd = commandReplacePartDefsJson([
     {
@@ -74,12 +75,15 @@ test("fallback ReplacePartDefs accepts valid update", () => {
     }
   ]);
 
-  const next = JSON.parse(__testOnly.fallbackApplyCommandJson(JSON.stringify(state), cmd)) as CoreState;
+  const nextJson = await applyCoreCommandJson(JSON.stringify(state), cmd);
+  const next = JSON.parse(nextJson) as CoreState;
   assert.equal(next.part_defs[0].name, "Updated Part");
   assert.equal(next.part_defs[0].pins.length, 2);
+  assert.equal(next.part_insts.length, 1);
+  assert.deepEqual(next.part_insts[0].net_assign, { "1": NET_ID });
 });
 
-test("fallback ReplacePartDefs rejects duplicate part names", () => {
+test("bridge ReplacePartDefs rejects duplicate part names", async () => {
   const state = baseState();
   const cmd = commandReplacePartDefsJson([
     {
@@ -96,13 +100,13 @@ test("fallback ReplacePartDefs rejects duplicate part names", () => {
     }
   ]);
 
-  assert.throws(
-    () => __testOnly.fallbackApplyCommandJson(JSON.stringify(state), cmd),
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), cmd),
     /duplicate part definition name/
   );
 });
 
-test("fallback ReplacePartDefs rejects invalid assigned pin after update", () => {
+test("bridge ReplacePartDefs rejects invalid assigned pin after update", async () => {
   const state = baseState();
   const cmd = commandReplacePartDefsJson([
     {
@@ -113,13 +117,13 @@ test("fallback ReplacePartDefs rejects invalid assigned pin after update", () =>
     }
   ]);
 
-  assert.throws(
-    () => __testOnly.fallbackApplyCommandJson(JSON.stringify(state), cmd),
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), cmd),
     /assigned pin not found/
   );
 });
 
-test("fallback ReplacePartDefs rejects updates that create part collisions", () => {
+test("bridge ReplacePartDefs rejects updates that create part collisions", async () => {
   const state = baseState();
   state.part_insts.push({
     id: "66666666-6666-6666-6666-666666666666",
@@ -142,8 +146,8 @@ test("fallback ReplacePartDefs rejects updates that create part collisions", () 
     }
   ]);
 
-  assert.throws(
-    () => __testOnly.fallbackApplyCommandJson(JSON.stringify(state), cmd),
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), cmd),
     /part-part occupancy collision/
   );
 });

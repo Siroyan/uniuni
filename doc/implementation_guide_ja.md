@@ -164,6 +164,51 @@ cargo check
 cargo build
 ```
 
+### 7.3 テスト（詳細）
+
+テスト方針:
+
+- テストは実装詳細ではなく仕様に根ざして書く
+- 失敗時の状態不変（ロールバック）を必ず検証する
+- `web` 側テストは可能な限り公開 API 経由で実行し、内部ヘルパー依存を避ける
+
+現在の自動テスト:
+
+- `core`:
+  - `core/src/model.rs` のユニットテスト（`ReplacePartDefs`）
+  - 観点:
+    - 妥当な PartDef 更新を受理する
+    - 重複名などの不正更新を拒否する
+    - 既存配置との不整合（pin 割当不整合、盤面外化）時にロールバックする
+- `web`:
+  - `web/test/coreBridge.test.ts`
+  - `applyCoreCommandJson` + `commandReplacePartDefsJson` の公開 API 経由で、`ReplacePartDefs` の代表ケースを検証
+  - 観点:
+    - 正常更新
+    - 重複名の拒否
+    - 既存 `net_assign` 不整合の拒否
+    - 既存配置衝突の拒否
+
+テスト実行コマンド:
+
+```bash
+cd <repo-root>/core
+cargo test
+
+cd <repo-root>
+npm run test -w web
+```
+
+CI/手動確認で最低限回すコマンド:
+
+```bash
+cd <repo-root>
+npm run build -w web
+
+cd <repo-root>/core
+cargo check
+```
+
 ## 8. 変更を入れるときの指針
 
 ### 8.1 新機能を追加する順序（推奨）

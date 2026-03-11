@@ -115,6 +115,7 @@
   - ロールバック系: 既存配置が盤面外になる更新を拒否し、更新前 `part_defs` を保持
 - `web` fallback (`coreBridge`) の整合テストを追加。
   - `ReplacePartDefs` の代表ケース（正常/重複/参照不整合/衝突）を Node テストで検証
+  - 内部ヘルパー直叩きではなく `applyCoreCommandJson`（公開API）経由で検証
   - テスト実行基盤として `tsx` を devDependency に追加
 - Step4 完了に合わせて実装ガイドを更新。
   - Step4 ステータスを `完了` に変更
