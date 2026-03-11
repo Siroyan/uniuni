@@ -4,7 +4,8 @@
 
 ## 1. 基本方針
 
-- `doc/impl_brief.md` を実装方針の一次情報とする
+- 仕様の一次情報は `doc/specification_ja.md` とする
+- 実装方針・構造は `doc/implementation_guide_ja.md` を参照する
 - MVP は「まず動く骨組み」を優先し、段階的に拡張する
 - 編集ルール・整合性チェックは `core`（Rust）側に寄せる
 - `web`（TypeScript/React）は入力処理と可視化に集中する
@@ -24,7 +25,7 @@ uniuni/
 │     ├─ model.rs
 │     └─ lib.rs
 └─ doc/
-   ├─ impl_brief.md
+   ├─ specification_ja.md
    ├─ implementation_guide_ja.md
    └─ progress.md
 ```
@@ -44,24 +45,29 @@ uniuni/
   - wasm-bindgen で JSON API を公開
   - `create_empty_project_json`, `apply_command_json`, `drc_json`
 
-## 4. 実装済み範囲（2026-03-07時点）
+## 4. 実装済み範囲（2026-03-12時点）
 
 - Web 基盤（Vite + React + TypeScript）
 - グリッド描画、ボード境界描画
 - pan（中/右ドラッグ）、zoom（ホイール）、snap表示
-- Rust コアの最小モデルとコマンド適用
-- 最小 DRC（異なるネットの同一点共有）
+- 部品配置・移動・回転・削除
+- 手動配線（1ステップ Manhattan）とネット編集
+- DRC（部品衝突、wire衝突、SHORT、未接続Pin警告）
+- Undo/Redo
+- IndexedDB 永続化（プロジェクト/Partライブラリ）
+- ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
+- WASM/Fallback 接続モード表示
+- Pin優先ヒットテスト + Tabサイクル選択
 
 ## 5. 未実装の主要項目
 
-- 部品配置・移動・回転
-- Undo/Redo
-- IndexedDB 永続化
-- `web` と `core`（WASM）の実接続
+- ZIP Import の進捗表示・エラー案内改善
+- 選択/編集の E2E テスト整備
+- 大規模データ時の描画/ヒットテスト性能改善
 
 ## 6. 作業ルール（このリポジトリ）
 
-- 変更前に関連ドキュメント（`doc/impl_brief.md` など）を確認する
+- 変更前に関連ドキュメント（`doc/specification_ja.md`、`doc/implementation_guide_ja.md` など）を確認する
 - 仕様追加時は、可能な限り `core` に型・検証・コマンドを先に追加する
 - `web/src/coords.ts` を座標変換の単一責務モジュールとして維持する
 - 新規実装後は最低限のビルド確認を行う
@@ -91,7 +97,7 @@ uniuni/
 
 ## 9. 参照ドキュメント
 
-- 方針: `doc/impl_brief.md`
+- 仕様: `doc/specification_ja.md`
 - 実装ガイド: `doc/implementation_guide_ja.md`
 - 進捗: `doc/progress.md`
 - 利用方法: `README.md`

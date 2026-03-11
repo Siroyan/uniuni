@@ -1,419 +1,270 @@
 # uniuni 実装ガイド（日本語）
 
-このドキュメントは、`uniuni` の現時点（MVP初期段階）の実装構造を、OSS コントリビューター向けに説明するものです。
+最終更新日: 2026-03-12
+対象バージョン: MVP Step1〜Step7 完了時点
 
-## 1. プロジェクトの目的
+## 1. この文書の位置づけ
+この文書は `uniuni` の実装構造と実装上の判断基準を共有するためのガイドである。
 
-`uniuni` は、ユニバーサル基板向けの配線設計をブラウザで行う CAD を目指しています。
-現在は以下を優先しています。
+- 仕様そのもの（機能要件・操作仕様）は [specification_ja.md](./specification_ja.md) を参照
+- 作業履歴は [progress.md](./progress.md) を参照
 
-- ブラウザで動く編集体験の土台
-- 盤面座標系（screen/world/grid）の確立
-- Rust コアによるドメインモデルとコマンド適用の骨組み
+本書は「どう実装されているか」「どこを編集すべきか」に焦点を当てる。
 
-設計方針の元資料は [impl_brief.md](./impl_brief.md) を参照してください。
+## 2. 現在の到達点
+MVP Step1〜Step7 は完了している。
 
-## 2. 現在の実装到達点
-
-実装済み:
-
-- `web`（React + TypeScript + Canvas 2D）
-- `core`（Rust + wasm-bindgen）
-- 盤面グリッド描画、pan / zoom / snap
-- 部品の配置/移動/回転/削除（コマンド経由）
-- 手動配線（1ステップ Manhattan）と wire 削除
-- ネット編集（追加/改名）と pin へのネット割当
-- DRC（SHORT, wire-vs-part occupancy, 未接続 pin 警告）
+実装済みの主要機能:
+- 部品配置/移動/回転/削除
+- 手動配線（1ステップ Manhattan）と配線削除
+- Net 追加/改名、Pin への Net 割当
+- DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
-- IndexedDB 永続化（自動保存/復元）
-- JSON Export/Import（`project.json` 最小版）
-- ZIP Export/Import（`project.json` + `part-library.json` + `assets/*`）
-- Part editor（PartDef の pin/occupied/image 編集）
-- Part ライブラリ永続化（IndexedDB）
-- Part ライブラリ JSON Export/Import
+- IndexedDB 自動保存/復元
+- Part Editor（Pin / Occupied / 画像 / プレビュー）
+- Part ライブラリ永続化（画像アセット分離保存）
+- ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
+- WASM/Fallback 接続モード表示
+- ヒットテスト優先順位（Pin > Wire > Occupied）と Tab サイクル選択
 
-未実装（これから）:
-
-- MVP Step1〜Step7 は完了
-- 次段階は運用改善（エラー案内改善、E2E整備、性能最適化）
-
-## 3. ディレクトリ構成
+## 3. システム構成
 
 ```text
 uniuni/
-├─ web/                 # フロントエンド
-│  ├─ src/
-│  │  ├─ App.tsx
-│  │  ├─ BoardCanvas.tsx
-│  │  ├─ coords.ts
-│  │  └─ types.ts
-│  └─ package.json
-├─ core/                # Rust コア
-│  ├─ src/
-│  │  ├─ lib.rs
-│  │  └─ model.rs
-│  └─ Cargo.toml
+├─ web/                 # React + TypeScript UI
+│  └─ src/
+│     ├─ App.tsx        # 画面状態・操作ハンドリング・UI
+│     ├─ BoardCanvas.tsx# Canvas描画とポインタイベント
+│     ├─ coreBridge.ts  # Web ↔ Core(JSON API) 接続
+│     ├─ partLibrary.ts # Partライブラリ IndexedDB
+│     ├─ persistence.ts # プロジェクトスナップショット IndexedDB
+│     ├─ projectPackage.ts # ZIP 入出力
+│     ├─ parts.ts       # 幾何ユーティリティ・ヒットテスト候補
+│     ├─ coords.ts      # 座標変換
+│     └─ types.ts       # Web側型定義
+├─ core/                # Rust domain core + wasm-bindgen
+│  └─ src/
+│     ├─ model.rs       # 状態・コマンド・検証・DRC
+│     └─ lib.rs         # wasm公開関数
 └─ doc/
-   ├─ impl_brief.md
-   ├─ progress.md
-   └─ implementation_guide_ja.md
+   ├─ specification_ja.md
+   ├─ implementation_guide_ja.md
+   └─ progress.md
 ```
 
-## 4. レイヤ構造と責務
+## 4. レイヤ責務
 
-### 4.1 `web` レイヤ（UI / 入力 / 描画）
+### 4.1 `web` レイヤ
+- ユーザー入力の解釈（クリック、キー、ドラッグ、ホイール）
+- 描画（Canvas）
+- UI状態管理（選択、ツールモード、編集中フォーム）
+- Coreへ渡すコマンド生成
+- 永続化/入出力（IndexedDB, ZIP）
 
-- 役割:
-  - ユーザー入力（ポインタ、ホイール）を受ける
-  - Viewport（pan/zoom）を更新する
-  - Canvas に描画する
-- 代表実装:
-  - [BoardCanvas.tsx](../web/src/BoardCanvas.tsx)
+### 4.2 `core` レイヤ
+- ドメインモデル定義
+- コマンド適用と不正状態拒否
+- DRC判定
+- JSON API（wasm-bindgen）公開
 
-### 4.2 `core` レイヤ（状態 / ルール / コマンド）
+### 4.3 設計原則
+- 編集ルールの真実は `core` に置く
+- `web` は入力と可視化に集中する
+- 座標変換は `coords.ts` に集約する
 
-- 役割:
-  - プロジェクト状態の定義
-  - コマンド適用とバリデーション
-  - DRC 判定
-- 代表実装:
-  - [model.rs](../core/src/model.rs)
+## 5. 実行時データフロー
 
-### 4.3 WASM ブリッジ（Web ↔ Rust）
+### 5.1 起動フロー
+1. `detectCoreBridgeMode()` で `wasm/fallback` 判定
+2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）
+3. スナップショット読込
+4. スナップショットがあれば PartDef 差し替え適用
+5. 復元失敗時は新規 state を作成して起動継続
+6. DRC実行
 
-- 役割:
-  - JSON 文字列で状態とコマンドを受け渡す
-- 公開関数:
-  - `create_empty_project_json`
-  - `apply_command_json`
-  - `drc_json`
-- 実装:
-  - [lib.rs](../core/src/lib.rs)
+### 5.2 編集フロー
+1. UI操作を `App.tsx` で解釈
+2. コマンドJSONを生成
+3. `applyCoreCommandJson()` で適用
+4. Core state JSON を再同期
+5. 履歴更新（Undo/Redo）
+6. DRC再評価
+7. 遅延自動保存
 
-## 5. 現在のデータフロー
+### 5.3 PartDef更新フロー
+1. Part Editor で `partDefs` を更新
+2. `replacePartDefsInStateJson()` を実行
+3. `core` 側 `ReplacePartDefs` で一括検証
+4. 成功時のみ画面反映とライブラリ保存
 
-現時点の意図的に単純なデータフローは以下です。
+### 5.4 ZIP Importフロー
+1. ZIPを展開して `project.json` を取得
+2. `part-library.json` と `assets/*` から PartDef 復元
+3. `replacePartDefsInStateJson()` で state と PartDef を整合
+4. state置換、選択/履歴リセット、DRC再評価
 
-1. UI が入力を受ける
-2. `web/src/coords.ts` で座標変換を行う
-3. `BoardCanvas` が画面描画（グリッド・ボード境界・スナップ点）
-4. 将来的に UI イベントを `Command` に変換して `core` に渡す
-5. `core` が状態更新と DRC を実施し、結果を UI に返す
+## 6. Coreドメイン実装
 
-重要な点:
+### 6.1 公開JSON API（`core/src/lib.rs`）
+- `create_empty_project_json()`
+- `apply_command_json(state_json, cmd_json)`
+- `drc_json(state_json)`
 
-- 「編集ルールの真実」は `core` に寄せる設計です
-- `web` は入力処理と可視化を担当します
+### 6.2 主要型（`core/src/model.rs`）
+- `ProjectState`
+- `Board`, `GridPt`
+- `PartDef`, `PartInst`, `PinDef`, `Rot`
+- `Net`, `Wire`
+- `Command`
+- `DrcIssue`, `IssueLevel`
 
-## 6. 主要モジュール解説
+### 6.3 コマンド
+- `ReplacePartDefs`
+- `AddPartInst`
+- `MovePartInst`
+- `RotatePartInst`
+- `DeletePartInst`
+- `CommitWire`
+- `DeleteWire`
+- `AssignNetName`
+- `AssignPinToNet`
 
-### 6.1 座標変換（`web/src/coords.ts`）
+### 6.4 主要検証
+- PartDef整合:
+  - ID重複、名前重複/空文字
+  - Pin/Occupied最小件数
+  - Pin名/Pin座標/Occupied座標の重複
+- Part配置整合:
+  - ボード外配置禁止
+  - Part間衝突禁止
+- Wire整合:
+  - 最短長（2点以上）
+  - 1ステップ Manhattan
+  - ボード内
+- `ReplacePartDefs` は失敗時ロールバック
 
-- `screenToWorld`: ピクセル座標 → ワールド座標
-- `worldToScreen`: ワールド座標 → ピクセル座標
-- `worldToGrid`: ワールド座標 → グリッド点（四捨五入スナップ）
-- `gridToWorld`: グリッド点 → ワールド座標
-- `clampZoom`: ズーム範囲制限（`0.2`〜`4.0`）
+### 6.5 DRC
+- `PART_COLLISION` (Error)
+- `WIRE_PART_COLLISION` (Error)
+- `SHORT` (Error)
+- `UNCONNECTED_PIN` (Warning)
 
-### 6.2 Canvas 描画と操作（`web/src/BoardCanvas.tsx`）
+## 7. Web実装の要点
 
-- 2つの `useEffect` に責務分離:
-  - 描画 effect
-  - 入力イベント登録 effect
-- 操作仕様:
-  - pan: 中クリック / 右クリックドラッグ
-  - zoom: ホイール（カーソル位置アンカー）
-  - hover: 最寄りグリッド点を HUD 表示
-- 画像描画仕様（Step4 追加分）:
-  - PartDef の `imageDataUrl` を部品描画時に重ねて表示
-  - 部品の `rot`（`Deg0/90/180/270`）に合わせて画像も回転描画
-  - `imageScale` / `imageOffsetX` / `imageOffsetY` を反映
-  - 画像削除時はキャッシュを破棄し、既配置部品・新規配置部品とも古い画像を再利用しない
+### 7.1 `App.tsx`
+- アプリケーション状態の中心
+- 操作モード（`select/place/wire`）管理
+- キーボードショートカット処理
+- Core state 同期、履歴管理、DRC呼び出し
+- Part Editor UI とライブラリUI管理
 
-### 6.3 ドメインモデル（`core/src/model.rs`）
+### 7.2 `BoardCanvas.tsx`
+- Canvas描画（グリッド、ボード境界、配線、部品、プレビュー）
+- ポインタイベント処理
+- Pan/Zoom/Hover座標
+- 部品画像キャッシュ（PartDef ID単位）
 
-- 主要型:
-  - `ProjectState`
-  - `Board`, `GridPt`, `Wire`, `Net`, `PartDef`, `PartInst`
-- コマンド:
-  - `ReplacePartDefs`
-  - `CommitWire`
-  - `AssignNetName`
-- バリデーション:
-  - `ReplacePartDefs` 適用時に PartDef 一括検証（重複/空名/最低件数/既存配置整合）
-  - `validate_wire_path` が Manhattan + 1ステップ制約を検証
-- DRC:
-  - `run_drc` が同一点の複数ネットを SHORT として検出
+### 7.3 `parts.ts`
+- 幾何計算:
+  - `rotateRelative`
+  - `absolutePins`
+  - `absoluteOccupied`
+  - `canPlacePart`
+- 選択候補:
+  - `buildHitCandidates`
+  - `nextHitCandidateIndex`
 
-### 6.4 Part ライブラリ永続化（`web/src/partLibrary.ts`）
+### 7.4 `coords.ts`
+- `screen -> world -> grid` と逆変換
+- `clampZoom(0.2..4.0)`
 
-- 保存方針:
-  - PartDef 本体と画像アセットを分離して IndexedDB へ保存
-  - PartDef は `imageAssetId` を保持し、画像本体は Blob として保存
-- 読込方針:
-  - 読込時に Blob を data URL へ復元し、UI 側は `PartDef.imageDataUrl` として扱う
-  - 旧フォーマット（`schemaVersion: 1`）の読込互換を維持し、読込時に `schemaVersion: 2` へ自動移行
-- 運用上の性質:
-  - 同一画像はハッシュベース asset id で再利用
-  - ライブラリ更新時に未参照アセットを自動削除
-  - DB は「現行バージョンを開く→不足ストアのみ version up」で衝突を回避
+## 8. 永続化と入出力
 
-### 6.5 プロジェクトZIP入出力（`web/src/projectPackage.ts`）
+### 8.1 プロジェクト自動保存（`persistence.ts`）
+- DB: `uniuni-db`
+- Store: `project_snapshots`
+- Key: `active_project`
+- 保存内容:
+  - `schemaVersion`
+  - `coreStateJson`
+  - `selectedNetId`
 
+### 8.2 Partライブラリ保存（`partLibrary.ts`）
+- DB: `uniuni-db`
+- Store: `part_library`
+- Snapshot key: `default_library`
+- 画像は `asset:<assetId>` キーで分離保存
+- 同一画像はハッシュIDで重複排除
+- 未参照アセットはクリーンアップ
+- 旧スキーマ（v1）読込時は v2 へ移行
+
+### 8.3 プロジェクトZIP（`projectPackage.ts`）
 - Export:
-  - `project.json`（core state）
-  - `part-library.json`（PartDef + `imageAssetId`）
-  - `assets/*`（画像Blob由来バイナリ）
+  - `project.json`
+  - `part-library.json`
+  - `assets/<assetId>`
 - Import:
-  - ZIP 展開後、`project.json` を読み込み
-  - `part-library.json` と `assets/*` から `PartDef.imageDataUrl` を復元
-  - 復元 PartDef を core state へ反映してから表示状態を同期
-- 互換:
-  - `part-library schemaVersion: 1` 読込をサポート
+  - `project.json` 必須
+  - `part-library schemaVersion: 1/2` 対応
 
-### 6.6 WASM接続モードとヒットテスト選択（Step7）
+## 9. Core接続モード（WASM/Fallback）
 
-- WASM 接続モード:
-  - `coreBridge` が起動時に `wasm` / `fallback` を判別
-  - UI 上で現在モードをバッジ表示（`Core: WASM` / `Core: Fallback`）
-  - 既定は fallback 許可（WASM 優先）で、WASM 未配置環境でも動作継続
-  - `VITE_CORE_DISABLE_FALLBACK=1` を指定した場合は fallback を無効化し、未配置時は明示エラーにする
-- 選択ヒットテスト:
-  - 候補生成を `pin -> wire -> occupied` の優先順位へ統一
-  - 候補が複数ある座標で `Tab`（逆順は `Shift+Tab`）によりサイクル選択
-  - クリック選択と Tab サイクルで同一の候補列を使い、選択挙動を一貫化
+### 9.1 判定方針
+- まず `core/pkg/uniuni_core.js` の動的importを試行
+- 成功時: `wasm`
+- 失敗時: fallback許可なら `fallback`
+- fallback不許可時: 初期化エラー
 
-## 7. 開発・ビルド手順
+### 9.2 fallback制御
+優先順:
+1. `UNIUNI_CORE_FORCE_FALLBACK=1` で強制許可
+2. `UNIUNI_CORE_DISABLE_FALLBACK=1` で無効化
+3. `VITE_CORE_DISABLE_FALLBACK=1` で無効化
+4. `VITE_CORE_ALLOW_FALLBACK` 明示設定
+5. 未指定時は許可（WASM優先）
 
-### 7.1 Web
+## 10. テスト方針
 
+### 10.1 方針
+- 仕様に根ざしたテストを優先
+- 公開API経由で検証し、内部実装への過度な依存を避ける
+- 回帰しやすい「整合性崩れ」「移行」「入出力失敗」を重点的にテスト
+
+### 10.2 現在の自動テスト
+- `core/src/model.rs`
+  - `ReplacePartDefs` の正常/異常/ロールバック
+- `web/test/coreBridge.test.ts`
+  - bridgeのコマンド適用
+  - fallback判定
+- `web/test/partLibrary.test.ts`
+  - 画像アセット分離、重複排除、移行
+- `web/test/projectPackage.test.ts`
+  - ZIP構成、互換読込、異常ZIP
+- `web/test/partsSelection.test.ts`
+  - ヒット優先順位、候補サイクル
+
+### 10.3 実行コマンド
 ```bash
-cd <repo-root>
-npm install
-npm run dev -w web
-npm run build -w web
-```
-
-### 7.2 Rust Core
-
-```bash
-cd <repo-root>/core
-cargo check
-cargo build
-```
-
-### 7.3 テスト（詳細）
-
-テスト方針:
-
-- テストは実装詳細ではなく仕様に根ざして書く
-- 失敗時の状態不変（ロールバック）を必ず検証する
-- `web` 側テストは可能な限り公開 API 経由で実行し、内部ヘルパー依存を避ける
-
-現在の自動テスト:
-
-- `core`:
-  - `core/src/model.rs` のユニットテスト（`ReplacePartDefs`）
-  - 観点:
-    - 妥当な PartDef 更新を受理する
-    - 重複名などの不正更新を拒否する
-    - 既存配置との不整合（pin 割当不整合、盤面外化）時にロールバックする
-- `web`:
-  - `web/test/coreBridge.test.ts`
-  - `web/test/partLibrary.test.ts`
-  - `applyCoreCommandJson` + `commandReplacePartDefsJson` の公開 API 経由で、`ReplacePartDefs` の代表ケースを検証
-  - `savePartLibrary` / `loadPartLibrary` の永続化仕様（画像アセット分離、重複排除、未参照削除、旧形式互換）を検証
-  - 観点:
-    - 正常更新
-    - 重複名の拒否
-    - 既存 `net_assign` 不整合の拒否
-    - 既存配置衝突の拒否
-    - 画像アセットの重複保存抑制と不要アセット削除
-    - schemaVersion 1 のライブラリ読み込み互換
-
-テスト実行コマンド:
-
-```bash
-cd <repo-root>/core
-cargo test
-
-cd <repo-root>
 npm run test -w web
-```
-
-CI/手動確認で最低限回すコマンド:
-
-```bash
-cd <repo-root>
 npm run build -w web
-
-cd <repo-root>/core
-cargo check
+cd core && cargo check
+cd core && cargo test
 ```
 
-## 8. 変更を入れるときの指針
+## 11. 変更時チェックリスト
+- `core` の検証責務を壊していないか
+- `web` 側が直接状態を書き換えていないか（コマンド経由か）
+- `coords.ts` 以外に座標変換ロジックを散らしていないか
+- PartDef更新が `ReplacePartDefs` 経由になっているか
+- ZIP/IndexedDBの互換性（schemaVersion）を維持しているか
+- 最低限の検証コマンドを通したか
 
-### 8.1 新機能を追加する順序（推奨）
+## 12. 今後の改善候補
+- ZIP Importの進捗表示とエラー詳細化
+- E2Eテスト整備（主要ショートカット、配置・配線回帰）
+- 大規模データ時の描画/ヒットテスト性能最適化
 
-1. `core` 側に型・コマンド・検証ロジックを追加
-2. WASM 公開関数で JSON 入出力を確認
-3. `web` 側で UI イベントをコマンド化して接続
-4. 表示（Canvas）を更新
-
-### 8.2 コントリビューション時の観点
-
-- 状態遷移は `core` 中心に保てているか
-- 座標変換を `coords.ts` で一元化できているか
-- DRC ルールが将来拡張しやすい関数分割になっているか
-- UI が将来のレイヤ描画（部品/配線/ハイライト）に拡張可能か
-
-## 9. 直近の実装候補（Issue化しやすい単位）
-
-- PartDef / Partライブラリ周りのテスト拡充（異常系・回帰ケース追加）
-- ZIP Import/Export の互換性強化（フォーマット検証・破損ZIPハンドリング）
-- ZIP Import 時の進捗表示と中断時UXの改善
-- 選択/編集操作の E2E テスト整備（主要ショートカットと回帰ケース）
-
-## 10. 参考ドキュメント
-
-- 要件と設計方針: [impl_brief.md](./impl_brief.md)
-- 進捗ログ: [progress.md](./progress.md)
-- 起動方法: [README.md](../README.md)
-
-## 11. 基本機能完成までの7Stepロードマップ
-
-以下は「ユニバーサル基板CADとして最低限使える状態」までの実装を、1Step=1PR で進める計画です。
-
-### Step 1: 部品配置と編集の基盤を完成させる（完了）
-
-目的:
-
-- 部品を配置・移動・回転できる状態を作る
-- 配線前提となる盤面占有ルールを確立する
-
-実装仕様:
-
-- `core`:
-  - `AddPartInst`, `MovePartInst`, `RotatePartInst`, `DeleteSelection` を追加
-  - `PartDef.occupied` と `PartInst` から占有マップ（`occ_part_hard`）を再計算する関数を追加
-  - 部品配置時にボード外配置と部品同士の重なりを検証
-- `web`:
-  - 部品選択・配置モードを追加
-  - 選択中部品のプレビュー表示（スナップ追従）
-  - 回転操作（例: `R` キー）と移動ドラッグを実装
-
-完了条件:
-
-- 画面上で部品の追加/移動/回転/削除ができる
-- 重なり配置や盤面外配置が禁止される
-- 状態変更はすべて `Command` 経由で反映される
-
-### Step 2: 手動配線とネット編集を完成させる（完了）
-
-目的:
-
-- 基板設計に必要な最小の配線作業を成立させる
-- ネット情報を編集し、配線との整合を取る
-
-実装仕様:
-
-- `core`:
-  - `CommitWire` を中心に wire 追加/削除コマンドを整理
-  - `AssignPinToNet`, `AssignNetName` をUIから使える形で拡張
-  - 配線の制約（Manhattan・1ステップ・最小長）を引き続き厳格に検証
-- `web`:
-  - 配線ツール（クリックで1ステップずつ経路を確定）を実装
-  - 配線プレビューをCanvasで表示し、確定時に `CommitWire` を送る
-  - ネット名編集UIとピンへのネット割当UIを追加
-
-完了条件:
-
-- 手動でネット付き配線を作成・削除できる
-- ピンへのネット割当とネット名編集ができる
-- 不正配線は `core` 側で拒否され、UIにエラー表示される
-
-### Step 3: DRC/UndoRedo/保存で「日常利用可能」へ仕上げる（完了）
-
-目的:
-
-- 設計の安全性と反復編集の操作性を確保する
-- 作業内容を保存・再開できる状態にする
-
-実装仕様:
-
-- `core`:
-  - DRC を拡張（部品衝突、wire vs part、SHORT、未接続ピン警告）
-  - Undo/Redo のためのコマンドログを導入
-- `web`:
-  - DRC 結果パネル（Error/Warning一覧 + 該当座標ハイライト）を追加
-  - Undo/Redo 操作（ショートカット含む）を接続
-  - IndexedDB 保存/読込（プロジェクトJSON）を実装
-  - 可能なら JSON Export/Import の最小版を実装
-
-完了条件:
-
-- DRC 実行で主要エラー/警告が確認できる
-- Undo/Redo が主要操作（部品編集・配線編集）で機能する
-- 保存→再読込で状態が復元される
-
-### Step 4: Part editor（定義編集）を実装する（完了）
-
-目的:
-
-- ユーザー定義部品の pin / occupied / 画像を編集可能にする
-
-実装仕様:
-
-- `web`:
-  - PartDef 編集 UI（pin 編集、occupied 編集、画像設定）
-- `core`:
-  - PartDef 編集の検証ロジック整備
-
-完了条件:
-
-- PartDef を GUI で編集し、配置に反映できる
-
-### Step 5: Part ライブラリ永続化を実装する（完了）
-
-目的:
-
-- プロジェクトとは独立した部品ライブラリの再利用を可能にする
-
-実装仕様:
-
-- IndexedDB に PartDef と画像アセットを保存
-- ライブラリ読込/保存 API を `web` へ接続
-
-完了条件:
-
-- ブラウザ再起動後も Part ライブラリが復元される
-
-### Step 6: ZIP Import/Export を実装する（完了）
-
-目的:
-
-- 仕様通り `project.json + part-library.json + assets` 形式で外部入出力する
-
-実装仕様:
-
-- Export: ZIP 生成（`project.json`, `part-library.json`, `assets/*`）
-- Import: ZIP 展開と project/part-library/asset 復元
-
-完了条件:
-
-- JSON 単体ではなく ZIP 形式で相互移行できる
-
-### Step 7: WASM本接続と選択UX仕上げを行う（完了）
-
-目的:
-
-- 運用時の接続経路と編集 UX の最終調整を行う
-
-実装仕様:
-
-- WASM 生成物を前提にした接続導線を整備（fallback 依存を縮小）
-- ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）を実装
-
-完了条件:
-
-- MVP として日常利用できる操作品質・入出力品質を満たす（達成）
+## 13. 参照
+- 仕様: [specification_ja.md](./specification_ja.md)
+- 進捗: [progress.md](./progress.md)
+- 利用方法: [README.md](../README.md)

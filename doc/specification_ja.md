@@ -1,0 +1,349 @@
+# uniuni 仕様書（MVP）
+
+最終更新日: 2026-03-12
+
+## 1. 文書の目的
+この文書は、`uniuni` のMVP時点における機能仕様を定義する。
+実装手段、コード構成、開発手順は対象外とし、ユーザー視点とドメイン視点の仕様のみを記述する。
+
+## 2. 対象範囲
+対象はブラウザ上で動作するユニバーサル基板向けCAD機能である。
+
+対象機能:
+- 部品定義（PartDef）の編集とライブラリ管理
+- 基板上への部品配置、移動、回転、削除
+- 手動配線とネット編集
+- DRC（設計ルールチェック）
+- Undo/Redo
+- 自動保存と復元
+- ZIP形式のプロジェクト入出力
+
+対象外（MVP非対応）:
+- 自動配線
+- 銅箔形状や線幅などの幾何CAD
+- クラウド同期、共同編集
+- 非接続交差（ジャンパーなしの交差分離）
+
+## 3. 用語
+- グリッド点: 基板上の整数座標点 `(x, y)`
+- Occupied: 部品本体が占有するセル集合
+- Pin: 部品端子座標
+- PartDef: 部品定義（再利用可能なテンプレート）
+- PartInst: 基板上に配置された部品インスタンス
+- Net: 電気的接続名
+- Wire: `Net` に属する手動配線（グリッド点列）
+
+## 4. ボード仕様
+- ボード形状: 長方形グリッド
+- 既定サイズ: 幅 `64`、高さ `40`
+- 既定ピッチ: `2.54mm`
+- 座標系: 整数グリッド座標を真値とする
+- ボード範囲: `0 <= x < width` かつ `0 <= y < height`
+
+## 5. データ仕様
+
+### 5.1 プロジェクト
+- `schema_version: number`
+- `board`
+- `part_defs[]`
+- `part_insts[]`
+- `nets[]`
+- `wires[]`
+
+### 5.2 PartDef
+- `id: UUID`
+- `name: string`
+- `pins[]`
+  - `name: string`
+  - `pos: GridPt`（原点相対）
+- `occupied[]: GridPt`（原点相対）
+- `imageDataUrl: string | null`（任意）
+- `imageScale: number`（任意、既定1）
+- `imageOffsetX: number`（任意、既定0）
+- `imageOffsetY: number`（任意、既定0）
+
+### 5.3 PartInst
+- `id: UUID`
+- `defId: UUID`
+- `at: GridPt`
+- `rot: Deg0 | Deg90 | Deg180 | Deg270`
+- `refdes: string`
+- `netAssign: { [pinName: string]: netId }`
+
+### 5.4 Net
+- `id: UUID`
+- `name: string`
+
+### 5.5 Wire
+- `id: UUID`
+- `netId: UUID`
+- `path: GridPt[]`
+
+## 6. 初期状態
+- 初期ネット: `N-1` を1件生成
+- 初期PartDef: 3件（Resistor Axial / Capacitor Radial / Inductor Axial）
+- 初期回転: `Deg0`
+- 初期ツール: `select`
+
+初期PartDefの既定構造:
+1. Resistor Axial
+- pins: `(0,0)`, `(2,0)`
+- occupied: `(0,0)`, `(1,0)`, `(2,0)`
+
+2. Capacitor Radial
+- pins: `(0,0)`, `(1,0)`
+- occupied: `(0,0)`, `(1,0)`
+
+3. Inductor Axial
+- pins: `(0,0)`, `(3,0)`
+- occupied: `(0,0)`, `(1,0)`, `(2,0)`, `(3,0)`
+
+## 7. 操作モード仕様
+
+### 7.1 Select モード
+- クリックしたグリッド点の対象を選択する
+- ヒット優先順位は `Pin > Wire > Occupied`
+- 候補が複数ある場合、`Tab` で順送り、`Shift+Tab` で逆送り
+
+### 7.2 Place モード
+- 配置対象PartDefと回転をアームした状態でクリック配置する
+- 配置成功後も `place` モードは維持し、連続配置可能
+- 配置不可（衝突/盤外）の場合は配置されない
+
+### 7.3 Wire モード
+- クリックで配線点を追加する
+- 1ステップ隣接でない点は追加不可
+- `Enter` または `Commit Wire` で確定
+- `Cancel Wire` または `Esc` で下書きを破棄
+
+## 8. 選択仕様（詳細）
+- クリック選択と `Tab` サイクル選択は同一候補列を使用する
+- 候補列の構成:
+1. クリック点にPinがある最上位Part（1件）
+2. 同一点に存在するWire候補（複数可）
+3. クリック点をOccupiedするPart（Pin選択済みと同一Partは重複追加しない）
+- 空点クリックで選択解除
+
+## 9. 部品操作仕様
+
+### 9.1 配置
+- AddPartInstコマンドで確定
+- `refdes` は既存接頭辞件数ベースで採番
+- 接頭辞既定: 抵抗`R`、コンデンサ`C`、インダクタ`L`、その他`U`
+
+### 9.2 移動
+- `M` で移動アーム
+- 次のクリックで移動確定
+- 移動中に `R` で移動プレビュー回転
+
+### 9.3 回転
+- 選択中部品がある場合 `R` でその部品を90度回転
+- ホバー中に選択が無い場合も `R` でホバー部品を回転
+- 配置アーム中は `R` で配置回転を90度進める
+- 何も対象がない `R` は抵抗配置アーム
+
+### 9.4 削除
+- 対象選択後 `Delete` / `Backspace` / `Delete Selected` で削除
+- 部品選択がある場合は部品削除を優先
+
+## 10. 配線・ネット仕様
+
+### 10.1 Wire制約
+- `path.length >= 2`
+- 連続2点はマンハッタン隣接（`|dx| + |dy| == 1`）
+- すべてボード内
+- 同一点共有は電気的接続として扱う（交差点は接続点）
+
+### 10.2 Net編集
+- Net追加: `Add Net`
+- Net改名: `Rename Net`（空文字は不可）
+- Pin割当: 選択部品のPinを選び `Assign Pin To Net`
+- 未存在Netへの参照は自動生成可能
+
+## 11. DRC仕様
+DRCは手動実行と状態更新後の再評価で利用する。
+
+発行ルール:
+1. `PART_COLLISION`（Error）
+- 部品占有が衝突、または占有計算が不整合
+
+2. `WIRE_PART_COLLISION`（Error）
+- Wire点が部品Occupiedセルと重なる
+- ただしその点がいずれかPin座標である場合は許容
+
+3. `SHORT`（Error）
+- 同一グリッド点に異なるNetのWireが共存
+
+4. `UNCONNECTED_PIN`（Warning）
+- Net割当済みPinが、そのNetのWire点に接続されていない
+
+表示仕様:
+- 問題件数を表示
+- 先頭3件をコード・座標・メッセージ付きで表示
+
+## 12. Undo/Redo仕様
+- Undo: `Ctrl/Cmd + Z`
+- Redo: `Ctrl/Cmd + Y` または `Ctrl/Cmd + Shift + Z`
+- 履歴はスナップショット方式
+- 履歴上限: 100エントリ
+- Undo/Redo時は選択対象（部品/配線）の復元を試みる
+
+## 13. 保存・復元仕様
+
+### 13.1 自動保存
+- 保存先: IndexedDB
+- 保存対象:
+  - プロジェクト状態JSON
+  - 選択中Net ID
+- 保存タイミング: 状態変更後の短遅延保存
+
+### 13.2 起動時復元
+- Partライブラリを読込
+- プロジェクトスナップショットを読込
+- 復元不可時は新規状態で起動継続
+
+### 13.3 Partライブラリ永続化
+- PartDef本体と画像アセットを分離保存
+- 同一画像は重複保存しない
+- 未参照画像アセットはクリーンアップ
+- 旧スキーマ読込時は現行形式へ移行
+
+## 14. 入出力仕様
+
+### 14.1 プロジェクトZIP Export
+出力ファイル構成:
+- `project.json`
+- `part-library.json`
+- `assets/*`（画像）
+
+### 14.2 プロジェクトZIP Import
+- `project.json` 必須
+- `schema_version` 必須
+- PartDefは `part-library.json` を優先し、無い場合は `project.json` から推定
+- Import成功時:
+  - プロジェクト状態を置換
+  - Partライブラリ状態を置換
+  - 選択/下書き/履歴をリセット
+
+### 14.3 PartライブラリJSON Export/Import
+- Export: `schemaVersion: 1` 形式で出力
+- Import: `id/name/pins/occupied` の最小妥当性を満たす定義のみ採用
+
+## 15. Part Editor仕様
+
+### 15.1 部品管理
+- 部品名変更
+- 新規部品作成
+- 部品削除
+
+削除制約:
+- 配置中インスタンスが参照するPartDefは削除不可
+- PartDefは最低1件必要
+
+### 15.2 Pin編集
+- 入力項目: `Pin名`, `X`, `Y`
+- 一覧表示: 表形式 `Pin名 | X座標 | Y座標 | 削除`
+- 制約:
+  - Pin名は空不可
+  - 座標は整数
+  - 座標範囲 `-999..999`
+  - 同名Pin不可
+  - 最低1Pin必須
+
+### 15.3 Occupied編集
+- 入力項目: `X`, `Y`
+- 一覧表示: 表形式 `X座標 | Y座標 | 削除`
+- 制約:
+  - 座標は整数
+  - 座標範囲 `-999..999`
+  - 重複Occupied不可
+  - 最低1セル必須
+
+### 15.4 画像設定
+- `Set Image` / `Clear Image`
+- 変換項目:
+  - `Scale`（スライダー+数値）
+  - `Offset X`（スライダー+数値）
+  - `Offset Y`（スライダー+数値）
+- スライダー範囲:
+  - Scale: `0.1..4.0`
+  - Offset X/Y: `-10..10`
+- `Apply` でPartDefへ反映
+
+### 15.5 プレビュー
+- 表示領域サイズは固定
+- `Fit` / `+` / `-` でズーム制御
+- Pin/Occupied変更時はFit倍率へリセット
+- 表示要素: グリッド、Occupied、Origin、Pin、画像
+
+## 16. キャンバス操作仕様
+- 左クリック: グリッドスナップ点に対する主操作（選択/配置/移動/配線）
+- 中クリック・右クリックドラッグ: Pan
+- ホイール: カーソル位置アンカーでZoom
+- Zoom範囲: `0.2x..4.0x`
+- HUD表示: `grid(x,y)` と `zoom`
+
+## 17. ショートカット仕様
+- `W`: Wireモード開始
+- `R`: 文脈依存（移動中回転 / 部品回転 / 配置回転 / 抵抗アーム）
+- `C`: コンデンサ配置アーム
+- `L`: インダクタ配置アーム
+- `M`: 選択部品またはホバー部品を移動アーム
+- `Enter`: Wire確定（Wireモード時）
+- `Esc`: 配置/移動アームとWire下書きを解除（Wireモード時はSelectへ戻る）
+- `Tab`: 選択候補を順送り（Selectモード時）
+- `Shift+Tab`: 選択候補を逆送り（Selectモード時）
+- `Delete` / `Backspace`: 選択削除
+- `Ctrl/Cmd + Z`: Undo
+- `Ctrl/Cmd + Y`: Redo
+- `Ctrl/Cmd + Shift + Z`: Redo
+
+## 18. 検証・拒否仕様（コマンド適用時）
+
+### 18.1 PartDef更新時
+- PartDef ID重複禁止
+- 部品名空文字禁止
+- 部品名重複禁止
+- Pin/Occupied空配列禁止
+- Pin名空文字禁止
+- Pin名重複禁止
+- Pin座標重複禁止
+- Occupied座標重複禁止
+- 既存PartInstの参照整合を満たすこと
+- 更新後も既存配置が盤内かつ非衝突であること
+
+### 18.2 部品配置・移動・回転時
+- 占有セルが盤内であること
+- 他部品Occupiedと衝突しないこと
+
+### 18.3 配線確定時
+- 最小長と1ステップ隣接条件を満たすこと
+- 全点が盤内であること
+
+## 19. エラー表示仕様
+- コマンド失敗時はエラーテキストを画面に表示
+- 画像読込失敗、保存失敗、Import失敗なども同様に表示
+- 起動復元時に一部失敗しても、可能な範囲で起動継続し警告を表示する
+
+## 20. 接続モード仕様
+- Core接続モードは `WASM` または `Fallback` を表示
+- 既定動作は「WASM優先 + Fallback許可」
+- fallback無効化オプション有効時にWASM未配置ならエラーとする
+
+fallback制御オプション:
+- `VITE_CORE_DISABLE_FALLBACK=1`: fallbackを無効化
+- `VITE_CORE_ALLOW_FALLBACK=1`: fallbackを明示許可
+- `UNIUNI_CORE_DISABLE_FALLBACK=1`: 実行時fallback無効化
+- `UNIUNI_CORE_FORCE_FALLBACK=1`: 実行時fallback強制
+
+## 21. 画面構成仕様
+- 左サイドバー:
+  - 編集操作
+  - 配線とネット
+  - Part Editor
+  - Core接続モード、DRC件数、エラー表示
+- 右メイン上段:
+  - CADキャンバス（ボード、部品、配線、プレビュー）
+- 右メイン下段:
+  - 部品ライブラリカード一覧（2行配置）
+  - カード選択で配置アーム

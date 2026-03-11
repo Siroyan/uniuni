@@ -2,6 +2,31 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-03-12 (`impl_brief.md` 廃止)
+実装内容:
+- `doc/impl_brief.md` を削除。
+- 参照を `doc/specification_ja.md` / `doc/implementation_guide_ja.md` へ移行。
+  - `AGENTS.md` の一次参照先を更新
+  - `doc/implementation_guide_ja.md` の参照・構成図を更新
+- 以後、仕様の一次情報は `doc/specification_ja.md` を基準とする。
+
+検証:
+- 参照リンクの全文検索で `impl_brief.md` の現行参照が残っていないことを確認
+  - 進捗ログ内の過去履歴記述のみ残存
+
+## 2026-03-12 (実装ガイド再整理)
+実装内容:
+- `doc/implementation_guide_ja.md` をゼロベースで全面再構成。
+  - 仕様書との差分（本書の役割）を明確化
+  - 現行の実装到達点（Step1〜Step7完了）を整理
+  - レイヤ責務、実行時データフロー、Core/Web主要モジュールを再定義
+  - 永続化/ZIP入出力/接続モード（WASM・fallback）を現行実装に合わせて更新
+  - テスト方針、変更時チェックリスト、改善候補を再整理
+- 仕様は `doc/specification_ja.md`、実装は `doc/implementation_guide_ja.md` という参照関係を明文化。
+
+検証:
+- ドキュメント更新のみ（ビルド影響なし）。
+
 ## 2026-03-07
 `doc/impl_brief.md` に基づく実装を開始。
 
