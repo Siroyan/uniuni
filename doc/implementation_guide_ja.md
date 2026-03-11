@@ -195,12 +195,16 @@ cargo build
     - 既存配置との不整合（pin 割当不整合、盤面外化）時にロールバックする
 - `web`:
   - `web/test/coreBridge.test.ts`
+  - `web/test/partLibrary.test.ts`
   - `applyCoreCommandJson` + `commandReplacePartDefsJson` の公開 API 経由で、`ReplacePartDefs` の代表ケースを検証
+  - `savePartLibrary` / `loadPartLibrary` の永続化仕様（画像アセット分離、重複排除、未参照削除、旧形式互換）を検証
   - 観点:
     - 正常更新
     - 重複名の拒否
     - 既存 `net_assign` 不整合の拒否
     - 既存配置衝突の拒否
+    - 画像アセットの重複保存抑制と不要アセット削除
+    - schemaVersion 1 のライブラリ読み込み互換
 
 テスト実行コマンド:
 

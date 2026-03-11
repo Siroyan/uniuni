@@ -72,6 +72,7 @@
   - fallback 実装にも `AssignPinToNet` を追加
 
 検証:
+- `npm run test -w web` 成功（`coreBridge.test.ts`, `partLibrary.test.ts`）
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
