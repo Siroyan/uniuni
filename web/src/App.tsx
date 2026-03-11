@@ -19,6 +19,7 @@ import {
 import { canPlacePart, findPartAtGrid, nextRot } from "./parts";
 import { loadPartLibrary, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
+import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 
 const board: Board = {
@@ -131,6 +132,52 @@ type HistoryEntry = {
   selectedPartId: string | null;
   selectedWireId: string | null;
 };
+
+type CorePartDefShape = {
+  id: string;
+  name: string;
+  pins: Array<{ name: string; pos: GridPt }>;
+  occupied: GridPt[];
+};
+
+function partDefsFromCoreStateJson(stateJson: string): PartDef[] {
+  const parsed = JSON.parse(stateJson) as { part_defs?: unknown };
+  const defs = Array.isArray(parsed.part_defs) ? parsed.part_defs : [];
+  return defs
+    .map((raw) => {
+      const def = raw as Partial<CorePartDefShape>;
+      if (typeof def.id !== "string" || typeof def.name !== "string") return null;
+      if (!Array.isArray(def.pins) || !Array.isArray(def.occupied)) return null;
+      const pins = def.pins
+        .filter((pin): pin is { name: string; pos: GridPt } => {
+          const p = pin as { name?: unknown; pos?: { x?: unknown; y?: unknown } };
+          return (
+            typeof p.name === "string" &&
+            typeof p.pos?.x === "number" &&
+            typeof p.pos?.y === "number"
+          );
+        })
+        .map((pin) => ({ name: pin.name, pos: { x: pin.pos.x, y: pin.pos.y } }));
+      const occupied = def.occupied
+        .filter((pt): pt is GridPt => {
+          const p = pt as { x?: unknown; y?: unknown };
+          return typeof p.x === "number" && typeof p.y === "number";
+        })
+        .map((pt) => ({ x: pt.x, y: pt.y }));
+      if (pins.length === 0 || occupied.length === 0) return null;
+      return {
+        id: def.id,
+        name: def.name,
+        pins,
+        occupied,
+        imageDataUrl: null,
+        imageScale: 1,
+        imageOffsetX: 0,
+        imageOffsetY: 0
+      } as PartDef;
+    })
+    .filter((def): def is PartDef => Boolean(def));
+}
 
 export function App(): JSX.Element {
   const [tool, setTool] = useState<ToolMode>("select");
@@ -829,31 +876,45 @@ export function App(): JSX.Element {
     }
   };
 
-  const exportProjectJson = (): void => {
+  const exportProjectZip = (): void => {
     const state = coreStateJsonRef.current;
     if (!state) return;
-    const blob = new Blob([state], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const timestamp = new Date().toISOString().replace(/:/g, "-");
-    anchor.href = url;
-    anchor.download = `uniuni-project-${timestamp}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    void (async () => {
+      try {
+        const blob = await buildProjectZip(state, partDefs);
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const timestamp = new Date().toISOString().replace(/:/g, "-");
+        anchor.href = url;
+        anchor.download = `uniuni-project-${timestamp}.zip`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        setCoreError(null);
+      } catch (err) {
+        setCoreError(err instanceof Error ? err.message : "export project zip failed");
+      }
+    })();
   };
 
-  const importProjectJson = async (file: File): Promise<void> => {
+  const importProjectZip = async (file: File): Promise<void> => {
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as { schema_version?: unknown };
+      const packed = await parseProjectZip(file);
+      const parsed = JSON.parse(packed.coreStateJson) as { schema_version?: unknown };
       if (typeof parsed.schema_version !== "number") {
-        throw new Error("invalid project json: missing schema_version");
+        throw new Error("invalid project zip: missing schema_version");
       }
-      const nextView = extractViewStateFromCoreJson(text);
+      const importedPartDefs = packed.partDefs ?? partDefsFromCoreStateJson(packed.coreStateJson);
+      if (importedPartDefs.length === 0) {
+        throw new Error("invalid project zip: part definitions not found");
+      }
+
+      const nextState = await replacePartDefsInStateJson(packed.coreStateJson, importedPartDefs);
+      setPartDefs(importedPartDefs);
+      const nextView = extractViewStateFromCoreJson(nextState);
       const preferredNetId = nextView.nets[0]?.id ?? "";
-      syncFromCoreState(text);
+      syncFromCoreState(nextState);
       setSelectedNetId(preferredNetId);
       setSelectedPartId(null);
       setSelectedWireId(null);
@@ -864,10 +925,10 @@ export function App(): JSX.Element {
       setTool("select");
       setHistoryPast([]);
       setHistoryFuture([]);
-      await refreshDrcForState(text);
+      await refreshDrcForState(nextState);
       setCoreError(null);
     } catch (err) {
-      setCoreError(err instanceof Error ? err.message : "import project failed");
+      setCoreError(err instanceof Error ? err.message : "import project zip failed");
     }
   };
 
@@ -1473,8 +1534,8 @@ export function App(): JSX.Element {
               <button type="button" className="btn" onClick={() => void runDrc()}>
                 Run DRC
               </button>
-              <button type="button" className="btn" onClick={exportProjectJson}>
-                Export JSON
+              <button type="button" className="btn" onClick={exportProjectZip}>
+                Export ZIP
               </button>
               <button
                 type="button"
@@ -1483,17 +1544,17 @@ export function App(): JSX.Element {
                   importInputRef.current?.click();
                 }}
               >
-                Import JSON
+                Import ZIP
               </button>
               <input
                 ref={importInputRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/zip,.zip"
                 className="hidden-file-input"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) {
-                    void importProjectJson(file);
+                    void importProjectZip(file);
                   }
                   event.currentTarget.value = "";
                 }}
