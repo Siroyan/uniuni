@@ -176,7 +176,7 @@ test("save removes unreferenced image assets on subsequent updates", async () =>
   assert.ok(loaded?.every((def) => def.imageDataUrl === null));
 });
 
-test("load keeps compatibility with legacy schemaVersion 1 library snapshot", async () => {
+test("load migrates legacy schemaVersion 1 snapshot to schemaVersion 2", async () => {
   await saveRawSnapshot({
     schemaVersion: 1,
     partDefs: buildPartDefs(SAME_IMAGE_DATA_URL)
@@ -187,4 +187,43 @@ test("load keeps compatibility with legacy schemaVersion 1 library snapshot", as
   assert.equal(loaded?.length, 2);
   assert.equal(loaded?.[0].imageDataUrl, SAME_IMAGE_DATA_URL);
   assert.equal(loaded?.[1].imageDataUrl, SAME_IMAGE_DATA_URL);
+
+  const raw = (await loadRawSnapshot()) as {
+    schemaVersion: number;
+    partDefs: Array<{ imageAssetId?: string | null; imageDataUrl?: string | null }>;
+  };
+  assert.equal(raw.schemaVersion, 2);
+  assert.equal(raw.partDefs[0].imageDataUrl, null);
+  assert.equal(raw.partDefs[1].imageDataUrl, null);
+  assert.ok(raw.partDefs[0].imageAssetId);
+  assert.equal(raw.partDefs[0].imageAssetId, raw.partDefs[1].imageAssetId);
+
+  const keys = await listLibraryKeys();
+  assert.equal(keys.filter((k) => k.startsWith("asset:")).length, 1);
+});
+
+test("load migrates schemaVersion 2 inline data-url records to asset references", async () => {
+  await saveRawSnapshot({
+    schemaVersion: 2,
+    partDefs: buildPartDefs(SAME_IMAGE_DATA_URL).map((def) => ({
+      ...def,
+      imageAssetId: null
+    }))
+  });
+
+  const loaded = await loadPartLibrary();
+  assert.ok(loaded);
+  assert.equal(loaded?.[0].imageDataUrl, SAME_IMAGE_DATA_URL);
+
+  const raw = (await loadRawSnapshot()) as {
+    schemaVersion: number;
+    partDefs: Array<{ imageAssetId?: string | null; imageDataUrl?: string | null }>;
+  };
+  assert.equal(raw.schemaVersion, 2);
+  assert.equal(raw.partDefs[0].imageDataUrl, null);
+  assert.equal(raw.partDefs[1].imageDataUrl, null);
+  assert.ok(raw.partDefs[0].imageAssetId);
+
+  const keys = await listLibraryKeys();
+  assert.equal(keys.filter((k) => k.startsWith("asset:")).length, 1);
 });

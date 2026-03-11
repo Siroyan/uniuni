@@ -137,11 +137,13 @@
   - ライブラリ更新時に未参照アセットをクリーンアップし、不要データを残さないように変更
   - 読込時は Blob から data URL を復元して既存 UI 型（`imageDataUrl`）へ変換
   - 旧フォーマット（`schemaVersion: 1`）読み込み互換を維持
+  - 旧フォーマット読込時は `schemaVersion: 2`（asset参照形式）へ自動移行保存
 - IndexedDB バージョン衝突の再発防止。
   - `partLibrary.ts` / `persistence.ts` の DB オープンを「最新バージョン取得→必要時のみ version up」方式へ統一
   - `requested version is less than existing version` 系エラーの再発を防止
 
 検証:
+- `npm run test -w web` 成功（`coreBridge.test.ts`, `partLibrary.test.ts`）
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 

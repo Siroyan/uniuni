@@ -133,6 +133,74 @@ function loadAssetBlobs(db: IDBDatabase, assetIds: string[]): Promise<Map<string
   });
 }
 
+async function expandSnapshotV2(db: IDBDatabase, snapshot: LibrarySnapshotV2): Promise<PartDef[]> {
+  const assetIds = Array.from(
+    new Set(
+      snapshot.partDefs
+        .map((def) => def.imageAssetId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  );
+  const assetBlobs = await loadAssetBlobs(db, assetIds);
+  const dataUrlCache = new Map<string, string>();
+
+  for (const [id, blob] of assetBlobs.entries()) {
+    dataUrlCache.set(id, await blobToDataUrl(blob));
+  }
+
+  return snapshot.partDefs.map((def) => ({
+    id: def.id,
+    name: def.name,
+    pins: def.pins,
+    occupied: def.occupied,
+    imageScale: def.imageScale,
+    imageOffsetX: def.imageOffsetX,
+    imageOffsetY: def.imageOffsetY,
+    imageDataUrl:
+      typeof def.imageDataUrl === "string"
+        ? def.imageDataUrl
+        : typeof def.imageAssetId === "string"
+          ? (dataUrlCache.get(def.imageAssetId) ?? null)
+          : null
+  }));
+}
+
+async function preparePersistedPartDefs(
+  partDefs: PartDef[]
+): Promise<{
+  persistedDefs: PersistedPartDef[];
+  assetBlobs: Map<string, Blob>;
+  usedAssetIds: Set<string>;
+}> {
+  const assetBlobs = new Map<string, Blob>();
+  const usedAssetIds = new Set<string>();
+  const persistedDefs: PersistedPartDef[] = [];
+
+  for (const def of partDefs) {
+    if (!def.imageDataUrl || !isDataUrl(def.imageDataUrl)) {
+      persistedDefs.push({
+        ...def,
+        imageDataUrl: def.imageDataUrl ?? null,
+        imageAssetId: null
+      });
+      continue;
+    }
+
+    const assetId = await toAssetId(def.imageDataUrl);
+    usedAssetIds.add(assetId);
+    if (!assetBlobs.has(assetId)) {
+      assetBlobs.set(assetId, await dataUrlToBlob(def.imageDataUrl));
+    }
+    persistedDefs.push({
+      ...def,
+      imageDataUrl: null,
+      imageAssetId: assetId
+    });
+  }
+
+  return { persistedDefs, assetBlobs, usedAssetIds };
+}
+
 function saveSnapshotAndAssets(
   db: IDBDatabase,
   snapshot: LibrarySnapshotV2,
@@ -179,39 +247,33 @@ export async function loadPartLibrary(): Promise<PartDef[] | null> {
     const snapshot = await loadRawSnapshot(db);
     if (!snapshot) return null;
 
+    let partDefs: PartDef[];
+    let migrationNeeded = false;
+
     if (snapshot.schemaVersion === 1) {
-      return snapshot.partDefs;
+      partDefs = snapshot.partDefs;
+      migrationNeeded = true;
+    } else {
+      partDefs = await expandSnapshotV2(db, snapshot);
+      migrationNeeded = snapshot.partDefs.some(
+        (def) => typeof def.imageDataUrl === "string" && isDataUrl(def.imageDataUrl)
+      );
     }
 
-    const assetIds = Array.from(
-      new Set(
-        snapshot.partDefs
-          .map((def) => def.imageAssetId)
-          .filter((id): id is string => typeof id === "string" && id.length > 0)
-      )
-    );
-    const assetBlobs = await loadAssetBlobs(db, assetIds);
-    const dataUrlCache = new Map<string, string>();
-
-    for (const [id, blob] of assetBlobs.entries()) {
-      dataUrlCache.set(id, await blobToDataUrl(blob));
+    if (migrationNeeded) {
+      const { persistedDefs, assetBlobs, usedAssetIds } = await preparePersistedPartDefs(partDefs);
+      await saveSnapshotAndAssets(
+        db,
+        {
+          schemaVersion: 2,
+          partDefs: persistedDefs
+        },
+        assetBlobs
+      );
+      await cleanupUnusedAssets(db, usedAssetIds);
     }
 
-    return snapshot.partDefs.map((def) => ({
-      id: def.id,
-      name: def.name,
-      pins: def.pins,
-      occupied: def.occupied,
-      imageScale: def.imageScale,
-      imageOffsetX: def.imageOffsetX,
-      imageOffsetY: def.imageOffsetY,
-      imageDataUrl:
-        typeof def.imageDataUrl === "string"
-          ? def.imageDataUrl
-          : typeof def.imageAssetId === "string"
-            ? (dataUrlCache.get(def.imageAssetId) ?? null)
-            : null
-    }));
+    return partDefs;
   } finally {
     db.close();
   }
@@ -220,31 +282,7 @@ export async function loadPartLibrary(): Promise<PartDef[] | null> {
 export async function savePartLibrary(partDefs: PartDef[]): Promise<void> {
   const db = await openDbEnsuringStore();
   try {
-    const assetBlobs = new Map<string, Blob>();
-    const usedAssetIds = new Set<string>();
-    const persistedDefs: PersistedPartDef[] = [];
-
-    for (const def of partDefs) {
-      if (!def.imageDataUrl || !isDataUrl(def.imageDataUrl)) {
-        persistedDefs.push({
-          ...def,
-          imageDataUrl: def.imageDataUrl ?? null,
-          imageAssetId: null
-        });
-        continue;
-      }
-
-      const assetId = await toAssetId(def.imageDataUrl);
-      usedAssetIds.add(assetId);
-      if (!assetBlobs.has(assetId)) {
-        assetBlobs.set(assetId, await dataUrlToBlob(def.imageDataUrl));
-      }
-      persistedDefs.push({
-        ...def,
-        imageDataUrl: null,
-        imageAssetId: assetId
-      });
-    }
+    const { persistedDefs, assetBlobs, usedAssetIds } = await preparePersistedPartDefs(partDefs);
 
     await saveSnapshotAndAssets(
       db,

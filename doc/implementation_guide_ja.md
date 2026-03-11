@@ -152,7 +152,7 @@ uniuni/
   - PartDef は `imageAssetId` を保持し、画像本体は Blob として保存
 - 読込方針:
   - 読込時に Blob を data URL へ復元し、UI 側は `PartDef.imageDataUrl` として扱う
-  - 旧フォーマット（`schemaVersion: 1`）の読込互換を維持
+  - 旧フォーマット（`schemaVersion: 1`）の読込互換を維持し、読込時に `schemaVersion: 2` へ自動移行
 - 運用上の性質:
   - 同一画像はハッシュベース asset id で再利用
   - ライブラリ更新時に未参照アセットを自動削除
