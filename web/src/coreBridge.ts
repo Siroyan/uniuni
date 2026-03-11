@@ -371,6 +371,14 @@ function fallbackAllowed(): boolean {
   const metaEnv = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env;
   if (!metaEnv) return true;
 
+  const disable = metaEnv.VITE_CORE_DISABLE_FALLBACK;
+  if (typeof disable === "string") {
+    const normalized = disable.trim().toLowerCase();
+    if (normalized === "1" || normalized === "true" || normalized === "yes") {
+      return false;
+    }
+  }
+
   const explicit = metaEnv.VITE_CORE_ALLOW_FALLBACK;
   if (typeof explicit === "string") {
     const normalized = explicit.trim().toLowerCase();
@@ -382,7 +390,8 @@ function fallbackAllowed(): boolean {
     }
   }
 
-  return metaEnv.PROD !== true;
+  // Default is permissive for compatibility: prefer WASM, but allow fallback.
+  return true;
 }
 
 async function loadCoreRuntime(): Promise<CoreRuntime> {
@@ -403,7 +412,7 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
       } catch {
         if (!fallbackAllowed()) {
           throw new Error(
-            "WASM core の読み込みに失敗しました。`core/pkg` を生成するか、`VITE_CORE_ALLOW_FALLBACK=1` を設定してください。"
+            "WASM core の読み込みに失敗しました。`core/pkg` を生成するか、`VITE_CORE_DISABLE_FALLBACK` の設定を解除してください。"
           );
         }
         return {

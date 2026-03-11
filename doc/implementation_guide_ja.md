@@ -176,8 +176,8 @@ uniuni/
 - WASM 接続モード:
   - `coreBridge` が起動時に `wasm` / `fallback` を判別
   - UI 上で現在モードをバッジ表示（`Core: WASM` / `Core: Fallback`）
-  - 本番想定（`PROD`）では既定で fallback を無効化し、WASM 未配置時は明示エラーにする
-  - 開発時は fallback を許可し、WASM 未生成環境でも実装継続可能
+  - 既定は fallback 許可（WASM 優先）で、WASM 未配置環境でも動作継続
+  - `VITE_CORE_DISABLE_FALLBACK=1` を指定した場合は fallback を無効化し、未配置時は明示エラーにする
 - 選択ヒットテスト:
   - 候補生成を `pin -> wire -> occupied` の優先順位へ統一
   - 候補が複数ある座標で `Tab`（逆順は `Shift+Tab`）によりサイクル選択

@@ -174,8 +174,8 @@
 - WASM 本接続導線を整理し、接続モードを明示化。
   - `web/src/coreBridge.ts` に `wasm` / `fallback` 判定を追加
   - `detectCoreBridgeMode()` を追加し、UI 側で接続モードを表示
-  - 本番想定（`PROD`）では既定で fallback を無効化し、WASM 未配置時に明示エラーを返す
-  - 開発時・テスト時は fallback を許可し、既存の開発体験を維持
+  - 既定は fallback 許可（WASM 優先）で、WASM 未配置環境でも動作継続
+  - `VITE_CORE_DISABLE_FALLBACK=1` 指定時のみ fallback を無効化し、未配置時は明示エラー
 - 選択UXを仕様どおりに調整。
   - ヒットテスト候補を `pin -> wire -> occupied` の優先順位で生成
   - 同一点候補を `Tab` / `Shift+Tab` でサイクル選択可能に変更
@@ -199,6 +199,18 @@
 - `npm run test -w web` 成功（`coreBridge.test.ts`, `partLibrary.test.ts`, `partsSelection.test.ts`, `projectPackage.test.ts`）
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
+
+## 2026-03-12 (Step7フォローアップ: 配置不能修正)
+実装内容:
+- 部品配置不能の原因となっていた `coreBridge` の fallback 既定挙動を修正。
+  - Step7 で導入した「本番時 fallback 既定無効」により、WASM 未配置環境で初期化失敗し配置操作が実行不可になる回帰を確認
+  - 既定を「WASM 優先 + fallback 許可」に戻し、`VITE_CORE_DISABLE_FALLBACK=1` 指定時のみ無効化する仕様へ変更
+- エラーメッセージを新仕様に合わせて更新。
+
+検証:
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
 
 ## 2026-03-09
 実装内容:
