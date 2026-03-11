@@ -68,13 +68,66 @@ function drawPart(
   def: PartDef,
   viewport: Viewport,
   fillColor: string,
-  pinColor: string
+  pinColor: string,
+  partImage: HTMLImageElement | null
 ): void {
+  const occupied = absoluteOccupied(def, part);
+
   ctx.fillStyle = fillColor;
-  for (const cell of absoluteOccupied(def, part)) {
+  for (const cell of occupied) {
     const base = worldToScreen(gridToWorld(cell, CELL_SIZE), viewport);
     const unit = CELL_SIZE * viewport.zoom;
     ctx.fillRect(base.x - unit / 2, base.y - unit / 2, unit, unit);
+  }
+
+  if (partImage && occupied.length > 0) {
+    const relXs = def.occupied.map((pt) => pt.x);
+    const relYs = def.occupied.map((pt) => pt.y);
+    const minRelX = Math.min(...relXs);
+    const maxRelX = Math.max(...relXs);
+    const minRelY = Math.min(...relYs);
+    const maxRelY = Math.max(...relYs);
+    const scale = def.imageScale ?? 1;
+    const offsetX = def.imageOffsetX ?? 0;
+    const offsetY = def.imageOffsetY ?? 0;
+
+    const centerRelX = (minRelX + maxRelX) / 2 + offsetX;
+    const centerRelY = (minRelY + maxRelY) / 2 + offsetY;
+    const rotatedCenter =
+      part.rot === "Deg90"
+        ? { x: -centerRelY, y: centerRelX }
+        : part.rot === "Deg180"
+          ? { x: -centerRelX, y: -centerRelY }
+          : part.rot === "Deg270"
+            ? { x: centerRelY, y: -centerRelX }
+            : { x: centerRelX, y: centerRelY };
+
+    const center = worldToScreen(
+      {
+        x: (part.at.x + rotatedCenter.x) * CELL_SIZE,
+        y: (part.at.y + rotatedCenter.y) * CELL_SIZE
+      },
+      viewport
+    );
+
+    const baseW = (maxRelX - minRelX + 1) * CELL_SIZE * viewport.zoom;
+    const baseH = (maxRelY - minRelY + 1) * CELL_SIZE * viewport.zoom;
+    const drawW = baseW * scale;
+    const drawH = baseH * scale;
+    const rotationRad =
+      part.rot === "Deg90"
+        ? Math.PI / 2
+        : part.rot === "Deg180"
+          ? Math.PI
+          : part.rot === "Deg270"
+            ? (Math.PI * 3) / 2
+            : 0;
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.translate(center.x, center.y);
+    ctx.rotate(rotationRad);
+    ctx.drawImage(partImage, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
   }
 
   ctx.fillStyle = pinColor;
@@ -102,6 +155,7 @@ export function BoardCanvas({
   placePreviewValid
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const [viewport, setViewport] = useState<Viewport>({
     panX: 120,
     panY: 80,
@@ -114,6 +168,30 @@ export function BoardCanvas({
     () => ({ width: board.width * CELL_SIZE, height: board.height * CELL_SIZE }),
     [board.height, board.width]
   );
+
+  useEffect(() => {
+    const cache = imageCacheRef.current;
+    const defIds = new Set(partDefs.map((def) => def.id));
+
+    for (const def of partDefs) {
+      const src = def.imageDataUrl;
+      if (!src) {
+        cache.delete(def.id);
+        continue;
+      }
+      const cached = cache.get(def.id);
+      if (cached && cached.src === src) continue;
+      const img = new Image();
+      img.src = src;
+      cache.set(def.id, img);
+    }
+
+    for (const id of Array.from(cache.keys())) {
+      if (!defIds.has(id)) {
+        cache.delete(id);
+      }
+    }
+  }, [partDefs]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -192,7 +270,8 @@ export function BoardCanvas({
         def,
         viewport,
         isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)",
-        "#ff9f1c"
+        "#ff9f1c",
+        imageCacheRef.current.get(def.id) ?? null
       );
     }
 
@@ -205,7 +284,8 @@ export function BoardCanvas({
           def,
           viewport,
           movePreviewValid ? "rgba(102, 217, 125, 0.35)" : "rgba(217, 102, 102, 0.4)",
-          movePreviewValid ? "#6fe893" : "#ff9090"
+          movePreviewValid ? "#6fe893" : "#ff9090",
+          imageCacheRef.current.get(def.id) ?? null
         );
       }
     }
@@ -219,7 +299,8 @@ export function BoardCanvas({
           def,
           viewport,
           placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
-          placePreviewValid ? "#99f2b0" : "#ffb0b0"
+          placePreviewValid ? "#99f2b0" : "#ffb0b0",
+          imageCacheRef.current.get(def.id) ?? null
         );
       }
     }

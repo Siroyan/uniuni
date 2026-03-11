@@ -75,6 +75,58 @@
 - `npm run build -w web` 成功。
 - `cd core && cargo check` 成功。
 
+## 2026-03-11 (Step4継続)
+実装内容:
+- Part Editor の画像設定UIを整理。
+  - 画像設定を `Pin設定` / `Occupied設定` と同じ粒度のブロックに分離
+  - `Scale` / `Offset X` / `Offset Y` を各1行に分離
+  - 各項目を `スライダー + 数値入力` の操作形式に変更
+- 画像削除時のCAD反映不具合を修正。
+  - PartDef の `imageDataUrl` が空になったとき、`BoardCanvas` の画像キャッシュから即時削除
+  - 削除済み PartDef ID のキャッシュもクリーンアップ
+  - 画像削除後に既配置部品へ画像が残る問題と、新規配置に古い画像が再利用される問題を解消
+- 部品回転時の画像描画を修正。
+  - 部品の `rot` に合わせて画像も回転
+  - 回転時に画像アスペクト比が崩れる問題を修正（ローカルoccupied寸法基準で描画サイズを算出）
+- PartDef 検証の `core` 側移管を実施。
+  - `core` に `ReplacePartDefs` コマンドを追加
+  - PartDef 一括更新時に以下を検証:
+    - PartDef ID 重複、部品名重複、空の部品名
+    - pin/occupied の最小件数
+    - pin 名重複、pin 座標重複、occupied 座標重複
+    - 既存 PartInst の参照整合（def 存在、net_assign の pin 存在）
+    - 既存配置が新 PartDef でも盤面内・非衝突を満たすこと
+  - 検証失敗時は更新前の `part_defs` を保持（ロールバック）
+- `web` の PartDef 同期を `ReplacePartDefs` コマンド経由へ変更。
+  - `replacePartDefsInStateJson` を `apply_command_json` 経由へ切替
+  - 初期化時の PartDef 反映も同コマンド経由へ統一
+  - 不正 PartDef が core 検証に失敗した場合、ライブラリ保存を行わない順序へ変更
+
+検証:
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。
+
+## 2026-03-12 (Step4仕上げ)
+実装内容:
+- `core` に `ReplacePartDefs` のユニットテストを追加。
+  - 正常系: 妥当な PartDef 更新を受理
+  - 異常系: 部品名重複を拒否
+  - ロールバック系: pin 削除で既存 `net_assign` が不正化する更新を拒否し、更新前 `part_defs` を保持
+  - ロールバック系: 既存配置が盤面外になる更新を拒否し、更新前 `part_defs` を保持
+- `web` fallback (`coreBridge`) の整合テストを追加。
+  - `ReplacePartDefs` の代表ケース（正常/重複/参照不整合/衝突）を Node テストで検証
+  - 内部ヘルパー直叩きではなく `applyCoreCommandJson`（公開API）経由で検証
+  - テスト実行基盤として `tsx` を devDependency に追加
+- Step4 完了に合わせて実装ガイドを更新。
+  - Step4 ステータスを `完了` に変更
+  - 未実装項目から「PartDef 編集に対する core 側検証移管」を削除
+
+検証:
+- `cd core && cargo test` 成功（4件 pass）
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-09
 実装内容:
 - 仕様書・ガイド類に Step4〜Step7 計画を反映。
@@ -84,3 +136,73 @@
 
 検証:
 - ドキュメント更新のみ（ビルド影響なし）。
+
+## 2026-03-09 (Step4着手)
+実装内容:
+- Step4 用ブランチ/ドラフトPRを作成。
+- PartDef を固定定数から編集可能 state に移行。
+- Part editor の最小 UI を追加。
+  - PartDef 名変更
+  - pin 追加/削除
+  - occupied セル追加/削除
+- Part ライブラリ永続化を追加（`web/src/partLibrary.ts`）。
+  - IndexedDB から PartDef ライブラリを読込
+  - 変更時に自動保存
+- PartDef 編集結果を core state の `part_defs` へ同期する処理を追加。
+- メニュー部 UI/UX を改善。
+  - ツールバーを機能別カード（編集操作 / 配線とネット / Part Editor）に再構成
+  - Part Editor 内で `Pin設定` と `Occupied設定` を明確に分離
+  - 既存機能を維持したまま視認性を改善
+- レイアウトをサイドバー型に変更。
+  - メニューを画面上部から左サイドバーへ移設
+  - キャンバス領域を広く確保
+  - 画面幅が狭い場合は縦積みに切り替えるレスポンシブ対応を追加
+- 部品配置導線を修正。
+  - `Place` ボタン押下で配置対象を確実にアーム
+  - 1回配置後も `place` モードを維持して連続配置可能に変更
+  - 配置対象 PartDef を選択するセレクタを追加
+- メイン領域下段に部品ライブラリ表示を追加。
+  - カード形式で部品サムネイル・部品名・ピン数・occupied数を表示
+  - カードクリックで配置対象をアーム可能
+- Part Editor から新規部品作成を追加。
+  - `New Part` で PartDef を作成
+  - 作成直後に下部部品ライブラリへ表示
+  - 既存の Part ライブラリ永続化フローで保存対象になる
+- Part Editor から部品削除を追加。
+  - `Delete Part` で PartDef を削除可能
+  - 配置済み部品で使用中の PartDef は削除不可
+  - PartDef が1件のみのときは削除不可
+- キーボード操作仕様の修正。
+  - 既存部品（デフォルト/オリジナル問わず）の選択中・ホバー中に `R` を押すと、その部品を回転
+  - 配置アーム中の `R` は配置対象を回転
+  - それ以外の `R` は抵抗配置開始
+- PartDef 画像対応を追加。
+  - Part Editor で `Set Image` / `Clear Image` が可能
+  - 画像は PartDef の `imageDataUrl` として保存
+  - 下部部品ライブラリカードで画像サムネイル表示
+- Part Editor に視覚プレビューを追加。
+  - occupied セルと pin をグリッド上で可視化
+  - origin / occupied / pin の凡例表示を追加
+- Part Editor プレビューを固定領域 + Zoom方式へ変更。
+  - プレビュー領域サイズを固定
+  - `Fit / + / -` で倍率調整
+  - pin/occupied変更時は自動で Fit 倍率へ戻して全体表示
+- Part Editor の Pin/Occ 一覧を表形式に変更。
+  - Pin: `Pin名 | X座標 | Y座標`
+  - Occ: `X座標 | Y座標`
+  - 各行の右端にゴミ箱アイコンを配置し、削除可能にした
+- Part Editor バリデーション/通知を強化。
+  - 無効入力や重複入力を通知表示
+  - Pin/Occupied の最小件数制約（最低1件）を導入
+  - 部品名重複チェックを導入
+- Part ライブラリの JSON Export/Import を追加。
+  - `Export Library` で PartDef 一覧を JSON 出力
+  - `Import Library` で PartDef 一覧を読み込み
+  - 最低限の妥当性チェック（id/name/pins/occupied）を通した定義のみ採用
+- PartDef 画像の表示調整項目を追加。
+  - `imageScale`, `imageOffsetX`, `imageOffsetY` を編集可能
+  - キャンバス上の部品描画に画像変換（拡大縮小・オフセット）を反映
+
+検証:
+- `npm run build -w web` 成功。
+- `cd core && cargo check` 成功。

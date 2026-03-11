@@ -87,6 +87,84 @@ function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId
   return true;
 }
 
+function validateCorePartDefs(partDefs: CorePartDef[]): void {
+  const defIds = new Set<string>();
+  const defNames = new Set<string>();
+
+  for (const def of partDefs) {
+    if (defIds.has(def.id)) {
+      throw new Error(`duplicate part definition id: ${def.id}`);
+    }
+    defIds.add(def.id);
+
+    const normalizedName = def.name.trim();
+    if (normalizedName.length === 0) {
+      throw new Error(`part definition name is empty (id: ${def.id})`);
+    }
+    if (defNames.has(normalizedName)) {
+      throw new Error(`duplicate part definition name: ${normalizedName}`);
+    }
+    defNames.add(normalizedName);
+
+    if (def.pins.length === 0) {
+      throw new Error(`part definition must have at least one pin (id: ${def.id})`);
+    }
+    if (def.occupied.length === 0) {
+      throw new Error(`part definition must have at least one occupied cell (id: ${def.id})`);
+    }
+
+    const pinNames = new Set<string>();
+    const pinPositions = new Set<string>();
+    for (const pin of def.pins) {
+      const normalizedPinName = pin.name.trim();
+      if (normalizedPinName.length === 0) {
+        throw new Error(`pin name is empty in part definition ${def.id}`);
+      }
+      if (pinNames.has(normalizedPinName)) {
+        throw new Error(`duplicate pin name in part definition ${def.id}: ${normalizedPinName}`);
+      }
+      pinNames.add(normalizedPinName);
+
+      const pinPosKey = `${pin.pos.x}:${pin.pos.y}`;
+      if (pinPositions.has(pinPosKey)) {
+        throw new Error(
+          `duplicate pin position in part definition ${def.id}: (${pin.pos.x},${pin.pos.y})`
+        );
+      }
+      pinPositions.add(pinPosKey);
+    }
+
+    const occupiedPositions = new Set<string>();
+    for (const occ of def.occupied) {
+      const occKey = `${occ.x}:${occ.y}`;
+      if (occupiedPositions.has(occKey)) {
+        throw new Error(
+          `duplicate occupied position in part definition ${def.id}: (${occ.x},${occ.y})`
+        );
+      }
+      occupiedPositions.add(occKey);
+    }
+  }
+}
+
+function validatePartDefsAgainstState(state: CoreProjectState): void {
+  for (const part of state.part_insts) {
+    const partDef = state.part_defs.find((def) => def.id === part.def_id);
+    if (!partDef) {
+      throw new Error(`part definition not found for part instance ${part.id}`);
+    }
+    const pinNames = new Set(partDef.pins.map((pin) => pin.name));
+    for (const pinName of Object.keys(part.net_assign ?? {})) {
+      if (!pinNames.has(pinName)) {
+        throw new Error(`assigned pin not found in part definition ${part.def_id}: ${pinName}`);
+      }
+    }
+    if (!canPlacePart(state, part, part.id)) {
+      throw new Error("part-part occupancy collision");
+    }
+  }
+}
+
 function fallbackCreateEmptyProjectJson(): string {
   return JSON.stringify({
     schema_version: 1,
@@ -101,6 +179,15 @@ function fallbackCreateEmptyProjectJson(): string {
 function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
   const state = JSON.parse(stateJson) as CoreProjectState;
   const cmd = JSON.parse(cmdJson) as Record<string, unknown>;
+
+  if ("ReplacePartDefs" in cmd) {
+    const payload = cmd.ReplacePartDefs as { part_defs: CorePartDef[] };
+    validateCorePartDefs(payload.part_defs);
+    const nextState: CoreProjectState = { ...state, part_defs: payload.part_defs };
+    validatePartDefsAgainstState(nextState);
+    state.part_defs = payload.part_defs;
+    return JSON.stringify(state);
+  }
 
   if ("AssignNetName" in cmd) {
     const payload = cmd.AssignNetName as { net_id: string; name: string };
@@ -307,6 +394,21 @@ function partDefsToCore(partDefs: PartDef[]): CorePartDef[] {
   }));
 }
 
+export function commandReplacePartDefsJson(partDefs: PartDef[]): string {
+  return JSON.stringify({
+    ReplacePartDefs: {
+      part_defs: partDefsToCore(partDefs)
+    }
+  });
+}
+
+export async function replacePartDefsInStateJson(
+  stateJson: string,
+  partDefs: PartDef[]
+): Promise<string> {
+  return applyCoreCommandJson(stateJson, commandReplacePartDefsJson(partDefs));
+}
+
 export function newUuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -323,8 +425,11 @@ export async function createInitialCoreStateJson(board: Board, partDefs: PartDef
     width: board.width,
     height: board.height
   };
-  state.part_defs = partDefsToCore(partDefs);
-  return JSON.stringify(state);
+  let stateJson = JSON.stringify(state);
+  if (partDefs.length > 0) {
+    stateJson = await applyCoreCommandJson(stateJson, commandReplacePartDefsJson(partDefs));
+  }
+  return stateJson;
 }
 
 export async function applyCoreCommandJson(stateJson: string, cmdJson: string): Promise<string> {

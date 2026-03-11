@@ -21,6 +21,10 @@ export type PartDef = {
   name: string;
   pins: PinDef[];
   occupied: GridPt[];
+  imageDataUrl?: string | null;
+  imageScale?: number;
+  imageOffsetX?: number;
+  imageOffsetY?: number;
 };
 
 export type PartInst = {

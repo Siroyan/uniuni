@@ -27,11 +27,12 @@
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 永続化（自動保存/復元）
 - JSON Export/Import（`project.json` 最小版）
+- Part editor（PartDef の pin/occupied/image 編集）
+- Part ライブラリ永続化（IndexedDB）
+- Part ライブラリ JSON Export/Import
 
 未実装（これから）:
 
-- Part editor（PartDef の pin/occupied/image 編集）
-- Part ライブラリ永続化（IndexedDB）
 - ZIP Export/Import（`project.json` + `assets/`）
 - WASM 本接続フロー整備（fallback 依存の縮小）
 - ヒットテスト優先順位と候補サイクル選択の仕上げ
@@ -123,6 +124,11 @@ uniuni/
   - pan: 中クリック / 右クリックドラッグ
   - zoom: ホイール（カーソル位置アンカー）
   - hover: 最寄りグリッド点を HUD 表示
+- 画像描画仕様（Step4 追加分）:
+  - PartDef の `imageDataUrl` を部品描画時に重ねて表示
+  - 部品の `rot`（`Deg0/90/180/270`）に合わせて画像も回転描画
+  - `imageScale` / `imageOffsetX` / `imageOffsetY` を反映
+  - 画像削除時はキャッシュを破棄し、既配置部品・新規配置部品とも古い画像を再利用しない
 
 ### 6.3 ドメインモデル（`core/src/model.rs`）
 
@@ -130,9 +136,11 @@ uniuni/
   - `ProjectState`
   - `Board`, `GridPt`, `Wire`, `Net`, `PartDef`, `PartInst`
 - コマンド:
+  - `ReplacePartDefs`
   - `CommitWire`
   - `AssignNetName`
 - バリデーション:
+  - `ReplacePartDefs` 適用時に PartDef 一括検証（重複/空名/最低件数/既存配置整合）
   - `validate_wire_path` が Manhattan + 1ステップ制約を検証
 - DRC:
   - `run_drc` が同一点の複数ネットを SHORT として検出
@@ -156,6 +164,51 @@ cargo check
 cargo build
 ```
 
+### 7.3 テスト（詳細）
+
+テスト方針:
+
+- テストは実装詳細ではなく仕様に根ざして書く
+- 失敗時の状態不変（ロールバック）を必ず検証する
+- `web` 側テストは可能な限り公開 API 経由で実行し、内部ヘルパー依存を避ける
+
+現在の自動テスト:
+
+- `core`:
+  - `core/src/model.rs` のユニットテスト（`ReplacePartDefs`）
+  - 観点:
+    - 妥当な PartDef 更新を受理する
+    - 重複名などの不正更新を拒否する
+    - 既存配置との不整合（pin 割当不整合、盤面外化）時にロールバックする
+- `web`:
+  - `web/test/coreBridge.test.ts`
+  - `applyCoreCommandJson` + `commandReplacePartDefsJson` の公開 API 経由で、`ReplacePartDefs` の代表ケースを検証
+  - 観点:
+    - 正常更新
+    - 重複名の拒否
+    - 既存 `net_assign` 不整合の拒否
+    - 既存配置衝突の拒否
+
+テスト実行コマンド:
+
+```bash
+cd <repo-root>/core
+cargo test
+
+cd <repo-root>
+npm run test -w web
+```
+
+CI/手動確認で最低限回すコマンド:
+
+```bash
+cd <repo-root>
+npm run build -w web
+
+cd <repo-root>/core
+cargo check
+```
+
 ## 8. 変更を入れるときの指針
 
 ### 8.1 新機能を追加する順序（推奨）
@@ -174,8 +227,7 @@ cargo build
 
 ## 9. 直近の実装候補（Issue化しやすい単位）
 
-- PartDef editor UI（pin 追加/移動/削除、occupied 塗り）
-- Part ライブラリの IndexedDB 永続化 API
+- PartDef / Partライブラリ周りのテスト拡充（異常系・回帰ケース追加）
 - ZIP Export/Import（`project.json` + `assets/`）実装
 - WASM 生成物を使った本番接続導線の整備
 - ヒットテスト優先順位（pin優先）と候補サイクル選択（Tab）追加
@@ -262,7 +314,7 @@ cargo build
 - Undo/Redo が主要操作（部品編集・配線編集）で機能する
 - 保存→再読込で状態が復元される
 
-### Step 4: Part editor（定義編集）を実装する（予定）
+### Step 4: Part editor（定義編集）を実装する（完了）
 
 目的:
 
@@ -279,7 +331,7 @@ cargo build
 
 - PartDef を GUI で編集し、配置に反映できる
 
-### Step 5: Part ライブラリ永続化を実装する（予定）
+### Step 5: Part ライブラリ永続化を実装する（進行中）
 
 目的:
 
