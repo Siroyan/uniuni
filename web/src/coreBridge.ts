@@ -300,6 +300,21 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     return JSON.stringify(state);
   }
 
+  if ("MoveRotatePartInst" in cmd) {
+    const payload = cmd.MoveRotatePartInst as { part_id: string; to: GridPt; rot: Rot };
+    const part = state.part_insts.find((p) => p.id === payload.part_id);
+    if (!part) {
+      throw new Error("part instance not found");
+    }
+    const movedAndRotated: CorePartInst = { ...part, at: payload.to, rot: payload.rot };
+    if (!canPlacePart(state, movedAndRotated, part.id)) {
+      throw new Error("part placement invalid");
+    }
+    part.at = payload.to;
+    part.rot = payload.rot;
+    return JSON.stringify(state);
+  }
+
   if ("RotatePartInst" in cmd) {
     const payload = cmd.RotatePartInst as { part_id: string; rot: Rot };
     const part = state.part_insts.find((p) => p.id === payload.part_id);
@@ -600,6 +615,16 @@ export function commandMovePartInstJson(partId: string, to: GridPt): string {
     MovePartInst: {
       part_id: partId,
       to
+    }
+  });
+}
+
+export function commandMoveRotatePartInstJson(partId: string, to: GridPt, rot: Rot): string {
+  return JSON.stringify({
+    MoveRotatePartInst: {
+      part_id: partId,
+      to,
+      rot
     }
   });
 }

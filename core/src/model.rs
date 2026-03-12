@@ -124,6 +124,11 @@ pub enum Command {
         part_id: Uuid,
         to: GridPt,
     },
+    MoveRotatePartInst {
+        part_id: Uuid,
+        to: GridPt,
+        rot: Rot,
+    },
     RotatePartInst {
         part_id: Uuid,
         rot: Rot,
@@ -192,6 +197,19 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             };
             validate_part_placement(state, part_def, part.id, to, part.rot)?;
             state.part_insts[index].at = to;
+            Ok(())
+        }
+        Command::MoveRotatePartInst { part_id, to, rot } => {
+            let Some(index) = state.part_insts.iter().position(|part| part.id == part_id) else {
+                return Err("part instance not found".to_owned());
+            };
+            let part = state.part_insts[index].clone();
+            let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+                return Err("part definition not found".to_owned());
+            };
+            validate_part_placement(state, part_def, part.id, to, rot)?;
+            state.part_insts[index].at = to;
+            state.part_insts[index].rot = rot;
             Ok(())
         }
         Command::RotatePartInst { part_id, rot } => {
@@ -830,5 +848,24 @@ mod tests {
             .expect("net should be created");
         assert_eq!(net.name, "N-aaaaaaaa");
         assert_eq!(net.color.as_deref(), Some("#00cc88"));
+    }
+
+    #[test]
+    fn move_rotate_part_inst_applies_position_and_rotation_together() {
+        let mut state = test_state();
+        let part_id = state.part_insts[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::MoveRotatePartInst {
+                part_id,
+                to: GridPt { x: 4, y: 2 },
+                rot: Rot::Deg90,
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.part_insts[0].at, GridPt { x: 4, y: 2 });
+        assert!(matches!(state.part_insts[0].rot, Rot::Deg90));
     }
 }
