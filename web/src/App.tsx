@@ -3,6 +3,7 @@ import { BoardCanvas } from "./BoardCanvas";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
+  commandAssignNetColorJson,
   commandAssignNetNameJson,
   commandAssignPinToNetJson,
   commandCommitWireJson,
@@ -98,6 +99,8 @@ const builtInPartIds = {
   capacitor: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
   inductor: "01d260e9-ea3a-488f-9e8a-031ca0d679ce"
 };
+const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function nextRefdes(parts: PartInst[], defId: string): string {
   const prefix = defPrefixById[defId] ?? "U";
@@ -123,6 +126,14 @@ function partLabel(name: string): string {
   const first = tokens[0].slice(0, 1);
   const second = tokens.length > 1 ? tokens[1].slice(0, 1) : tokens[0].slice(1, 2);
   return `${first}${second}`.toUpperCase();
+}
+
+function fallbackNetColor(netId: string): string {
+  let hash = 0;
+  for (let i = 0; i < netId.length; i += 1) {
+    hash = (hash * 31 + netId.charCodeAt(i)) >>> 0;
+  }
+  return NET_COLORS[hash % NET_COLORS.length];
 }
 
 type HistoryEntry = {
@@ -186,6 +197,7 @@ export function App(): JSX.Element {
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
   const [selectedNetId, setSelectedNetId] = useState<string>(() => nets[0]?.id ?? "");
   const [netNameDraft, setNetNameDraft] = useState<string>("");
+  const [netColorDraft, setNetColorDraft] = useState<string>("#51c4ff");
   const [pinNameDraft, setPinNameDraft] = useState<string>("");
   const [editorDefId, setEditorDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorDefName, setEditorDefName] = useState<string>(defaultPartDefs[0].name);
@@ -229,6 +241,7 @@ export function App(): JSX.Element {
   const imageOffsetYSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetY) || 0));
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const selectedPartDef = selectedPart ? defsById.get(selectedPart.defId) ?? null : null;
+  const selectedNet = nets.find((net) => net.id === selectedNetId) ?? null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
   const hoveredPartId = useMemo(() => {
     if (!hoverGrid) return null;
@@ -260,10 +273,12 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!selectedNetId) {
       setNetNameDraft("");
+      setNetColorDraft("#51c4ff");
       return;
     }
     const selected = nets.find((net) => net.id === selectedNetId);
     setNetNameDraft(selected?.name ?? "");
+    setNetColorDraft(selected?.color ?? fallbackNetColor(selectedNetId));
   }, [nets, selectedNetId]);
 
   useEffect(() => {
@@ -392,6 +407,9 @@ export function App(): JSX.Element {
           let fresh = await createInitialCoreStateJson(board, effectivePartDefs);
           for (const net of nets) {
             fresh = await applyCoreCommandJson(fresh, commandAssignNetNameJson(net.id, net.name));
+            if (typeof net.color === "string" && NET_COLOR_HEX.test(net.color)) {
+              fresh = await applyCoreCommandJson(fresh, commandAssignNetColorJson(net.id, net.color));
+            }
           }
           return fresh;
         };
@@ -617,7 +635,8 @@ export function App(): JSX.Element {
   const addNet = async (): Promise<void> => {
     const newNet: Net = {
       id: newUuid(),
-      name: `N-${nets.length + 1}`
+      name: `N-${nets.length + 1}`,
+      color: null
     };
     setNets((prev) => [...prev, newNet]);
     setSelectedNetId(newNet.id);
@@ -651,6 +670,42 @@ export function App(): JSX.Element {
       setCoreError(null);
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "rename net failed");
+    }
+  };
+
+  const applySelectedNetColor = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNetId) return;
+    if (!NET_COLOR_HEX.test(netColorDraft)) {
+      setCoreError("net color must be #RRGGBB");
+      return;
+    }
+    try {
+      const nextState = await applyCoreCommandJson(
+        state,
+        commandAssignNetColorJson(selectedNetId, netColorDraft)
+      );
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "assign net color failed");
+    }
+  };
+
+  const resetSelectedNetColor = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNetId) return;
+    try {
+      const nextState = await applyCoreCommandJson(
+        state,
+        commandAssignNetColorJson(selectedNetId, null)
+      );
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "reset net color failed");
     }
   };
 
@@ -1609,6 +1664,37 @@ export function App(): JSX.Element {
               >
                 Rename Net
               </button>
+              <label className="net-label" htmlFor="net-color-input">
+                Color
+              </label>
+              <input
+                id="net-color-input"
+                type="color"
+                className="net-color-input"
+                value={netColorDraft}
+                onChange={(event) => setNetColorDraft(event.target.value)}
+                disabled={!selectedNetId}
+              />
+              <span
+                className="net-color-chip"
+                style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applySelectedNetColor()}
+                disabled={!selectedNetId}
+              >
+                Apply Color
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void resetSelectedNetColor()}
+                disabled={!selectedNetId || !selectedNet?.color}
+              >
+                Reset Color
+              </button>
             </div>
             <div className="toolbar-row">
               <select
@@ -2109,6 +2195,7 @@ export function App(): JSX.Element {
             board={board}
             parts={parts}
             partDefs={partDefs}
+            nets={nets}
             wires={wires}
             selectedWireId={selectedWireId}
             wireDraftPath={wireDraftPath}

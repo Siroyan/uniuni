@@ -26,6 +26,8 @@ pub struct Wire {
 pub struct Net {
     pub id: Uuid,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,10 +91,24 @@ impl Default for ProjectState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
-    ReplacePartDefs { part_defs: Vec<PartDef> },
-    CommitWire { net_id: Uuid, path: Vec<GridPt> },
-    DeleteWire { wire_id: Uuid },
-    AssignNetName { net_id: Uuid, name: String },
+    ReplacePartDefs {
+        part_defs: Vec<PartDef>,
+    },
+    CommitWire {
+        net_id: Uuid,
+        path: Vec<GridPt>,
+    },
+    DeleteWire {
+        wire_id: Uuid,
+    },
+    AssignNetName {
+        net_id: Uuid,
+        name: String,
+    },
+    AssignNetColor {
+        net_id: Uuid,
+        color: Option<String>,
+    },
     AssignPinToNet {
         part_id: Uuid,
         pin_name: String,
@@ -222,7 +238,26 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
                 net.name = name;
                 return Ok(());
             }
-            state.nets.push(Net { id: net_id, name });
+            state.nets.push(Net {
+                id: net_id,
+                name,
+                color: None,
+            });
+            Ok(())
+        }
+        Command::AssignNetColor { net_id, color } => {
+            if let Some(value) = color.as_deref() {
+                validate_net_color(value)?;
+            }
+            if let Some(net) = state.nets.iter_mut().find(|n| n.id == net_id) {
+                net.color = color;
+                return Ok(());
+            }
+            state.nets.push(Net {
+                id: net_id,
+                name: default_net_name(net_id),
+                color,
+            });
             Ok(())
         }
         Command::AssignPinToNet {
@@ -422,10 +457,7 @@ fn validate_part_defs(part_defs: &[PartDef]) -> Result<(), String> {
         for pin in &def.pins {
             let normalized_pin_name = pin.name.trim();
             if normalized_pin_name.is_empty() {
-                return Err(format!(
-                    "pin name is empty in part definition {}",
-                    def.id
-                ));
+                return Err(format!("pin name is empty in part definition {}", def.id));
             }
             if !pin_names.insert(normalized_pin_name.to_owned()) {
                 return Err(format!(
@@ -499,6 +531,17 @@ fn validate_wire_inside_board(state: &ProjectState, path: &[GridPt]) -> Result<(
     Ok(())
 }
 
+fn validate_net_color(color: &str) -> Result<(), String> {
+    let bytes = color.as_bytes();
+    if bytes.len() != 7 || bytes[0] != b'#' {
+        return Err("net color must be #RRGGBB".to_owned());
+    }
+    if bytes[1..].iter().all(|ch| ch.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    Err("net color must be #RRGGBB".to_owned())
+}
+
 fn absolute_occupied_points(part_def: &PartDef, at: GridPt, rot: Rot) -> Vec<GridPt> {
     part_def
         .occupied
@@ -541,6 +584,7 @@ fn ensure_net_exists(state: &mut ProjectState, net_id: Uuid) {
     state.nets.push(Net {
         id: net_id,
         name: default_net_name(net_id),
+        color: None,
     });
 }
 
@@ -595,6 +639,7 @@ mod tests {
             nets: vec![Net {
                 id: net_id,
                 name: "N-1".to_owned(),
+                color: None,
             }],
             wires: Vec::new(),
         }
@@ -726,5 +771,64 @@ mod tests {
         assert!(result.is_err());
         assert!(result.expect_err("must fail").contains("outside board"));
         assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn assign_net_color_updates_existing_net() {
+        let mut state = test_state();
+        let net_id = state.nets[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id,
+                color: Some("#12Ab9F".to_owned()),
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.nets[0].color.as_deref(), Some("#12Ab9F"));
+    }
+
+    #[test]
+    fn assign_net_color_rejects_invalid_format() {
+        let mut state = test_state();
+        let before_json = as_json(&state);
+        let net_id = state.nets[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id,
+                color: Some("red".to_owned()),
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result.expect_err("must fail").contains("#RRGGBB"));
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn assign_net_color_creates_missing_net() {
+        let mut state = test_state();
+        let new_net_id = uuid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id: new_net_id,
+                color: Some("#00cc88".to_owned()),
+            },
+        );
+
+        assert!(result.is_ok());
+        let net = state
+            .nets
+            .iter()
+            .find(|net| net.id == new_net_id)
+            .expect("net should be created");
+        assert_eq!(net.name, "N-aaaaaaaa");
+        assert_eq!(net.color.as_deref(), Some("#00cc88"));
     }
 }

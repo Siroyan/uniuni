@@ -11,7 +11,7 @@ export type CoreBridgeMode = "wasm" | "fallback";
 
 type CoreGridPt = { x: number; y: number };
 type CoreWire = { id: string; net_id: string; path: CoreGridPt[] };
-type CoreNet = { id: string; name: string };
+type CoreNet = { id: string; name: string; color?: string | null };
 type CorePartDef = {
   id: string;
   name: string;
@@ -40,9 +40,16 @@ type CoreRuntime = {
 };
 
 let coreRuntimePromise: Promise<CoreRuntime> | null = null;
+const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function isAdjacent(a: GridPt, b: GridPt): boolean {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+}
+
+function validateNetColor(color: string): void {
+  if (!NET_COLOR_HEX.test(color)) {
+    throw new Error("net color must be #RRGGBB");
+  }
 }
 
 function rotateRelative(pt: GridPt, rot: Rot): GridPt {
@@ -202,7 +209,25 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     if (target) {
       target.name = payload.name;
     } else {
-      state.nets.push({ id: payload.net_id, name: payload.name });
+      state.nets.push({ id: payload.net_id, name: payload.name, color: null });
+    }
+    return JSON.stringify(state);
+  }
+
+  if ("AssignNetColor" in cmd) {
+    const payload = cmd.AssignNetColor as { net_id: string; color: string | null };
+    if (payload.color !== null) {
+      validateNetColor(payload.color);
+    }
+    const target = state.nets.find((net) => net.id === payload.net_id);
+    if (target) {
+      target.color = payload.color;
+    } else {
+      state.nets.push({
+        id: payload.net_id,
+        name: `N-${payload.net_id.slice(0, 8)}`,
+        color: payload.color
+      });
     }
     return JSON.stringify(state);
   }
@@ -219,7 +244,7 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     }
 
     if (!state.nets.some((net) => net.id === payload.net_id)) {
-      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}` });
+      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
     }
     state.wires.push({
       id: newUuid(),
@@ -317,7 +342,7 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
       throw new Error("pin not found in part definition");
     }
     if (!state.nets.some((net) => net.id === payload.net_id)) {
-      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}` });
+      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
     }
     part.net_assign[payload.pin_name] = payload.net_id;
     return JSON.stringify(state);
@@ -435,7 +460,11 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
 function parseViewState(stateJson: string): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
   const state = JSON.parse(stateJson) as CoreProjectState;
   return {
-    nets: state.nets.map((net) => ({ id: net.id, name: net.name })),
+    nets: state.nets.map((net) => ({
+      id: net.id,
+      name: net.name,
+      color: typeof net.color === "string" && NET_COLOR_HEX.test(net.color) ? net.color : null
+    })),
     wires: state.wires.map((wire) => ({
       id: wire.id,
       netId: wire.net_id,
@@ -525,6 +554,15 @@ export function commandAssignNetNameJson(netId: string, name: string): string {
     AssignNetName: {
       net_id: netId,
       name
+    }
+  });
+}
+
+export function commandAssignNetColorJson(netId: string, color: string | null): string {
+  return JSON.stringify({
+    AssignNetColor: {
+      net_id: netId,
+      color
     }
   });
 }

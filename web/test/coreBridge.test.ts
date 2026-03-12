@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
+  commandAssignNetColorJson,
   commandReplacePartDefsJson,
   detectCoreBridgeMode
 } from "../src/coreBridge";
@@ -28,7 +29,7 @@ type CoreState = {
     refdes: string;
     net_assign: Record<string, string>;
   }>;
-  nets: Array<{ id: string; name: string }>;
+  nets: Array<{ id: string; name: string; color?: string | null }>;
   wires: Array<{ id: string; net_id: string; path: CoreGridPt[] }>;
 };
 
@@ -58,7 +59,7 @@ function baseState(): CoreState {
         net_assign: { "1": NET_ID }
       }
     ],
-    nets: [{ id: NET_ID, name: "N-1" }],
+    nets: [{ id: NET_ID, name: "N-1", color: null }],
     wires: []
   };
 }
@@ -181,5 +182,30 @@ test("bridge ReplacePartDefs rejects updates that create part collisions", async
   await assert.rejects(
     applyCoreCommandJson(JSON.stringify(state), cmd),
     /part-part occupancy collision/
+  );
+});
+
+test("bridge AssignNetColor can set and clear net color", async () => {
+  const state = baseState();
+  const withColorJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandAssignNetColorJson(NET_ID, "#00cc88")
+  );
+  const withColor = JSON.parse(withColorJson) as CoreState;
+  assert.equal(withColor.nets[0].color, "#00cc88");
+
+  const clearedJson = await applyCoreCommandJson(
+    withColorJson,
+    commandAssignNetColorJson(NET_ID, null)
+  );
+  const cleared = JSON.parse(clearedJson) as CoreState;
+  assert.equal(cleared.nets[0].color, null);
+});
+
+test("bridge AssignNetColor rejects invalid color format", async () => {
+  const state = baseState();
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandAssignNetColorJson(NET_ID, "red")),
+    /#RRGGBB/
   );
 });
