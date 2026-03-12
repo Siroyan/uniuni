@@ -5,6 +5,7 @@ import {
   applyCoreCommandJson,
   commandAssignNetColorJson,
   commandMoveRotatePartInstJson,
+  commandResizeBoardJson,
   commandReplacePartDefsJson,
   detectCoreBridgeMode
 } from "../src/coreBridge";
@@ -220,4 +221,21 @@ test("bridge MoveRotatePartInst applies target position and rotation together", 
   const next = JSON.parse(nextJson) as CoreState;
   assert.deepEqual(next.part_insts[0].at, { x: 5, y: 4 });
   assert.equal(next.part_insts[0].rot, "Deg90");
+});
+
+test("bridge ResizeBoard updates board size when existing objects fit", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(80, 50));
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.equal(next.board.width, 80);
+  assert.equal(next.board.height, 50);
+});
+
+test("bridge ResizeBoard rejects when part would be outside board", async () => {
+  const state = baseState();
+  state.part_insts[0].at = { x: 10, y: 0 };
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(5, 5)),
+    /part outside board/
+  );
 });

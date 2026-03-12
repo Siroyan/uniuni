@@ -101,6 +101,41 @@ function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId
   return true;
 }
 
+function validateBoardSize(width: number, height: number): void {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new Error("board size must be positive");
+  }
+}
+
+function validateResizeTarget(state: CoreProjectState, width: number, height: number): void {
+  validateBoardSize(width, height);
+  const resizedBoard: Board = {
+    gridPitchMm: state.board.grid_pitch_mm,
+    width,
+    height
+  };
+
+  for (const wire of state.wires) {
+    for (const pt of wire.path) {
+      if (!isInsideBoard(resizedBoard, pt)) {
+        throw new Error("board resize would place wire outside board");
+      }
+    }
+  }
+
+  for (const part of state.part_insts) {
+    const partDef = state.part_defs.find((d) => d.id === part.def_id);
+    if (!partDef) {
+      throw new Error("part definition not found");
+    }
+    for (const pt of absoluteOccupied(partDef, part)) {
+      if (!isInsideBoard(resizedBoard, pt)) {
+        throw new Error("board resize would place part outside board");
+      }
+    }
+  }
+}
+
 function validateCorePartDefs(partDefs: CorePartDef[]): void {
   const defIds = new Set<string>();
   const defNames = new Set<string>();
@@ -229,6 +264,14 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
         color: payload.color
       });
     }
+    return JSON.stringify(state);
+  }
+
+  if ("ResizeBoard" in cmd) {
+    const payload = cmd.ResizeBoard as { width: number; height: number };
+    validateResizeTarget(state, payload.width, payload.height);
+    state.board.width = payload.width;
+    state.board.height = payload.height;
     return JSON.stringify(state);
   }
 
@@ -472,9 +515,14 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
   return runtimePromise;
 }
 
-function parseViewState(stateJson: string): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
+function parseViewState(stateJson: string): { board: Board; nets: Net[]; wires: Wire[]; parts: PartInst[] } {
   const state = JSON.parse(stateJson) as CoreProjectState;
   return {
+    board: {
+      gridPitchMm: state.board.grid_pitch_mm,
+      width: state.board.width,
+      height: state.board.height
+    },
     nets: state.nets.map((net) => ({
       id: net.id,
       name: net.name,
@@ -582,6 +630,15 @@ export function commandAssignNetColorJson(netId: string, color: string | null): 
   });
 }
 
+export function commandResizeBoardJson(width: number, height: number): string {
+  return JSON.stringify({
+    ResizeBoard: {
+      width,
+      height
+    }
+  });
+}
+
 export function commandCommitWireJson(netId: string, path: GridPt[]): string {
   return JSON.stringify({
     CommitWire: {
@@ -658,6 +715,6 @@ export function commandAssignPinToNetJson(partId: string, pinName: string, netId
 
 export function extractViewStateFromCoreJson(
   stateJson: string
-): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
+): { board: Board; nets: Net[]; wires: Wire[]; parts: PartInst[] } {
   return parseViewState(stateJson);
 }

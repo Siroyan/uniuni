@@ -2,6 +2,28 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-03-13 (基板サイズ任意設定 + 秋月A/B/Cプリセット)
+実装内容:
+- 基板サイズ変更用コマンドを `core` に追加。
+  - `ResizeBoard { width, height }`
+  - `width/height` は正整数のみ許可
+  - 変更後に既存 Wire 点や Part occupied が盤外になる場合は拒否
+- `web` に基板サイズ変更UIを追加。
+  - 任意の `Width/Height` を入力して `Apply Size`
+  - 秋月 `A/B/C` プリセットを選択して `Apply Preset`
+  - 現在のグリッドサイズと mm 相当値を表示
+- fallback bridge に `ResizeBoard` を追加し、WASM未使用時でも同挙動を保証。
+- `extractViewStateFromCoreJson` で `board` を返すよう拡張し、UI側の board state と同期。
+- テストを追加。
+  - `core/src/model.rs`: `ResizeBoard` の正常系/部品盤外/配線盤外
+  - `web/test/coreBridge.test.ts`: fallback での `ResizeBoard` 成功/拒否
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-13 (M移動中の回転が配置時に失われる不具合修正)
 実装内容:
 - 移動中プレビューの最終姿勢をそのまま確定できるよう `core` に `MoveRotatePartInst` コマンドを追加。
