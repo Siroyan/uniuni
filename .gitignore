@@ -6,3 +6,5 @@ web/node_modules
 core/pkg
 core/target
 .DS_Store
+web/playwright-report
+web/test-results

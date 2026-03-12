@@ -39,6 +39,12 @@ Web production build:
 npm run build -w web
 ```
 
+Web E2E test (Playwright):
+```bash
+npm run e2e:install -w web
+npm run test:e2e -w web
+```
+
 Rust core build/check:
 ```bash
 cd core

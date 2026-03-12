@@ -26,6 +26,7 @@ MVP Step1〜Step7 は完了している。
 - ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
 - WASM/Fallback 接続モード表示
 - ヒットテスト優先順位（Pin > Wire > Occupied）と Tab サイクル選択
+- E2E 回帰テスト基盤（Playwright）
 
 ## 3. システム構成
 
@@ -242,14 +243,24 @@ uniuni/
   - ZIP構成、互換読込、異常ZIP
 - `web/test/partsSelection.test.ts`
   - ヒット優先順位、候補サイクル
+- `web/e2e/regression.spec.ts`（Playwright）
+  - 部品の連続配置
+  - 手動配線の確定
+  - Pin優先選択 + Tabサイクルによる候補切替
 
 ### 10.3 実行コマンド
 ```bash
 npm run test -w web
 npm run build -w web
+npm run e2e:install -w web
+npm run test:e2e -w web
 cd core && cargo check
 cd core && cargo test
 ```
+
+補足:
+- Linux 環境では Playwright のブラウザ実行に追加ライブラリが必要な場合がある。
+- 依存不足時は `npx playwright install-deps chromium` で導入する（権限が必要）。
 
 ## 11. 変更時チェックリスト
 - `core` の検証責務を壊していないか

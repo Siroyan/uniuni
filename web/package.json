@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "jszip": "^3.10.1",
@@ -15,6 +19,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "fake-indexeddb": "^6.2.5",
