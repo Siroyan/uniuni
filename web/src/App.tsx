@@ -38,9 +38,30 @@ const DEFAULT_BOARD: Board = {
   gridPitchMm: 2.54
 };
 const AKIZUKI_BOARD_PRESETS = [
-  { id: "akizuki-a", label: "秋月 Aタイプ (155x115mm)", widthMm: 155, heightMm: 115 },
-  { id: "akizuki-b", label: "秋月 Bタイプ (95x72mm)", widthMm: 95, heightMm: 72 },
-  { id: "akizuki-c", label: "秋月 Cタイプ (72x47.5mm)", widthMm: 72, heightMm: 47.5 }
+  {
+    id: "akizuki-a",
+    label: "秋月 Aタイプ (155x114mm)",
+    widthMm: 155,
+    heightMm: 114,
+    gridWidth: 61,
+    gridHeight: 45
+  },
+  {
+    id: "akizuki-b",
+    label: "秋月 Bタイプ (95x72mm)",
+    widthMm: 95,
+    heightMm: 72,
+    gridWidth: 37,
+    gridHeight: 28
+  },
+  {
+    id: "akizuki-c",
+    label: "秋月 Cタイプ (72x47.5mm)",
+    widthMm: 72,
+    heightMm: 47.5,
+    gridWidth: 25,
+    gridHeight: 15
+  }
 ] as const;
 type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
 
@@ -108,10 +129,6 @@ const builtInPartIds = {
 };
 const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
 const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
-
-function mmToGrid(mm: number, pitchMm = DEFAULT_BOARD.gridPitchMm): number {
-  return Math.max(1, Math.round(mm / pitchMm));
-}
 
 function nextRefdes(parts: PartInst[], defId: string): string {
   const prefix = defPrefixById[defId] ?? "U";
@@ -300,13 +317,10 @@ export function App(): JSX.Element {
     setBoardWidthDraft(String(board.width));
     setBoardHeightDraft(String(board.height));
     const matched = AKIZUKI_BOARD_PRESETS.find((preset) => {
-      return (
-        mmToGrid(preset.widthMm, board.gridPitchMm) === board.width &&
-        mmToGrid(preset.heightMm, board.gridPitchMm) === board.height
-      );
+      return preset.gridWidth === board.width && preset.gridHeight === board.height;
     });
     setBoardPresetId(matched?.id ?? "custom");
-  }, [board.gridPitchMm, board.height, board.width]);
+  }, [board.height, board.width]);
 
   useEffect(() => {
     if (!editorDefId || !partDefs.some((def) => def.id === editorDefId)) {
@@ -687,9 +701,7 @@ export function App(): JSX.Element {
     if (boardPresetId === "custom") return;
     const preset = AKIZUKI_BOARD_PRESETS.find((item) => item.id === boardPresetId);
     if (!preset) return;
-    const width = mmToGrid(preset.widthMm, board.gridPitchMm);
-    const height = mmToGrid(preset.heightMm, board.gridPitchMm);
-    await applyBoardSize(width, height);
+    await applyBoardSize(preset.gridWidth, preset.gridHeight);
   };
 
   const addNet = async (): Promise<void> => {

@@ -171,8 +171,11 @@ export function BoardCanvas({
     () => new Map(nets.map((net) => [net.id, net.color ?? null])),
     [nets]
   );
-  const boardPx = useMemo(
-    () => ({ width: board.width * CELL_SIZE, height: board.height * CELL_SIZE }),
+  const gridMaxWorld = useMemo(
+    () => ({
+      x: Math.max(0, (board.width - 1) * CELL_SIZE),
+      y: Math.max(0, (board.height - 1) * CELL_SIZE)
+    }),
     [board.height, board.width]
   );
 
@@ -226,20 +229,20 @@ export function BoardCanvas({
     ctx.strokeStyle = "#263140";
     ctx.lineWidth = 1;
 
-    for (let x = 0; x <= board.width; x += 1) {
+    for (let x = 0; x < board.width; x += 1) {
       const worldX = x * CELL_SIZE;
       const from = worldToScreen({ x: worldX, y: 0 }, viewport);
-      const to = worldToScreen({ x: worldX, y: boardPx.height }, viewport);
+      const to = worldToScreen({ x: worldX, y: gridMaxWorld.y }, viewport);
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
       ctx.stroke();
     }
 
-    for (let y = 0; y <= board.height; y += 1) {
+    for (let y = 0; y < board.height; y += 1) {
       const worldY = y * CELL_SIZE;
       const from = worldToScreen({ x: 0, y: worldY }, viewport);
-      const to = worldToScreen({ x: boardPx.width, y: worldY }, viewport);
+      const to = worldToScreen({ x: gridMaxWorld.x, y: worldY }, viewport);
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
@@ -248,8 +251,12 @@ export function BoardCanvas({
 
     ctx.strokeStyle = "#5ba4ff";
     ctx.lineWidth = 1.5;
-    const topLeft = worldToScreen({ x: 0, y: 0 }, viewport);
-    const bottomRight = worldToScreen({ x: boardPx.width, y: boardPx.height }, viewport);
+    // Draw board edge half a cell outside the outermost grid so wires stay visually inside.
+    const topLeft = worldToScreen({ x: -CELL_SIZE / 2, y: -CELL_SIZE / 2 }, viewport);
+    const bottomRight = worldToScreen(
+      { x: gridMaxWorld.x + CELL_SIZE / 2, y: gridMaxWorld.y + CELL_SIZE / 2 },
+      viewport
+    );
     ctx.strokeRect(
       topLeft.x,
       topLeft.y,
@@ -323,8 +330,8 @@ export function BoardCanvas({
   }, [
     board.height,
     board.width,
-    boardPx.height,
-    boardPx.width,
+    gridMaxWorld.x,
+    gridMaxWorld.y,
     hoverGrid,
     movePreviewPart,
     movePreviewValid,
