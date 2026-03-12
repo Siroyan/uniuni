@@ -55,3 +55,4 @@ cargo build
 ## Notes
 - 仕様は `doc/specification_ja.md` を参照。
 - MVP Step1-7 roadmap is complete; next phase candidates are tracked in `doc/implementation_guide_ja.md`.
+- CI（unit/build/core/e2e）は `.github/workflows/ci.yml` を参照。

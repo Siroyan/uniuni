@@ -272,10 +272,26 @@ cd core && cargo test
 
 ## 12. 今後の改善候補
 - ZIP Importの進捗表示とエラー詳細化
-- E2Eテスト整備（主要ショートカット、配置・配線回帰）
+- E2Eテスト拡充（ネット編集、Part Editor操作、Import/Export回帰）
 - 大規模データ時の描画/ヒットテスト性能最適化
 
-## 13. 参照
+## 13. CI運用
+- GitHub Actions: `.github/workflows/ci.yml`
+- 実行ジョブ:
+  - `web unit + build`
+    - `npm ci`
+    - `npm run test -w web`
+    - `npm run build -w web`
+  - `core check + test`
+    - `cd core && cargo check`
+    - `cd core && cargo test`
+  - `web e2e regression`
+    - `npm ci`
+    - `npx playwright install --with-deps chromium`
+    - `npm run test:e2e -w web`
+    - 失敗時を含め `web/playwright-report` と `web/test-results` を artifact 保存
+
+## 14. 参照
 - 仕様: [specification_ja.md](./specification_ja.md)
 - 進捗: [progress.md](./progress.md)
 - 利用方法: [README.md](../README.md)

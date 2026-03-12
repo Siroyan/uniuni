@@ -18,6 +18,10 @@
 - ドキュメント更新。
   - `README.md` に E2E 実行手順を追記
   - `doc/implementation_guide_ja.md` に E2E 基盤と実行前提を追記
+- CI を追加し、自動回帰化を GitHub Actions に組み込み。
+  - `.github/workflows/ci.yml` を追加
+  - `web unit + build` / `core check + test` / `web e2e regression` の3ジョブを定義
+  - E2E ジョブで Playwright report / trace を artifact 保存
 
 検証:
 - `npm run test -w web` 成功
