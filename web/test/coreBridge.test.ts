@@ -4,6 +4,7 @@ import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
   commandAssignNetColorJson,
+  commandMoveRotatePartInstJson,
   commandReplacePartDefsJson,
   detectCoreBridgeMode
 } from "../src/coreBridge";
@@ -208,4 +209,15 @@ test("bridge AssignNetColor rejects invalid color format", async () => {
     applyCoreCommandJson(JSON.stringify(state), commandAssignNetColorJson(NET_ID, "red")),
     /#RRGGBB/
   );
+});
+
+test("bridge MoveRotatePartInst applies target position and rotation together", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandMoveRotatePartInstJson(PART_ID, { x: 5, y: 4 }, "Deg90")
+  );
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.deepEqual(next.part_insts[0].at, { x: 5, y: 4 });
+  assert.equal(next.part_insts[0].rot, "Deg90");
 });

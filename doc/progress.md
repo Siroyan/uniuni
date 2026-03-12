@@ -2,6 +2,23 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-03-13 (M移動中の回転が配置時に失われる不具合修正)
+実装内容:
+- 移動中プレビューの最終姿勢をそのまま確定できるよう `core` に `MoveRotatePartInst` コマンドを追加。
+  - `part_id`, `to`, `rot` を同時に受け取り、単一検証で配置を確定
+- `web` 側を `MoveRotatePartInst` 利用へ切替。
+  - `M` で持ち上げ中に `R` で変更した回転が、クリック配置後にも保持されるよう修正
+- fallback bridge にも `MoveRotatePartInst` を追加し、WASM未使用時でも同挙動を保証。
+- テストを追加。
+  - `core/src/model.rs`: `MoveRotatePartInst` の同時適用テスト
+  - `web/test/coreBridge.test.ts`: fallback 経由で位置+回転が同時反映されることを検証
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-13 (ネットごとの配線色カスタマイズ)
 実装内容:
 - ネットに配線色を保持できるよう `core` のドメインを拡張。

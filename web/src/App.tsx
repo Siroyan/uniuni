@@ -9,7 +9,7 @@ import {
   commandCommitWireJson,
   commandDeletePartInstJson,
   commandDeleteWireJson,
-  commandMovePartInstJson,
+  commandMoveRotatePartInstJson,
   commandRotatePartInstJson,
   createInitialCoreStateJson,
   detectCoreBridgeMode,
@@ -1203,7 +1203,7 @@ export function App(): JSX.Element {
         try {
           const nextState = await applyCoreCommandJson(
             state,
-            commandMovePartInstJson(moveArmedPart.id, grid)
+            commandMoveRotatePartInstJson(moveArmedPart.id, grid, moved.rot)
           );
           commitStateTransition(state, nextState);
           setMoveArmedPartId(null);

@@ -123,6 +123,7 @@ uniuni/
 - `ReplacePartDefs`
 - `AddPartInst`
 - `MovePartInst`
+- `MoveRotatePartInst`
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
