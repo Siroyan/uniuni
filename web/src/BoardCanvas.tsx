@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { absoluteOccupied, absolutePins } from "./parts";
 import { clampZoom, gridToWorld, screenToWorld, worldToGrid, worldToScreen } from "./coords";
-import type { Board, GridPt, PartDef, PartInst, Viewport, Wire } from "./types";
+import type { Board, GridPt, Net, PartDef, PartInst, Viewport, Wire } from "./types";
 
 type Props = {
   board: Board;
   parts: PartInst[];
   partDefs: PartDef[];
+  nets: Net[];
   wires: Wire[];
   selectedWireId: string | null;
   wireDraftPath: GridPt[];
@@ -22,7 +23,8 @@ type Props = {
 const CELL_SIZE = 24;
 const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
 
-function colorForNet(netId: string): string {
+function colorForNet(netId: string, explicitColor?: string | null): string {
+  if (explicitColor) return explicitColor;
   let hash = 0;
   for (let i = 0; i < netId.length; i += 1) {
     hash = (hash * 31 + netId.charCodeAt(i)) >>> 0;
@@ -143,6 +145,7 @@ export function BoardCanvas({
   board,
   parts,
   partDefs,
+  nets,
   wires,
   selectedWireId,
   wireDraftPath,
@@ -164,6 +167,10 @@ export function BoardCanvas({
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
 
   const partDefMap = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
+  const netColorMap = useMemo(
+    () => new Map(nets.map((net) => [net.id, net.color ?? null])),
+    [nets]
+  );
   const boardPx = useMemo(
     () => ({ width: board.width * CELL_SIZE, height: board.height * CELL_SIZE }),
     [board.height, board.width]
@@ -251,7 +258,7 @@ export function BoardCanvas({
     );
 
     for (const wire of wires) {
-      const color = colorForNet(wire.netId);
+      const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
       const isSelected = wire.id === selectedWireId;
       drawWirePath(ctx, wire.path, viewport, isSelected ? "#ffd166" : color, isSelected ? "#ffd166" : color, isSelected ? 3.2 : 2.2);
     }
@@ -321,6 +328,7 @@ export function BoardCanvas({
     hoverGrid,
     movePreviewPart,
     movePreviewValid,
+    netColorMap,
     partDefMap,
     parts,
     placePreviewPart,

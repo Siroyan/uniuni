@@ -2,6 +2,32 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-03-13 (ネットごとの配線色カスタマイズ)
+実装内容:
+- ネットに配線色を保持できるよう `core` のドメインを拡張。
+  - `Net` に `color: Option<String>` を追加
+  - `AssignNetColor { net_id, color }` コマンドを追加
+  - 色文字列は `#RRGGBB` 形式のみ許可（不正値は拒否）
+- `web` の Core bridge/fallback を拡張。
+  - `AssignNetColor` コマンドを追加
+  - fallback 実装でも色検証を実施
+  - state 変換時に `Net.color` を UI に反映
+- 配線描画をネット色対応に変更。
+  - `BoardCanvas` で `Net.color` 指定時はその色を優先
+  - 未指定時は既存のハッシュ色パレットを継続使用
+- サイドバーの「配線とネット」UIを拡張。
+  - Net color picker を追加
+  - `Apply Color` で設定、`Reset Color` で既定色（未設定）に戻す操作を追加
+- テストを追加。
+  - `core/src/model.rs`: `AssignNetColor` の正常系/異常系/新規Net生成を検証
+  - `web/test/coreBridge.test.ts`: fallback 経由の色設定/解除と不正値拒否を検証
+
+検証:
+- `cd core && cargo test` 成功（7件 pass）
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-12 (`impl_brief.md` 廃止)
 実装内容:
 - `doc/impl_brief.md` を削除。

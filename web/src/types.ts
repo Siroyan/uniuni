@@ -39,6 +39,7 @@ export type PartInst = {
 export type Net = {
   id: string;
   name: string;
+  color?: string | null;
 };
 
 export type Wire = {
