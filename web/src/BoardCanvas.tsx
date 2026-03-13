@@ -21,6 +21,7 @@ type Props = {
 };
 
 const CELL_SIZE = 24;
+const BOARD_MARGIN_CELLS = 2.3;
 const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
 
 function colorForNet(netId: string, explicitColor?: string | null): string {
@@ -226,10 +227,11 @@ export function BoardCanvas({
     ctx.fillStyle = "#0d131b";
     ctx.fillRect(0, 0, rect.width, rect.height);
 
-    // Draw board edge half a cell outside the outermost grid so wires stay visually inside.
-    const topLeft = worldToScreen({ x: -CELL_SIZE / 2, y: -CELL_SIZE / 2 }, viewport);
+    // Draw board edge with an outer margin around the wiring grid.
+    const boardMarginWorld = CELL_SIZE * BOARD_MARGIN_CELLS;
+    const topLeft = worldToScreen({ x: -boardMarginWorld, y: -boardMarginWorld }, viewport);
     const bottomRight = worldToScreen(
-      { x: gridMaxWorld.x + CELL_SIZE / 2, y: gridMaxWorld.y + CELL_SIZE / 2 },
+      { x: gridMaxWorld.x + boardMarginWorld, y: gridMaxWorld.y + boardMarginWorld },
       viewport
     );
     const boardScreenWidth = bottomRight.x - topLeft.x;
@@ -245,15 +247,6 @@ export function BoardCanvas({
       ctx.fillStyle = boardGrad;
       ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
 
-      ctx.strokeStyle = "rgba(132, 124, 101, 0.08)";
-      ctx.lineWidth = 1;
-      for (let y = topLeft.y + 6; y < bottomRight.y; y += 14) {
-        ctx.beginPath();
-        ctx.moveTo(topLeft.x, y);
-        ctx.lineTo(bottomRight.x, y);
-        ctx.stroke();
-      }
-
       const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
       const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
       const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
@@ -265,9 +258,8 @@ export function BoardCanvas({
       const startY = Math.max(0, Math.floor(worldMinY / CELL_SIZE) - 2);
       const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
 
-      const ringRadius = Math.max(1.2, viewport.zoom * 3.8);
-      const holeRadius = Math.max(0.8, viewport.zoom * 1.7);
-      const highlightRadius = Math.max(0.6, viewport.zoom * 1.2);
+      const ringRadius = Math.max(2.4, viewport.zoom * 7.6);
+      const holeRadius = Math.max(1.6, viewport.zoom * 3.4);
 
       for (let y = startY; y <= endY; y += 1) {
         for (let x = startX; x <= endX; x += 1) {
@@ -277,18 +269,43 @@ export function BoardCanvas({
           ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
           ctx.fill();
 
-          if (viewport.zoom >= 0.5) {
-            ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-            ctx.beginPath();
-            ctx.arc(center.x - ringRadius * 0.28, center.y - ringRadius * 0.28, highlightRadius, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
           ctx.fillStyle = "#a8afbb";
           ctx.beginPath();
           ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
           ctx.fill();
         }
+      }
+
+      // Approximate 3mm mounting holes at four corners in the outer margin area.
+      const gridTopLeft = worldToScreen({ x: 0, y: 0 }, viewport);
+      const gridBottomRight = worldToScreen({ x: gridMaxWorld.x, y: gridMaxWorld.y }, viewport);
+      const marginLeft = Math.max(0, gridTopLeft.x - topLeft.x);
+      const marginRight = Math.max(0, bottomRight.x - gridBottomRight.x);
+      const marginTop = Math.max(0, gridTopLeft.y - topLeft.y);
+      const marginBottom = Math.max(0, bottomRight.y - gridBottomRight.y);
+      const minMargin = Math.max(0, Math.min(marginLeft, marginRight, marginTop, marginBottom));
+      const radiusFrom3mm = Math.max(
+        2.5,
+        ((3 / board.gridPitchMm) * CELL_SIZE * viewport.zoom) / 2
+      );
+      // Keep holes visually in the border margin; cap size if the margin is narrow.
+      const mountHoleRadius = Math.min(radiusFrom3mm, Math.max(2.5, minMargin * 0.42));
+      const mountCenters = [
+        { x: (topLeft.x + gridTopLeft.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+        { x: (bottomRight.x + gridBottomRight.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+        { x: (topLeft.x + gridTopLeft.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 },
+        { x: (bottomRight.x + gridBottomRight.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 }
+      ];
+      for (const center of mountCenters) {
+        ctx.fillStyle = "#ded3bd";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, mountHoleRadius + 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#8d93a0";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, mountHoleRadius, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       ctx.strokeStyle = "#cfc5ad";
