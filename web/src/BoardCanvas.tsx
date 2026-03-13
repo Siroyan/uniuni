@@ -223,46 +223,78 @@ export function BoardCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    ctx.fillStyle = "#111822";
+    ctx.fillStyle = "#0d131b";
     ctx.fillRect(0, 0, rect.width, rect.height);
 
-    ctx.strokeStyle = "#263140";
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < board.width; x += 1) {
-      const worldX = x * CELL_SIZE;
-      const from = worldToScreen({ x: worldX, y: 0 }, viewport);
-      const to = worldToScreen({ x: worldX, y: gridMaxWorld.y }, viewport);
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    }
-
-    for (let y = 0; y < board.height; y += 1) {
-      const worldY = y * CELL_SIZE;
-      const from = worldToScreen({ x: 0, y: worldY }, viewport);
-      const to = worldToScreen({ x: gridMaxWorld.x, y: worldY }, viewport);
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = "#5ba4ff";
-    ctx.lineWidth = 1.5;
     // Draw board edge half a cell outside the outermost grid so wires stay visually inside.
     const topLeft = worldToScreen({ x: -CELL_SIZE / 2, y: -CELL_SIZE / 2 }, viewport);
     const bottomRight = worldToScreen(
       { x: gridMaxWorld.x + CELL_SIZE / 2, y: gridMaxWorld.y + CELL_SIZE / 2 },
       viewport
     );
-    ctx.strokeRect(
-      topLeft.x,
-      topLeft.y,
-      bottomRight.x - topLeft.x,
-      bottomRight.y - topLeft.y
-    );
+    const boardScreenWidth = bottomRight.x - topLeft.x;
+    const boardScreenHeight = bottomRight.y - topLeft.y;
+
+    if (boardScreenWidth > 0 && boardScreenHeight > 0) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+      ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
+
+      const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
+      boardGrad.addColorStop(0, "#f2d297");
+      boardGrad.addColorStop(1, "#f2d297");
+      ctx.fillStyle = boardGrad;
+      ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+
+      ctx.strokeStyle = "rgba(132, 124, 101, 0.08)";
+      ctx.lineWidth = 1;
+      for (let y = topLeft.y + 6; y < bottomRight.y; y += 14) {
+        ctx.beginPath();
+        ctx.moveTo(topLeft.x, y);
+        ctx.lineTo(bottomRight.x, y);
+        ctx.stroke();
+      }
+
+      const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
+      const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
+      const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
+      const worldMaxX = Math.max(worldTopLeft.x, worldBottomRight.x);
+      const worldMinY = Math.min(worldTopLeft.y, worldBottomRight.y);
+      const worldMaxY = Math.max(worldTopLeft.y, worldBottomRight.y);
+      const startX = Math.max(0, Math.floor(worldMinX / CELL_SIZE) - 2);
+      const endX = Math.min(board.width - 1, Math.ceil(worldMaxX / CELL_SIZE) + 2);
+      const startY = Math.max(0, Math.floor(worldMinY / CELL_SIZE) - 2);
+      const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
+
+      const ringRadius = Math.max(1.2, viewport.zoom * 3.8);
+      const holeRadius = Math.max(0.8, viewport.zoom * 1.7);
+      const highlightRadius = Math.max(0.6, viewport.zoom * 1.2);
+
+      for (let y = startY; y <= endY; y += 1) {
+        for (let x = startX; x <= endX; x += 1) {
+          const center = worldToScreen({ x: x * CELL_SIZE, y: y * CELL_SIZE }, viewport);
+          ctx.fillStyle = "#c4c9d1";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (viewport.zoom >= 0.5) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.beginPath();
+            ctx.arc(center.x - ringRadius * 0.28, center.y - ringRadius * 0.28, highlightRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.fillStyle = "#a8afbb";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.strokeStyle = "#cfc5ad";
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+    }
 
     for (const wire of wires) {
       const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
