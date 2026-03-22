@@ -421,11 +421,18 @@ export function BoardCanvas({
     for (const wire of wires) {
       const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
       const isSelected = wire.id === selectedWireId;
-      drawWirePath(ctx, wire.path, viewport, isSelected ? "#ffd166" : color, isSelected ? "#ffd166" : color, isSelected ? 3.2 : 2.2);
+      drawWirePath(
+        ctx,
+        wire.path,
+        viewport,
+        isSelected ? "#ffd166" : color,
+        isSelected ? "#ffd166" : color,
+        isSelected ? 4.6 : 3.6
+      );
     }
 
     if (wireDraftPath.length > 0) {
-      drawWirePath(ctx, wireDraftPath, viewport, "#ffd166", "#ffd166", 2.4);
+      drawWirePath(ctx, wireDraftPath, viewport, "#ffd166", "#ffd166", 3.8);
     }
 
     for (const part of parts) {
