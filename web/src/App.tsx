@@ -51,8 +51,8 @@ const AKIZUKI_BOARD_PRESETS = [
     label: "秋月 Bタイプ (95x72mm)",
     widthMm: 95,
     heightMm: 72,
-    gridWidth: 37,
-    gridHeight: 28
+    gridWidth: 36,
+    gridHeight: 27
   },
   {
     id: "akizuki-c",
