@@ -101,6 +101,10 @@ pub enum Command {
     DeleteWire {
         wire_id: Uuid,
     },
+    ResizeBoard {
+        width: i32,
+        height: i32,
+    },
     AssignNetName {
         net_id: Uuid,
         name: String,
@@ -249,6 +253,39 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             if state.wires.len() == before {
                 return Err("wire not found".to_owned());
             }
+            Ok(())
+        }
+        Command::ResizeBoard { width, height } => {
+            if width < 1 || height < 1 {
+                return Err("board size must be positive".to_owned());
+            }
+            let resized = Board {
+                grid_pitch_mm: state.board.grid_pitch_mm,
+                width,
+                height,
+            };
+
+            for wire in &state.wires {
+                for pt in &wire.path {
+                    if !is_inside_board(&resized, *pt) {
+                        return Err("board resize would place wire outside board".to_owned());
+                    }
+                }
+            }
+
+            for part in &state.part_insts {
+                let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id)
+                else {
+                    return Err("part definition not found".to_owned());
+                };
+                for occ in absolute_occupied_points(part_def, part.at, part.rot) {
+                    if !is_inside_board(&resized, occ) {
+                        return Err("board resize would place part outside board".to_owned());
+                    }
+                }
+            }
+
+            state.board = resized;
             Ok(())
         }
         Command::AssignNetName { net_id, name } => {
@@ -867,5 +904,68 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(state.part_insts[0].at, GridPt { x: 4, y: 2 });
         assert!(matches!(state.part_insts[0].rot, Rot::Deg90));
+    }
+
+    #[test]
+    fn resize_board_updates_dimensions_when_all_objects_fit() {
+        let mut state = test_state();
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 80,
+                height: 50,
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.board.width, 80);
+        assert_eq!(state.board.height, 50);
+    }
+
+    #[test]
+    fn resize_board_rejects_when_part_would_be_outside() {
+        let mut state = test_state();
+        state.part_insts[0].at = GridPt { x: 10, y: 0 };
+        let before_json = as_json(&state);
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 5,
+                height: 5,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("part outside board"));
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn resize_board_rejects_when_wire_would_be_outside() {
+        let mut state = test_state();
+        state.wires.push(Wire {
+            id: uuid("44444444-4444-4444-4444-444444444444"),
+            net_id: state.nets[0].id,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 20, y: 0 }],
+        });
+        let before_json = as_json(&state);
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 8,
+                height: 8,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("wire outside board"));
+        assert_eq!(as_json(&state), before_json);
     }
 }

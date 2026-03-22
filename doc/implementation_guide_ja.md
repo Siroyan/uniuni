@@ -15,6 +15,7 @@
 MVP Step1〜Step7 は完了している。
 
 実装済みの主要機能:
+- 基板サイズの任意設定と秋月A/B/Cプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
 - Net 追加/改名、Pin への Net 割当
@@ -124,6 +125,7 @@ uniuni/
 - `AddPartInst`
 - `MovePartInst`
 - `MoveRotatePartInst`
+- `ResizeBoard`
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
@@ -144,6 +146,9 @@ uniuni/
   - 最短長（2点以上）
   - 1ステップ Manhattan
   - ボード内
+- Board整合:
+  - 正のサイズのみ許可
+  - 既存部品/配線が盤外になるサイズ変更を拒否
 - `ReplacePartDefs` は失敗時ロールバック
 
 ### 6.5 DRC
@@ -237,10 +242,12 @@ uniuni/
 - `core/src/model.rs`
   - `ReplacePartDefs` の正常/異常/ロールバック
   - `AssignNetColor` の正常/異常（`#RRGGBB`）/新規Net生成
+  - `ResizeBoard` の正常/異常（既存部品・配線の盤外化）
 - `web/test/coreBridge.test.ts`
   - bridgeのコマンド適用
   - fallback判定
   - `AssignNetColor` の設定/解除と形式エラー
+  - `ResizeBoard` の設定反映と拒否ケース
 - `web/test/partLibrary.test.ts`
   - 画像アセット分離、重複排除、移行
 - `web/test/projectPackage.test.ts`

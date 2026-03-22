@@ -21,7 +21,15 @@ type Props = {
 };
 
 const CELL_SIZE = 24;
+const BOARD_MARGIN_CELLS = 2.3;
 const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const AKIZUKI_B_LEGACY_GRID_WIDTH = 37;
+const AKIZUKI_B_LEGACY_GRID_HEIGHT = 28;
+const AKIZUKI_B_GRID_WIDTH = 36;
+const AKIZUKI_B_GRID_HEIGHT = 27;
+const AKIZUKI_B_THROUGH_HOLE_COLS = 36;
+const AKIZUKI_B_THROUGH_HOLE_ROWS = 27;
+const AKIZUKI_B_MOUNT_HOLE_DIAMETER_MM = 3.2;
 
 function colorForNet(netId: string, explicitColor?: string | null): string {
   if (explicitColor) return explicitColor;
@@ -141,6 +149,69 @@ function drawPart(
   }
 }
 
+function isAkizukiBBoard(board: Board): boolean {
+  const isCurrent =
+    board.width === AKIZUKI_B_GRID_WIDTH && board.height === AKIZUKI_B_GRID_HEIGHT;
+  const isLegacy =
+    board.width === AKIZUKI_B_LEGACY_GRID_WIDTH &&
+    board.height === AKIZUKI_B_LEGACY_GRID_HEIGHT;
+  return (
+    (isCurrent || isLegacy) &&
+    Math.abs(board.gridPitchMm - 2.54) < 0.001
+  );
+}
+
+type HolePt = { x: number; y: number };
+
+function holeKey(pt: HolePt): string {
+  return `${pt.x},${pt.y}`;
+}
+
+function buildAkizukiBHoleLayout(): { throughHoles: HolePt[]; mountHoles: HolePt[] } {
+  const allHoles: HolePt[] = [];
+  for (let y = 0; y < AKIZUKI_B_THROUGH_HOLE_ROWS; y += 1) {
+    for (let x = 0; x < AKIZUKI_B_THROUGH_HOLE_COLS; x += 1) {
+      allHoles.push({ x, y });
+    }
+  }
+
+  const mountHoles: HolePt[] = [
+    { x: 0, y: 0 },
+    { x: AKIZUKI_B_THROUGH_HOLE_COLS - 1, y: 0 },
+    { x: 0, y: AKIZUKI_B_THROUGH_HOLE_ROWS - 1 },
+    { x: AKIZUKI_B_THROUGH_HOLE_COLS - 1, y: AKIZUKI_B_THROUGH_HOLE_ROWS - 1 }
+  ];
+
+  const removed = new Set<string>();
+  for (const mount of mountHoles) {
+    removed.add(holeKey(mount));
+    const orthogonalNeighbors: HolePt[] = [
+      { x: mount.x - 1, y: mount.y },
+      { x: mount.x + 1, y: mount.y },
+      { x: mount.x, y: mount.y - 1 },
+      { x: mount.x, y: mount.y + 1 }
+    ];
+    for (const neighbor of orthogonalNeighbors) {
+      if (
+        neighbor.x < 0 ||
+        neighbor.y < 0 ||
+        neighbor.x >= AKIZUKI_B_THROUGH_HOLE_COLS ||
+        neighbor.y >= AKIZUKI_B_THROUGH_HOLE_ROWS
+      ) {
+        continue;
+      }
+      removed.add(holeKey(neighbor));
+    }
+  }
+
+  return {
+    throughHoles: allHoles.filter((hole) => !removed.has(holeKey(hole))),
+    mountHoles
+  };
+}
+
+const AKIZUKI_B_HOLE_LAYOUT = buildAkizukiBHoleLayout();
+
 export function BoardCanvas({
   board,
   parts,
@@ -171,8 +242,11 @@ export function BoardCanvas({
     () => new Map(nets.map((net) => [net.id, net.color ?? null])),
     [nets]
   );
-  const boardPx = useMemo(
-    () => ({ width: board.width * CELL_SIZE, height: board.height * CELL_SIZE }),
+  const gridMaxWorld = useMemo(
+    () => ({
+      x: Math.max(0, (board.width - 1) * CELL_SIZE),
+      y: Math.max(0, (board.height - 1) * CELL_SIZE)
+    }),
     [board.height, board.width]
   );
 
@@ -220,42 +294,129 @@ export function BoardCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    ctx.fillStyle = "#111822";
+    ctx.fillStyle = "#0d131b";
     ctx.fillRect(0, 0, rect.width, rect.height);
 
-    ctx.strokeStyle = "#263140";
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x <= board.width; x += 1) {
-      const worldX = x * CELL_SIZE;
-      const from = worldToScreen({ x: worldX, y: 0 }, viewport);
-      const to = worldToScreen({ x: worldX, y: boardPx.height }, viewport);
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    }
-
-    for (let y = 0; y <= board.height; y += 1) {
-      const worldY = y * CELL_SIZE;
-      const from = worldToScreen({ x: 0, y: worldY }, viewport);
-      const to = worldToScreen({ x: boardPx.width, y: worldY }, viewport);
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = "#5ba4ff";
-    ctx.lineWidth = 1.5;
-    const topLeft = worldToScreen({ x: 0, y: 0 }, viewport);
-    const bottomRight = worldToScreen({ x: boardPx.width, y: boardPx.height }, viewport);
-    ctx.strokeRect(
-      topLeft.x,
-      topLeft.y,
-      bottomRight.x - topLeft.x,
-      bottomRight.y - topLeft.y
+    const isBBoard = isAkizukiBBoard(board);
+    const boardWorldBounds = isBBoard
+      ? (() => {
+          const mountXs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.x * CELL_SIZE);
+          const mountYs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.y * CELL_SIZE);
+          const edgeMarginWorld = (3 / board.gridPitchMm) * CELL_SIZE;
+          return {
+            left: Math.min(...mountXs) - edgeMarginWorld,
+            top: Math.min(...mountYs) - edgeMarginWorld,
+            right: Math.max(...mountXs) + edgeMarginWorld,
+            bottom: Math.max(...mountYs) + edgeMarginWorld
+          };
+        })()
+      : {
+          left: -CELL_SIZE * BOARD_MARGIN_CELLS,
+          top: -CELL_SIZE * BOARD_MARGIN_CELLS,
+          right: gridMaxWorld.x + CELL_SIZE * BOARD_MARGIN_CELLS,
+          bottom: gridMaxWorld.y + CELL_SIZE * BOARD_MARGIN_CELLS
+        };
+    // Draw board edge with an outer margin around the wiring grid.
+    const topLeft = worldToScreen({ x: boardWorldBounds.left, y: boardWorldBounds.top }, viewport);
+    const bottomRight = worldToScreen(
+      { x: boardWorldBounds.right, y: boardWorldBounds.bottom },
+      viewport
     );
+    const boardScreenWidth = bottomRight.x - topLeft.x;
+    const boardScreenHeight = bottomRight.y - topLeft.y;
+
+    if (boardScreenWidth > 0 && boardScreenHeight > 0) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+      ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
+
+      const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
+      boardGrad.addColorStop(0, "#f2d297");
+      boardGrad.addColorStop(1, "#f2d297");
+      ctx.fillStyle = boardGrad;
+      ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+
+      const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
+      const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
+      const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
+      const worldMaxX = Math.max(worldTopLeft.x, worldBottomRight.x);
+      const worldMinY = Math.min(worldTopLeft.y, worldBottomRight.y);
+      const worldMaxY = Math.max(worldTopLeft.y, worldBottomRight.y);
+      const startX = Math.max(0, Math.floor(worldMinX / CELL_SIZE) - 2);
+      const endX = Math.min(board.width - 1, Math.ceil(worldMaxX / CELL_SIZE) + 2);
+      const startY = Math.max(0, Math.floor(worldMinY / CELL_SIZE) - 2);
+      const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
+
+      const ringRadius = Math.max(2.4, viewport.zoom * 7.6);
+      const holeRadius = Math.max(1.6, viewport.zoom * 3.4);
+
+      const drawThroughHole = (gridX: number, gridY: number): void => {
+        const center = worldToScreen({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE }, viewport);
+        ctx.fillStyle = "#c4c9d1";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#a8afbb";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      if (isBBoard) {
+        for (const hole of AKIZUKI_B_HOLE_LAYOUT.throughHoles) {
+          if (hole.x < startX || hole.x > endX || hole.y < startY || hole.y > endY) continue;
+          drawThroughHole(hole.x, hole.y);
+        }
+      } else {
+        for (let y = startY; y <= endY; y += 1) {
+          for (let x = startX; x <= endX; x += 1) {
+            drawThroughHole(x, y);
+          }
+        }
+      }
+
+      // Draw M3 mounting holes.
+      const gridTopLeft = worldToScreen({ x: 0, y: 0 }, viewport);
+      const gridBottomRight = worldToScreen({ x: gridMaxWorld.x, y: gridMaxWorld.y }, viewport);
+      const marginLeft = Math.max(0, gridTopLeft.x - topLeft.x);
+      const marginRight = Math.max(0, bottomRight.x - gridBottomRight.x);
+      const marginTop = Math.max(0, gridTopLeft.y - topLeft.y);
+      const marginBottom = Math.max(0, bottomRight.y - gridBottomRight.y);
+      const minMargin = Math.max(0, Math.min(marginLeft, marginRight, marginTop, marginBottom));
+      const mountDiameterMm = isBBoard ? AKIZUKI_B_MOUNT_HOLE_DIAMETER_MM : 3;
+      const radiusFromMm = Math.max(
+        2.5,
+        ((mountDiameterMm / board.gridPitchMm) * CELL_SIZE * viewport.zoom) / 2
+      );
+      const mountHoleRadius = isBBoard
+        ? radiusFromMm
+        : Math.min(radiusFromMm, Math.max(2.5, minMargin * 0.42));
+      const mountCenters = isBBoard
+        ? AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) =>
+            worldToScreen({ x: hole.x * CELL_SIZE, y: hole.y * CELL_SIZE }, viewport)
+          )
+        : [
+            { x: (topLeft.x + gridTopLeft.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+            { x: (bottomRight.x + gridBottomRight.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+            { x: (topLeft.x + gridTopLeft.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 },
+            { x: (bottomRight.x + gridBottomRight.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 }
+          ];
+      for (const center of mountCenters) {
+        ctx.fillStyle = "#ded3bd";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, mountHoleRadius + 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#8d93a0";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, mountHoleRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = "#cfc5ad";
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+    }
 
     for (const wire of wires) {
       const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
@@ -323,8 +484,8 @@ export function BoardCanvas({
   }, [
     board.height,
     board.width,
-    boardPx.height,
-    boardPx.width,
+    gridMaxWorld.x,
+    gridMaxWorld.y,
     hoverGrid,
     movePreviewPart,
     movePreviewValid,

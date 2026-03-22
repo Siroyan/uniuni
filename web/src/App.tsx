@@ -10,6 +10,7 @@ import {
   commandDeletePartInstJson,
   commandDeleteWireJson,
   commandMoveRotatePartInstJson,
+  commandResizeBoardJson,
   commandRotatePartInstJson,
   createInitialCoreStateJson,
   detectCoreBridgeMode,
@@ -31,11 +32,38 @@ import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 import type { HitCandidate } from "./parts";
 
-const board: Board = {
+const DEFAULT_BOARD: Board = {
   width: 64,
   height: 40,
   gridPitchMm: 2.54
 };
+const AKIZUKI_BOARD_PRESETS = [
+  {
+    id: "akizuki-a",
+    label: "秋月 Aタイプ (155x114mm)",
+    widthMm: 155,
+    heightMm: 114,
+    gridWidth: 61,
+    gridHeight: 45
+  },
+  {
+    id: "akizuki-b",
+    label: "秋月 Bタイプ (95x72mm)",
+    widthMm: 95,
+    heightMm: 72,
+    gridWidth: 36,
+    gridHeight: 27
+  },
+  {
+    id: "akizuki-c",
+    label: "秋月 Cタイプ (72x47.5mm)",
+    widthMm: 72,
+    heightMm: 47.5,
+    gridWidth: 25,
+    gridHeight: 15
+  }
+] as const;
+type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
 
 const defaultPartDefs: PartDef[] = [
   {
@@ -189,6 +217,10 @@ function partDefsFromCoreStateJson(stateJson: string): PartDef[] {
 }
 
 export function App(): JSX.Element {
+  const [board, setBoard] = useState<Board>(DEFAULT_BOARD);
+  const [boardWidthDraft, setBoardWidthDraft] = useState<string>(String(DEFAULT_BOARD.width));
+  const [boardHeightDraft, setBoardHeightDraft] = useState<string>(String(DEFAULT_BOARD.height));
+  const [boardPresetId, setBoardPresetId] = useState<BoardPresetId>("custom");
   const [tool, setTool] = useState<ToolMode>("select");
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
@@ -282,6 +314,15 @@ export function App(): JSX.Element {
   }, [nets, selectedNetId]);
 
   useEffect(() => {
+    setBoardWidthDraft(String(board.width));
+    setBoardHeightDraft(String(board.height));
+    const matched = AKIZUKI_BOARD_PRESETS.find((preset) => {
+      return preset.gridWidth === board.width && preset.gridHeight === board.height;
+    });
+    setBoardPresetId(matched?.id ?? "custom");
+  }, [board.height, board.width]);
+
+  useEffect(() => {
     if (!editorDefId || !partDefs.some((def) => def.id === editorDefId)) {
       const first = partDefs[0];
       if (first) {
@@ -320,9 +361,10 @@ export function App(): JSX.Element {
     }
   }, [pinNameDraft, selectedPartDef]);
 
-  const syncFromCoreState = (nextState: string): { parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
+  const syncFromCoreState = (nextState: string): { board: Board; parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
     const view = extractViewStateFromCoreJson(nextState);
     setCoreStateJson(nextState);
+    setBoard(view.board);
     setParts(view.parts);
     setWires(view.wires);
     setNets(view.nets);
@@ -345,7 +387,7 @@ export function App(): JSX.Element {
     return wiresInState.some((wire) => wire.id === candidate) ? candidate : null;
   };
 
-  const commitStateTransition = (prevState: string, nextState: string): { parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
+  const commitStateTransition = (prevState: string, nextState: string): { board: Board; parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
     const view = syncFromCoreState(nextState);
     if (prevState !== nextState) {
       setHistoryPast((prev) => [
@@ -630,6 +672,36 @@ export function App(): JSX.Element {
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "commit wire failed");
     }
+  };
+
+  const applyBoardSize = async (width: number, height: number): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state) return;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+      setCoreError("board size must be positive integers");
+      return;
+    }
+    try {
+      const nextState = await applyCoreCommandJson(state, commandResizeBoardJson(width, height));
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "resize board failed");
+    }
+  };
+
+  const applyBoardDraftSize = async (): Promise<void> => {
+    const width = Number(boardWidthDraft);
+    const height = Number(boardHeightDraft);
+    await applyBoardSize(width, height);
+  };
+
+  const applyBoardPreset = async (): Promise<void> => {
+    if (boardPresetId === "custom") return;
+    const preset = AKIZUKI_BOARD_PRESETS.find((item) => item.id === boardPresetId);
+    if (!preset) return;
+    await applyBoardSize(preset.gridWidth, preset.gridHeight);
   };
 
   const addNet = async (): Promise<void> => {
@@ -1500,6 +1572,7 @@ export function App(): JSX.Element {
       : coreBridgeMode === "wasm"
         ? "bridge-badge wasm"
         : "bridge-badge";
+  const isCustomBoardPreset = boardPresetId === "custom";
 
   return (
     <main className="app-root">
@@ -1510,6 +1583,77 @@ export function App(): JSX.Element {
           Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消 | Tab: 候補選択
         </p>
         <div className="toolbar-grid">
+          <section className="tool-card">
+            <h2 className="card-title">基板設定</h2>
+            <div className="toolbar-row">
+              <label className="net-label" htmlFor="board-preset-select">
+                Preset
+              </label>
+              <select
+                id="board-preset-select"
+                className="net-select"
+                value={boardPresetId}
+                onChange={(event) => setBoardPresetId(event.target.value as BoardPresetId)}
+              >
+                <option value="custom">Custom</option>
+                {AKIZUKI_BOARD_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applyBoardPreset()}
+                disabled={isCustomBoardPreset}
+              >
+                Apply Preset
+              </button>
+              <span className="net-label">
+                現在: {board.width}x{board.height} grid (
+                {(board.width * board.gridPitchMm).toFixed(1)}x
+                {(board.height * board.gridPitchMm).toFixed(1)}mm)
+              </span>
+            </div>
+            <div className="toolbar-row">
+              <label className="net-label" htmlFor="board-width-input">
+                Width
+              </label>
+              <input
+                id="board-width-input"
+                type="number"
+                min={1}
+                step={1}
+                className="coord-input"
+                value={boardWidthDraft}
+                onChange={(event) => setBoardWidthDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
+              />
+              <label className="net-label" htmlFor="board-height-input">
+                Height
+              </label>
+              <input
+                id="board-height-input"
+                type="number"
+                min={1}
+                step={1}
+                className="coord-input"
+                value={boardHeightDraft}
+                onChange={(event) => setBoardHeightDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applyBoardDraftSize()}
+                disabled={!isCustomBoardPreset}
+              >
+                Apply Size
+              </button>
+            </div>
+          </section>
+
           <section className="tool-card">
             <h2 className="card-title">編集操作</h2>
             <div className="toolbar-row">
