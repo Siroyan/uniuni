@@ -1572,6 +1572,7 @@ export function App(): JSX.Element {
       : coreBridgeMode === "wasm"
         ? "bridge-badge wasm"
         : "bridge-badge";
+  const isCustomBoardPreset = boardPresetId === "custom";
 
   return (
     <main className="app-root">
@@ -1605,7 +1606,7 @@ export function App(): JSX.Element {
                 type="button"
                 className="btn"
                 onClick={() => void applyBoardPreset()}
-                disabled={boardPresetId === "custom"}
+                disabled={isCustomBoardPreset}
               >
                 Apply Preset
               </button>
@@ -1627,6 +1628,7 @@ export function App(): JSX.Element {
                 className="coord-input"
                 value={boardWidthDraft}
                 onChange={(event) => setBoardWidthDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
               />
               <label className="net-label" htmlFor="board-height-input">
                 Height
@@ -1639,8 +1641,14 @@ export function App(): JSX.Element {
                 className="coord-input"
                 value={boardHeightDraft}
                 onChange={(event) => setBoardHeightDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
               />
-              <button type="button" className="btn" onClick={() => void applyBoardDraftSize()}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applyBoardDraftSize()}
+                disabled={!isCustomBoardPreset}
+              >
                 Apply Size
               </button>
             </div>
