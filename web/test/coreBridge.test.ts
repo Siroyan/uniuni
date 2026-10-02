@@ -3,6 +3,9 @@ import test from "node:test";
 import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
+  commandAssignNetColorJson,
+  commandMoveRotatePartInstJson,
+  commandResizeBoardJson,
   commandReplacePartDefsJson,
   detectCoreBridgeMode
 } from "../src/coreBridge";
@@ -28,7 +31,7 @@ type CoreState = {
     refdes: string;
     net_assign: Record<string, string>;
   }>;
-  nets: Array<{ id: string; name: string }>;
+  nets: Array<{ id: string; name: string; color?: string | null }>;
   wires: Array<{ id: string; net_id: string; path: CoreGridPt[] }>;
 };
 
@@ -58,7 +61,7 @@ function baseState(): CoreState {
         net_assign: { "1": NET_ID }
       }
     ],
-    nets: [{ id: NET_ID, name: "N-1" }],
+    nets: [{ id: NET_ID, name: "N-1", color: null }],
     wires: []
   };
 }
@@ -181,5 +184,58 @@ test("bridge ReplacePartDefs rejects updates that create part collisions", async
   await assert.rejects(
     applyCoreCommandJson(JSON.stringify(state), cmd),
     /part-part occupancy collision/
+  );
+});
+
+test("bridge AssignNetColor can set and clear net color", async () => {
+  const state = baseState();
+  const withColorJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandAssignNetColorJson(NET_ID, "#00cc88")
+  );
+  const withColor = JSON.parse(withColorJson) as CoreState;
+  assert.equal(withColor.nets[0].color, "#00cc88");
+
+  const clearedJson = await applyCoreCommandJson(
+    withColorJson,
+    commandAssignNetColorJson(NET_ID, null)
+  );
+  const cleared = JSON.parse(clearedJson) as CoreState;
+  assert.equal(cleared.nets[0].color, null);
+});
+
+test("bridge AssignNetColor rejects invalid color format", async () => {
+  const state = baseState();
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandAssignNetColorJson(NET_ID, "red")),
+    /#RRGGBB/
+  );
+});
+
+test("bridge MoveRotatePartInst applies target position and rotation together", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandMoveRotatePartInstJson(PART_ID, { x: 5, y: 4 }, "Deg90")
+  );
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.deepEqual(next.part_insts[0].at, { x: 5, y: 4 });
+  assert.equal(next.part_insts[0].rot, "Deg90");
+});
+
+test("bridge ResizeBoard updates board size when existing objects fit", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(80, 50));
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.equal(next.board.width, 80);
+  assert.equal(next.board.height, 50);
+});
+
+test("bridge ResizeBoard rejects when part would be outside board", async () => {
+  const state = baseState();
+  state.part_insts[0].at = { x: 10, y: 0 };
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(5, 5)),
+    /part outside board/
   );
 });

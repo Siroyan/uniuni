@@ -447,6 +447,24 @@ body,
   min-width: 120px;
 }
 
+.net-color-input {
+  width: 36px;
+  height: 28px;
+  border: 1px solid #456082;
+  border-radius: 4px;
+  background: #0f1b2c;
+  padding: 2px;
+}
+
+.net-color-chip {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #5a7599;
+  border-radius: 999px;
+  display: inline-block;
+  align-self: center;
+}
+
 .coord-input {
   width: 72px;
   border: 1px solid #456082;

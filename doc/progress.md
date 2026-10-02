@@ -31,6 +31,83 @@
   - `npx playwright install chromium` 実行済み
   - `npx playwright install-deps chromium` は権限要件（sudoパスワード）により本環境で未実施
 
+## 2026-03-13 (基板境界表示の補正)
+実装内容:
+- CAD描画で、基板境界を「最外周グリッドの半ピッチ外側」に表示するよう修正。
+  - 境界線上に配線しているように見える表示を解消
+  - グリッド描画範囲を有効グリッド点の範囲に合わせて調整
+- 基板プリセットの Cタイプを `25 x 15` grid に補正。
+- 基板プリセットの Aタイプ表記を公式寸法に合わせて `155x114mm` に補正。
+
+検証:
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+
+## 2026-03-13 (基板サイズ任意設定 + 秋月A/B/Cプリセット)
+実装内容:
+- 基板サイズ変更用コマンドを `core` に追加。
+  - `ResizeBoard { width, height }`
+  - `width/height` は正整数のみ許可
+  - 変更後に既存 Wire 点や Part occupied が盤外になる場合は拒否
+- `web` に基板サイズ変更UIを追加。
+  - 任意の `Width/Height` を入力して `Apply Size`
+  - 秋月 `A/B/C` プリセットを選択して `Apply Preset`
+  - 現在のグリッドサイズと mm 相当値を表示
+- fallback bridge に `ResizeBoard` を追加し、WASM未使用時でも同挙動を保証。
+- `extractViewStateFromCoreJson` で `board` を返すよう拡張し、UI側の board state と同期。
+- テストを追加。
+  - `core/src/model.rs`: `ResizeBoard` の正常系/部品盤外/配線盤外
+  - `web/test/coreBridge.test.ts`: fallback での `ResizeBoard` 成功/拒否
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
+## 2026-03-13 (M移動中の回転が配置時に失われる不具合修正)
+実装内容:
+- 移動中プレビューの最終姿勢をそのまま確定できるよう `core` に `MoveRotatePartInst` コマンドを追加。
+  - `part_id`, `to`, `rot` を同時に受け取り、単一検証で配置を確定
+- `web` 側を `MoveRotatePartInst` 利用へ切替。
+  - `M` で持ち上げ中に `R` で変更した回転が、クリック配置後にも保持されるよう修正
+- fallback bridge にも `MoveRotatePartInst` を追加し、WASM未使用時でも同挙動を保証。
+- テストを追加。
+  - `core/src/model.rs`: `MoveRotatePartInst` の同時適用テスト
+  - `web/test/coreBridge.test.ts`: fallback 経由で位置+回転が同時反映されることを検証
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
+## 2026-03-13 (ネットごとの配線色カスタマイズ)
+実装内容:
+- ネットに配線色を保持できるよう `core` のドメインを拡張。
+  - `Net` に `color: Option<String>` を追加
+  - `AssignNetColor { net_id, color }` コマンドを追加
+  - 色文字列は `#RRGGBB` 形式のみ許可（不正値は拒否）
+- `web` の Core bridge/fallback を拡張。
+  - `AssignNetColor` コマンドを追加
+  - fallback 実装でも色検証を実施
+  - state 変換時に `Net.color` を UI に反映
+- 配線描画をネット色対応に変更。
+  - `BoardCanvas` で `Net.color` 指定時はその色を優先
+  - 未指定時は既存のハッシュ色パレットを継続使用
+- サイドバーの「配線とネット」UIを拡張。
+  - Net color picker を追加
+  - `Apply Color` で設定、`Reset Color` で既定色（未設定）に戻す操作を追加
+- テストを追加。
+  - `core/src/model.rs`: `AssignNetColor` の正常系/異常系/新規Net生成を検証
+  - `web/test/coreBridge.test.ts`: fallback 経由の色設定/解除と不正値拒否を検証
+
+検証:
+- `cd core && cargo test` 成功（7件 pass）
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-12 (`impl_brief.md` 廃止)
 実装内容:
 - `doc/impl_brief.md` を削除。

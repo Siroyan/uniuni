@@ -1,7 +1,7 @@
 # uniuni 実装ガイド（日本語）
 
-最終更新日: 2026-03-12
-対象バージョン: MVP Step1〜Step7 完了時点
+最終更新日: 2026-03-13
+対象バージョン: MVP Step1〜Step7 + 改善実装
 
 ## 1. この文書の位置づけ
 この文書は `uniuni` の実装構造と実装上の判断基準を共有するためのガイドである。
@@ -15,9 +15,11 @@
 MVP Step1〜Step7 は完了している。
 
 実装済みの主要機能:
+- 基板サイズの任意設定と秋月A/B/Cプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
 - Net 追加/改名、Pin への Net 割当
+- Net ごとの配線色カスタマイズ（未設定時は既定パレット）
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 自動保存/復元
@@ -123,11 +125,14 @@ uniuni/
 - `ReplacePartDefs`
 - `AddPartInst`
 - `MovePartInst`
+- `MoveRotatePartInst`
+- `ResizeBoard`
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
 - `DeleteWire`
 - `AssignNetName`
+- `AssignNetColor`
 - `AssignPinToNet`
 
 ### 6.4 主要検証
@@ -142,6 +147,9 @@ uniuni/
   - 最短長（2点以上）
   - 1ステップ Manhattan
   - ボード内
+- Board整合:
+  - 正のサイズのみ許可
+  - 既存部品/配線が盤外になるサイズ変更を拒否
 - `ReplacePartDefs` は失敗時ロールバック
 
 ### 6.5 DRC
@@ -234,9 +242,13 @@ uniuni/
 ### 10.2 現在の自動テスト
 - `core/src/model.rs`
   - `ReplacePartDefs` の正常/異常/ロールバック
+  - `AssignNetColor` の正常/異常（`#RRGGBB`）/新規Net生成
+  - `ResizeBoard` の正常/異常（既存部品・配線の盤外化）
 - `web/test/coreBridge.test.ts`
   - bridgeのコマンド適用
   - fallback判定
+  - `AssignNetColor` の設定/解除と形式エラー
+  - `ResizeBoard` の設定反映と拒否ケース
 - `web/test/partLibrary.test.ts`
   - 画像アセット分離、重複排除、移行
 - `web/test/projectPackage.test.ts`

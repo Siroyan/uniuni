@@ -11,7 +11,7 @@ export type CoreBridgeMode = "wasm" | "fallback";
 
 type CoreGridPt = { x: number; y: number };
 type CoreWire = { id: string; net_id: string; path: CoreGridPt[] };
-type CoreNet = { id: string; name: string };
+type CoreNet = { id: string; name: string; color?: string | null };
 type CorePartDef = {
   id: string;
   name: string;
@@ -40,9 +40,16 @@ type CoreRuntime = {
 };
 
 let coreRuntimePromise: Promise<CoreRuntime> | null = null;
+const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function isAdjacent(a: GridPt, b: GridPt): boolean {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+}
+
+function validateNetColor(color: string): void {
+  if (!NET_COLOR_HEX.test(color)) {
+    throw new Error("net color must be #RRGGBB");
+  }
 }
 
 function rotateRelative(pt: GridPt, rot: Rot): GridPt {
@@ -92,6 +99,41 @@ function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId
     }
   }
   return true;
+}
+
+function validateBoardSize(width: number, height: number): void {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new Error("board size must be positive");
+  }
+}
+
+function validateResizeTarget(state: CoreProjectState, width: number, height: number): void {
+  validateBoardSize(width, height);
+  const resizedBoard: Board = {
+    gridPitchMm: state.board.grid_pitch_mm,
+    width,
+    height
+  };
+
+  for (const wire of state.wires) {
+    for (const pt of wire.path) {
+      if (!isInsideBoard(resizedBoard, pt)) {
+        throw new Error("board resize would place wire outside board");
+      }
+    }
+  }
+
+  for (const part of state.part_insts) {
+    const partDef = state.part_defs.find((d) => d.id === part.def_id);
+    if (!partDef) {
+      throw new Error("part definition not found");
+    }
+    for (const pt of absoluteOccupied(partDef, part)) {
+      if (!isInsideBoard(resizedBoard, pt)) {
+        throw new Error("board resize would place part outside board");
+      }
+    }
+  }
 }
 
 function validateCorePartDefs(partDefs: CorePartDef[]): void {
@@ -202,8 +244,34 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     if (target) {
       target.name = payload.name;
     } else {
-      state.nets.push({ id: payload.net_id, name: payload.name });
+      state.nets.push({ id: payload.net_id, name: payload.name, color: null });
     }
+    return JSON.stringify(state);
+  }
+
+  if ("AssignNetColor" in cmd) {
+    const payload = cmd.AssignNetColor as { net_id: string; color: string | null };
+    if (payload.color !== null) {
+      validateNetColor(payload.color);
+    }
+    const target = state.nets.find((net) => net.id === payload.net_id);
+    if (target) {
+      target.color = payload.color;
+    } else {
+      state.nets.push({
+        id: payload.net_id,
+        name: `N-${payload.net_id.slice(0, 8)}`,
+        color: payload.color
+      });
+    }
+    return JSON.stringify(state);
+  }
+
+  if ("ResizeBoard" in cmd) {
+    const payload = cmd.ResizeBoard as { width: number; height: number };
+    validateResizeTarget(state, payload.width, payload.height);
+    state.board.width = payload.width;
+    state.board.height = payload.height;
     return JSON.stringify(state);
   }
 
@@ -219,7 +287,7 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     }
 
     if (!state.nets.some((net) => net.id === payload.net_id)) {
-      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}` });
+      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
     }
     state.wires.push({
       id: newUuid(),
@@ -275,6 +343,21 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     return JSON.stringify(state);
   }
 
+  if ("MoveRotatePartInst" in cmd) {
+    const payload = cmd.MoveRotatePartInst as { part_id: string; to: GridPt; rot: Rot };
+    const part = state.part_insts.find((p) => p.id === payload.part_id);
+    if (!part) {
+      throw new Error("part instance not found");
+    }
+    const movedAndRotated: CorePartInst = { ...part, at: payload.to, rot: payload.rot };
+    if (!canPlacePart(state, movedAndRotated, part.id)) {
+      throw new Error("part placement invalid");
+    }
+    part.at = payload.to;
+    part.rot = payload.rot;
+    return JSON.stringify(state);
+  }
+
   if ("RotatePartInst" in cmd) {
     const payload = cmd.RotatePartInst as { part_id: string; rot: Rot };
     const part = state.part_insts.find((p) => p.id === payload.part_id);
@@ -317,7 +400,7 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
       throw new Error("pin not found in part definition");
     }
     if (!state.nets.some((net) => net.id === payload.net_id)) {
-      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}` });
+      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
     }
     part.net_assign[payload.pin_name] = payload.net_id;
     return JSON.stringify(state);
@@ -432,10 +515,19 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
   return runtimePromise;
 }
 
-function parseViewState(stateJson: string): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
+function parseViewState(stateJson: string): { board: Board; nets: Net[]; wires: Wire[]; parts: PartInst[] } {
   const state = JSON.parse(stateJson) as CoreProjectState;
   return {
-    nets: state.nets.map((net) => ({ id: net.id, name: net.name })),
+    board: {
+      gridPitchMm: state.board.grid_pitch_mm,
+      width: state.board.width,
+      height: state.board.height
+    },
+    nets: state.nets.map((net) => ({
+      id: net.id,
+      name: net.name,
+      color: typeof net.color === "string" && NET_COLOR_HEX.test(net.color) ? net.color : null
+    })),
     wires: state.wires.map((wire) => ({
       id: wire.id,
       netId: wire.net_id,
@@ -529,6 +621,24 @@ export function commandAssignNetNameJson(netId: string, name: string): string {
   });
 }
 
+export function commandAssignNetColorJson(netId: string, color: string | null): string {
+  return JSON.stringify({
+    AssignNetColor: {
+      net_id: netId,
+      color
+    }
+  });
+}
+
+export function commandResizeBoardJson(width: number, height: number): string {
+  return JSON.stringify({
+    ResizeBoard: {
+      width,
+      height
+    }
+  });
+}
+
 export function commandCommitWireJson(netId: string, path: GridPt[]): string {
   return JSON.stringify({
     CommitWire: {
@@ -566,6 +676,16 @@ export function commandMovePartInstJson(partId: string, to: GridPt): string {
   });
 }
 
+export function commandMoveRotatePartInstJson(partId: string, to: GridPt, rot: Rot): string {
+  return JSON.stringify({
+    MoveRotatePartInst: {
+      part_id: partId,
+      to,
+      rot
+    }
+  });
+}
+
 export function commandRotatePartInstJson(partId: string, rot: Rot): string {
   return JSON.stringify({
     RotatePartInst: {
@@ -595,6 +715,6 @@ export function commandAssignPinToNetJson(partId: string, pinName: string, netId
 
 export function extractViewStateFromCoreJson(
   stateJson: string
-): { nets: Net[]; wires: Wire[]; parts: PartInst[] } {
+): { board: Board; nets: Net[]; wires: Wire[]; parts: PartInst[] } {
   return parseViewState(stateJson);
 }

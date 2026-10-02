@@ -3,12 +3,14 @@ import { BoardCanvas } from "./BoardCanvas";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
+  commandAssignNetColorJson,
   commandAssignNetNameJson,
   commandAssignPinToNetJson,
   commandCommitWireJson,
   commandDeletePartInstJson,
   commandDeleteWireJson,
-  commandMovePartInstJson,
+  commandMoveRotatePartInstJson,
+  commandResizeBoardJson,
   commandRotatePartInstJson,
   createInitialCoreStateJson,
   detectCoreBridgeMode,
@@ -30,11 +32,38 @@ import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 import type { HitCandidate } from "./parts";
 
-const board: Board = {
+const DEFAULT_BOARD: Board = {
   width: 64,
   height: 40,
   gridPitchMm: 2.54
 };
+const AKIZUKI_BOARD_PRESETS = [
+  {
+    id: "akizuki-a",
+    label: "秋月 Aタイプ (155x114mm)",
+    widthMm: 155,
+    heightMm: 114,
+    gridWidth: 61,
+    gridHeight: 45
+  },
+  {
+    id: "akizuki-b",
+    label: "秋月 Bタイプ (95x72mm)",
+    widthMm: 95,
+    heightMm: 72,
+    gridWidth: 36,
+    gridHeight: 27
+  },
+  {
+    id: "akizuki-c",
+    label: "秋月 Cタイプ (72x47.5mm)",
+    widthMm: 72,
+    heightMm: 47.5,
+    gridWidth: 25,
+    gridHeight: 15
+  }
+] as const;
+type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
 
 const defaultPartDefs: PartDef[] = [
   {
@@ -98,6 +127,8 @@ const builtInPartIds = {
   capacitor: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
   inductor: "01d260e9-ea3a-488f-9e8a-031ca0d679ce"
 };
+const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function nextRefdes(parts: PartInst[], defId: string): string {
   const prefix = defPrefixById[defId] ?? "U";
@@ -123,6 +154,14 @@ function partLabel(name: string): string {
   const first = tokens[0].slice(0, 1);
   const second = tokens.length > 1 ? tokens[1].slice(0, 1) : tokens[0].slice(1, 2);
   return `${first}${second}`.toUpperCase();
+}
+
+function fallbackNetColor(netId: string): string {
+  let hash = 0;
+  for (let i = 0; i < netId.length; i += 1) {
+    hash = (hash * 31 + netId.charCodeAt(i)) >>> 0;
+  }
+  return NET_COLORS[hash % NET_COLORS.length];
 }
 
 type HistoryEntry = {
@@ -178,6 +217,10 @@ function partDefsFromCoreStateJson(stateJson: string): PartDef[] {
 }
 
 export function App(): JSX.Element {
+  const [board, setBoard] = useState<Board>(DEFAULT_BOARD);
+  const [boardWidthDraft, setBoardWidthDraft] = useState<string>(String(DEFAULT_BOARD.width));
+  const [boardHeightDraft, setBoardHeightDraft] = useState<string>(String(DEFAULT_BOARD.height));
+  const [boardPresetId, setBoardPresetId] = useState<BoardPresetId>("custom");
   const [tool, setTool] = useState<ToolMode>("select");
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
@@ -186,6 +229,7 @@ export function App(): JSX.Element {
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
   const [selectedNetId, setSelectedNetId] = useState<string>(() => nets[0]?.id ?? "");
   const [netNameDraft, setNetNameDraft] = useState<string>("");
+  const [netColorDraft, setNetColorDraft] = useState<string>("#51c4ff");
   const [pinNameDraft, setPinNameDraft] = useState<string>("");
   const [editorDefId, setEditorDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorDefName, setEditorDefName] = useState<string>(defaultPartDefs[0].name);
@@ -229,6 +273,7 @@ export function App(): JSX.Element {
   const imageOffsetYSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetY) || 0));
   const selectedPart = parts.find((part) => part.id === selectedPartId) ?? null;
   const selectedPartDef = selectedPart ? defsById.get(selectedPart.defId) ?? null : null;
+  const selectedNet = nets.find((net) => net.id === selectedNetId) ?? null;
   const moveArmedPart = parts.find((part) => part.id === moveArmedPartId) ?? null;
   const hoveredPartId = useMemo(() => {
     if (!hoverGrid) return null;
@@ -260,11 +305,22 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!selectedNetId) {
       setNetNameDraft("");
+      setNetColorDraft("#51c4ff");
       return;
     }
     const selected = nets.find((net) => net.id === selectedNetId);
     setNetNameDraft(selected?.name ?? "");
+    setNetColorDraft(selected?.color ?? fallbackNetColor(selectedNetId));
   }, [nets, selectedNetId]);
+
+  useEffect(() => {
+    setBoardWidthDraft(String(board.width));
+    setBoardHeightDraft(String(board.height));
+    const matched = AKIZUKI_BOARD_PRESETS.find((preset) => {
+      return preset.gridWidth === board.width && preset.gridHeight === board.height;
+    });
+    setBoardPresetId(matched?.id ?? "custom");
+  }, [board.height, board.width]);
 
   useEffect(() => {
     if (!editorDefId || !partDefs.some((def) => def.id === editorDefId)) {
@@ -305,9 +361,10 @@ export function App(): JSX.Element {
     }
   }, [pinNameDraft, selectedPartDef]);
 
-  const syncFromCoreState = (nextState: string): { parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
+  const syncFromCoreState = (nextState: string): { board: Board; parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
     const view = extractViewStateFromCoreJson(nextState);
     setCoreStateJson(nextState);
+    setBoard(view.board);
     setParts(view.parts);
     setWires(view.wires);
     setNets(view.nets);
@@ -330,7 +387,7 @@ export function App(): JSX.Element {
     return wiresInState.some((wire) => wire.id === candidate) ? candidate : null;
   };
 
-  const commitStateTransition = (prevState: string, nextState: string): { parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
+  const commitStateTransition = (prevState: string, nextState: string): { board: Board; parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
     const view = syncFromCoreState(nextState);
     if (prevState !== nextState) {
       setHistoryPast((prev) => [
@@ -392,6 +449,9 @@ export function App(): JSX.Element {
           let fresh = await createInitialCoreStateJson(board, effectivePartDefs);
           for (const net of nets) {
             fresh = await applyCoreCommandJson(fresh, commandAssignNetNameJson(net.id, net.name));
+            if (typeof net.color === "string" && NET_COLOR_HEX.test(net.color)) {
+              fresh = await applyCoreCommandJson(fresh, commandAssignNetColorJson(net.id, net.color));
+            }
           }
           return fresh;
         };
@@ -614,10 +674,41 @@ export function App(): JSX.Element {
     }
   };
 
+  const applyBoardSize = async (width: number, height: number): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state) return;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+      setCoreError("board size must be positive integers");
+      return;
+    }
+    try {
+      const nextState = await applyCoreCommandJson(state, commandResizeBoardJson(width, height));
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "resize board failed");
+    }
+  };
+
+  const applyBoardDraftSize = async (): Promise<void> => {
+    const width = Number(boardWidthDraft);
+    const height = Number(boardHeightDraft);
+    await applyBoardSize(width, height);
+  };
+
+  const applyBoardPreset = async (): Promise<void> => {
+    if (boardPresetId === "custom") return;
+    const preset = AKIZUKI_BOARD_PRESETS.find((item) => item.id === boardPresetId);
+    if (!preset) return;
+    await applyBoardSize(preset.gridWidth, preset.gridHeight);
+  };
+
   const addNet = async (): Promise<void> => {
     const newNet: Net = {
       id: newUuid(),
-      name: `N-${nets.length + 1}`
+      name: `N-${nets.length + 1}`,
+      color: null
     };
     setNets((prev) => [...prev, newNet]);
     setSelectedNetId(newNet.id);
@@ -651,6 +742,42 @@ export function App(): JSX.Element {
       setCoreError(null);
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "rename net failed");
+    }
+  };
+
+  const applySelectedNetColor = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNetId) return;
+    if (!NET_COLOR_HEX.test(netColorDraft)) {
+      setCoreError("net color must be #RRGGBB");
+      return;
+    }
+    try {
+      const nextState = await applyCoreCommandJson(
+        state,
+        commandAssignNetColorJson(selectedNetId, netColorDraft)
+      );
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "assign net color failed");
+    }
+  };
+
+  const resetSelectedNetColor = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNetId) return;
+    try {
+      const nextState = await applyCoreCommandJson(
+        state,
+        commandAssignNetColorJson(selectedNetId, null)
+      );
+      commitStateTransition(state, nextState);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "reset net color failed");
     }
   };
 
@@ -1148,7 +1275,7 @@ export function App(): JSX.Element {
         try {
           const nextState = await applyCoreCommandJson(
             state,
-            commandMovePartInstJson(moveArmedPart.id, grid)
+            commandMoveRotatePartInstJson(moveArmedPart.id, grid, moved.rot)
           );
           commitStateTransition(state, nextState);
           setMoveArmedPartId(null);
@@ -1445,6 +1572,7 @@ export function App(): JSX.Element {
       : coreBridgeMode === "wasm"
         ? "bridge-badge wasm"
         : "bridge-badge";
+  const isCustomBoardPreset = boardPresetId === "custom";
 
   return (
     <main className="app-root">
@@ -1455,6 +1583,77 @@ export function App(): JSX.Element {
           Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消 | Tab: 候補選択
         </p>
         <div className="toolbar-grid">
+          <section className="tool-card">
+            <h2 className="card-title">基板設定</h2>
+            <div className="toolbar-row">
+              <label className="net-label" htmlFor="board-preset-select">
+                Preset
+              </label>
+              <select
+                id="board-preset-select"
+                className="net-select"
+                value={boardPresetId}
+                onChange={(event) => setBoardPresetId(event.target.value as BoardPresetId)}
+              >
+                <option value="custom">Custom</option>
+                {AKIZUKI_BOARD_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applyBoardPreset()}
+                disabled={isCustomBoardPreset}
+              >
+                Apply Preset
+              </button>
+              <span className="net-label">
+                現在: {board.width}x{board.height} grid (
+                {(board.width * board.gridPitchMm).toFixed(1)}x
+                {(board.height * board.gridPitchMm).toFixed(1)}mm)
+              </span>
+            </div>
+            <div className="toolbar-row">
+              <label className="net-label" htmlFor="board-width-input">
+                Width
+              </label>
+              <input
+                id="board-width-input"
+                type="number"
+                min={1}
+                step={1}
+                className="coord-input"
+                value={boardWidthDraft}
+                onChange={(event) => setBoardWidthDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
+              />
+              <label className="net-label" htmlFor="board-height-input">
+                Height
+              </label>
+              <input
+                id="board-height-input"
+                type="number"
+                min={1}
+                step={1}
+                className="coord-input"
+                value={boardHeightDraft}
+                onChange={(event) => setBoardHeightDraft(event.target.value)}
+                disabled={!isCustomBoardPreset}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applyBoardDraftSize()}
+                disabled={!isCustomBoardPreset}
+              >
+                Apply Size
+              </button>
+            </div>
+          </section>
+
           <section className="tool-card">
             <h2 className="card-title">編集操作</h2>
             <div className="toolbar-row">
@@ -1608,6 +1807,37 @@ export function App(): JSX.Element {
                 disabled={!selectedNetId || netNameDraft.trim().length === 0}
               >
                 Rename Net
+              </button>
+              <label className="net-label" htmlFor="net-color-input">
+                Color
+              </label>
+              <input
+                id="net-color-input"
+                type="color"
+                className="net-color-input"
+                value={netColorDraft}
+                onChange={(event) => setNetColorDraft(event.target.value)}
+                disabled={!selectedNetId}
+              />
+              <span
+                className="net-color-chip"
+                style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void applySelectedNetColor()}
+                disabled={!selectedNetId}
+              >
+                Apply Color
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void resetSelectedNetColor()}
+                disabled={!selectedNetId || !selectedNet?.color}
+              >
+                Reset Color
               </button>
             </div>
             <div className="toolbar-row">
@@ -2109,6 +2339,7 @@ export function App(): JSX.Element {
             board={board}
             parts={parts}
             partDefs={partDefs}
+            nets={nets}
             wires={wires}
             selectedWireId={selectedWireId}
             wireDraftPath={wireDraftPath}
