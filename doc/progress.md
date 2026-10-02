@@ -2,6 +2,35 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-03-13 (Step8着手: 自動回帰化基盤)
+実装内容:
+- `dev` から `feature/step8-e2e-regression` を作成し、Draft PR を作成。
+- Playwright を導入し、E2E 回帰テスト基盤を追加。
+  - `web/playwright.config.ts` を追加
+  - `web/e2e/regression.spec.ts` を追加
+  - `web/package.json` に E2E 実行スクリプトを追加
+    - `test:e2e`, `test:e2e:headed`, `test:e2e:ui`, `e2e:install`
+  - `.gitignore` に `web/playwright-report`, `web/test-results` を追加
+- 回帰シナリオ（初版）を追加。
+  - 部品の連続配置
+  - 手動配線の確定
+  - Pin優先選択 + Tab サイクルによる候補切替
+- ドキュメント更新。
+  - `README.md` に E2E 実行手順を追記
+  - `doc/implementation_guide_ja.md` に E2E 基盤と実行前提を追記
+- CI を追加し、自動回帰化を GitHub Actions に組み込み。
+  - `.github/workflows/ci.yml` を追加
+  - `web unit + build` / `core check + test` / `web e2e regression` の3ジョブを定義
+  - E2E ジョブで Playwright report / trace を artifact 保存
+
+検証:
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+- `npm run test:e2e -w web` は環境依存ライブラリ不足（`libnspr4.so`）で未通過
+  - `npx playwright install chromium` 実行済み
+  - `npx playwright install-deps chromium` は権限要件（sudoパスワード）により本環境で未実施
+
 ## 2026-03-13 (基板境界表示の補正)
 実装内容:
 - CAD描画で、基板境界を「最外周グリッドの半ピッチ外側」に表示するよう修正。
