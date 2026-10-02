@@ -21,6 +21,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup Rust and WASM target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.114
+
       - name: Install dependencies
         run: npm ci
 
@@ -60,6 +68,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Setup Rust and WASM target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install --locked wasm-bindgen-cli --version 0.2.114
 
       - name: Install dependencies
         run: npm ci

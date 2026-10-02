@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "build:wasm": "bash ../scripts/build-core-wasm.sh",
+    "predev": "npm run build:wasm",
     "dev": "vite",
+    "prebuild": "npm run build:wasm",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "node --import tsx --test test/**/*.test.ts",

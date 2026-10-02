@@ -285,6 +285,14 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
         throw new Error("wire segments must be one-grid-step Manhattan");
       }
     }
+    const board: Board = {
+      gridPitchMm: state.board.grid_pitch_mm,
+      width: state.board.width,
+      height: state.board.height
+    };
+    if (!payload.path.every((pt) => isInsideBoard(board, pt))) {
+      throw new Error("wire path is outside board");
+    }
 
     if (!state.nets.some((net) => net.id === payload.net_id)) {
       state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
@@ -410,7 +418,40 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
 }
 
 function fallbackDrcJson(stateJson: string): string {
-  const state = JSON.parse(stateJson) as { wires: Array<{ net_id: string; path: GridPt[] }> };
+  const state = JSON.parse(stateJson) as CoreProjectState;
+  const issues: DrcIssue[] = [];
+  const occupied = new Set<string>();
+  const pinPoints = new Set<string>();
+  const board: Board = { gridPitchMm: state.board.grid_pitch_mm, width: state.board.width, height: state.board.height };
+  let collision: string | null = null;
+  for (const part of state.part_insts) {
+    const def = state.part_defs.find((item) => item.id === part.def_id);
+    if (!def) {
+      collision = "part definition not found";
+      break;
+    }
+    for (const pt of absoluteOccupied(def, part)) {
+      const key = `${pt.x}:${pt.y}`;
+      if (!isInsideBoard(board, pt) || occupied.has(key)) {
+        collision = isInsideBoard(board, pt) ? "part-part occupancy collision" : "part occupancy outside board";
+        break;
+      }
+      occupied.add(key);
+    }
+    if (collision) break;
+  }
+  if (collision) {
+    issues.push({ level: "Error", code: "PART_COLLISION", message: collision, at: null });
+    occupied.clear();
+  }
+  for (const part of state.part_insts) {
+    const def = state.part_defs.find((item) => item.id === part.def_id);
+    if (!def) continue;
+    for (const pin of def.pins) {
+      const turned = rotateRelative(pin.pos, part.rot);
+      pinPoints.add(`${part.at.x + turned.x}:${part.at.y + turned.y}`);
+    }
+  }
   const pointNets = new Map<string, Set<string>>();
   for (const wire of state.wires) {
     for (const pt of wire.path) {
@@ -418,10 +459,12 @@ function fallbackDrcJson(stateJson: string): string {
       const nets = pointNets.get(key) ?? new Set<string>();
       nets.add(wire.net_id);
       pointNets.set(key, nets);
+      if (occupied.has(key) && !pinPoints.has(key)) {
+        issues.push({ level: "Error", code: "WIRE_PART_COLLISION", message: "wire point overlaps part occupied cell", at: pt });
+      }
     }
   }
 
-  const issues: DrcIssue[] = [];
   for (const [key, nets] of pointNets.entries()) {
     if (nets.size < 2) continue;
     const [x, y] = key.split(":").map((v) => Number(v));
@@ -431,6 +474,19 @@ function fallbackDrcJson(stateJson: string): string {
       message: "multiple nets share one grid point",
       at: { x, y }
     });
+  }
+  for (const part of state.part_insts) {
+    const def = state.part_defs.find((item) => item.id === part.def_id);
+    if (!def) continue;
+    for (const [pinName, netId] of Object.entries(part.net_assign)) {
+      const pin = def.pins.find((item) => item.name === pinName);
+      if (!pin) continue;
+      const turned = rotateRelative(pin.pos, part.rot);
+      const pt = { x: part.at.x + turned.x, y: part.at.y + turned.y };
+      if (!pointNets.get(`${pt.x}:${pt.y}`)?.has(netId)) {
+        issues.push({ level: "Warning", code: "UNCONNECTED_PIN", message: `${part.refdes}.${pinName} assigned to net but not connected by wire`, at: pt });
+      }
+    }
   }
   return JSON.stringify(issues);
 }
@@ -482,9 +538,10 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
     coreRuntimePromise = (async (): Promise<CoreRuntime> => {
       try {
         const modulePath = "/core/pkg/uniuni_core.js";
-        const mod = (await import(
-          /* @vite-ignore */ modulePath
-        )) as unknown as CoreApi;
+        // Vite forbids transforming imports from public/, so let the browser load this
+        // generated ES module directly in both development and production.
+        const nativeImport = new Function("path", "return import(path)") as (path: string) => Promise<CoreApi>;
+        const mod = await nativeImport(modulePath);
         if (typeof mod.default === "function") {
           await mod.default();
         }

@@ -215,11 +215,14 @@ uniuni/
 - Import:
   - `project.json` 必須
   - `part-library schemaVersion: 1/2` 対応
+  - `project.json` のスキーマ、盤面寸法、部品・ネット参照、占有セル、配線経路を復元前に検証
 
 ## 9. Core接続モード（WASM/Fallback）
 
 ### 9.1 判定方針
-- まず `core/pkg/uniuni_core.js` の動的importを試行
+- 開発・本番ビルドの前に `scripts/build-core-wasm.sh` で Rust Core を Web 向けに生成し、`web/public/core/pkg` からブラウザーが読み込む
+- `wasm32-unknown-unknown` ターゲットと `wasm-bindgen-cli` 0.2.114 が必要
+- まず `/core/pkg/uniuni_core.js` をブラウザーの動的 import で読み込む
 - 成功時: `wasm`
 - 失敗時: fallback許可なら `fallback`
 - fallback不許可時: 初期化エラー

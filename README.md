@@ -25,6 +25,15 @@ Browser-based universal perfboard CAD (MVP bootstrap).
 npm install
 ```
 
+Web 開発・ビルドには Rust、`wasm32-unknown-unknown` ターゲット、
+`wasm-bindgen-cli` 0.2.114 が必要です。初回のみ次を実行してください。
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install --locked wasm-bindgen-cli --version 0.2.114
+```
+
+`npm run dev -w web` と `npm run build -w web` は Rust Core の WASM を自動生成します。
+
 2. Start the web app (Vite dev server):
 ```bash
 npm run dev -w web

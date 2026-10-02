@@ -5,6 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 type ExportedProject = {
+  part_defs: Array<{ occupied: unknown[] }>;
   part_insts: unknown[];
   wires: Array<{ path: unknown[] }>;
 };
@@ -28,7 +29,7 @@ async function clickGrid(page: Page, x: number, y: number): Promise<void> {
 
 async function openApp(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByText(/Core:/)).toBeVisible();
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
 }
 
 async function exportProject(page: Page): Promise<ExportedProject> {
@@ -95,4 +96,32 @@ test("Pin優先選択後にTabで候補を切替えて配線を削除できる",
   const project = await exportProject(page);
   expect(project.part_insts.length).toBe(1);
   expect(project.wires.length).toBe(0);
+});
+
+test("衝突する部品定義の編集は保存・ZIP 出力に反映されない", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await clickGrid(page, 5, 0);
+  await page.keyboard.press("Escape");
+
+  const occupiedEditor = page.locator(".editor-block").filter({ has: page.getByRole("heading", { name: "Occupied設定" }) });
+  await occupiedEditor.locator('input[type="number"]').first().fill("5");
+  await occupiedEditor.getByRole("button", { name: "Add Occ" }).click();
+  await expect(page.locator(".editor-notice")).toContainText("part-part occupancy collision");
+  await expect(occupiedEditor.locator("tbody tr")).toHaveCount(3);
+
+  const project = await exportProject(page);
+  expect(project.part_defs[0].occupied).toHaveLength(3);
+});
+
+test("不正な盤面を含む ZIP はインポートされない", async ({ page }) => {
+  await openApp(page);
+  const zip = new JSZip();
+  zip.file("project.json", JSON.stringify({ schema_version: 99, board: { width: -5, height: 0, grid_pitch_mm: 2.54 }, part_defs: [], part_insts: [], nets: [], wires: [] }));
+  const bytes = await zip.generateAsync({ type: "nodebuffer" });
+  await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
+  await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
+  const project = await exportProject(page);
+  expect(project.part_defs).toHaveLength(3);
 });

@@ -2,6 +2,19 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-02 (dev レビューの高優先度課題を修正)
+実装内容:
+- 標準の Web 開発・本番ビルドで Rust Core の WASM を生成・配布し、CI と手順書にも依存ツールを明記。
+- fallback の配線盤面境界チェックと DRC の部品衝突・配線部品衝突・未接続 Pin 検出を Rust Core に合わせた。
+- 部品定義編集を Core 検証後に確定し、Undo/Redo、保存、ZIP 出力で定義とプロジェクトの組を維持。
+- ZIP・IndexedDB 復元時にプロジェクトスキーマと構造、参照、盤面境界、占有、配線経路を検証。
+- WASM 動作、編集拒否、ZIP 拒否の回帰テストを追加。
+
+検証:
+- `npm run test -w web`、`npm run build -w web`、`cargo check --locked`、`cargo test --locked` 成功。
+- Chromium の E2E 5 件成功。開発サーバーで `Core: WASM` を確認。
+
+
 ## 2026-03-13 (Step8着手: 自動回帰化基盤)
 実装内容:
 - `dev` から `feature/step8-e2e-regression` を作成し、Draft PR を作成。

@@ -4,10 +4,12 @@ import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
   commandAssignNetColorJson,
+  commandCommitWireJson,
   commandMoveRotatePartInstJson,
   commandResizeBoardJson,
   commandReplacePartDefsJson,
-  detectCoreBridgeMode
+  detectCoreBridgeMode,
+  runCoreDrcJson
 } from "../src/coreBridge";
 import type { Rot } from "../src/types";
 
@@ -70,6 +72,28 @@ test("bridge mode is fallback when wasm package is unavailable in test runtime",
   __resetCoreRuntimeForTest();
   const mode = await detectCoreBridgeMode();
   assert.equal(mode, "fallback");
+});
+
+test("fallback rejects a wire outside the board", async () => {
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(baseState()), commandCommitWireJson(NET_ID, [{ x: -1, y: 0 }, { x: 0, y: 0 }])),
+    /outside board/
+  );
+});
+
+test("fallback DRC reports occupied wire points and unconnected pins", async () => {
+  const state = baseState();
+  state.part_defs[0].occupied.push({ x: 1, y: 0 });
+  state.wires.push({ id: "44444444-4444-4444-4444-444444444444", net_id: NET_ID, path: [{ x: 1, y: 0 }, { x: 2, y: 0 }] });
+  const issues = JSON.parse(await runCoreDrcJson(JSON.stringify(state))) as Array<{ code: string }>;
+  assert.deepEqual(new Set(issues.map((issue) => issue.code)), new Set(["WIRE_PART_COLLISION", "UNCONNECTED_PIN"]));
+});
+
+test("fallback DRC reports invalid part occupancy", async () => {
+  const state = baseState();
+  state.part_insts.push({ ...state.part_insts[0], id: "55555555-5555-5555-5555-555555555555" });
+  const issues = JSON.parse(await runCoreDrcJson(JSON.stringify(state))) as Array<{ code: string }>;
+  assert.ok(issues.some((issue) => issue.code === "PART_COLLISION"));
 });
 
 test("bridge can disable fallback via env", async () => {
