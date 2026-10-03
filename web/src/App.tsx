@@ -1834,424 +1834,6 @@ export function App(): JSX.Element {
               設計データはこのブラウザー内に保存されます。別のPCへ移す場合は Export ZIP を使ってください。
             </p>
           </section>
-
-          <section className="tool-card part-editor-card">
-            <h2 className="card-title">Part Editor</h2>
-            {editorDef && editorPreview ? (
-              <div className="editor-preview-wrap">
-                <div className="editor-preview-header">
-                  <div className="editor-preview-title">Preview</div>
-                  <div className="preview-zoom-tools">
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => setEditorPreviewZoom(1)}
-                    >
-                      Fit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        setEditorPreviewZoom((prev) => Math.max(0.5, Number((prev / 1.25).toFixed(2))))
-                      }
-                    >
-                      -
-                    </button>
-                    <span className="zoom-label">{editorPreviewZoom.toFixed(2)}x</span>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        setEditorPreviewZoom((prev) => Math.min(8, Number((prev * 1.25).toFixed(2))))
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                <div className="editor-preview-canvas">
-                  {(() => {
-                    const span = editorPreview.fitSpan / editorPreviewZoom;
-                    const viewMinX = editorPreview.centerX - span / 2;
-                    const viewMinY = editorPreview.centerY - span / 2;
-                    const gridStartX = Math.floor(viewMinX) - 1;
-                    const gridEndX = Math.ceil(viewMinX + span) + 1;
-                    const gridStartY = Math.floor(viewMinY) - 1;
-                    const gridEndY = Math.ceil(viewMinY + span) + 1;
-                    const gridXs = Array.from({ length: gridEndX - gridStartX + 1 }, (_, i) => gridStartX + i);
-                    const gridYs = Array.from({ length: gridEndY - gridStartY + 1 }, (_, i) => gridStartY + i);
-                    return (
-                      <svg
-                        viewBox={`${viewMinX - 0.5} ${viewMinY - 0.5} ${span} ${span}`}
-                        className="editor-preview-svg"
-                      >
-                        {gridXs.map((x) => (
-                          <line
-                            key={`gx-${x}`}
-                            x1={x}
-                            y1={gridStartY}
-                            x2={x}
-                            y2={gridEndY}
-                            className="preview-grid-line"
-                          />
-                        ))}
-                        {gridYs.map((y) => (
-                          <line
-                            key={`gy-${y}`}
-                            x1={gridStartX}
-                            y1={y}
-                            x2={gridEndX}
-                            y2={y}
-                            className="preview-grid-line"
-                          />
-                        ))}
-                        {editorDef.imageDataUrl ? (
-                          (() => {
-                            const scale = editorDef.imageScale ?? 1;
-                            const ox = editorDef.imageOffsetX ?? 0;
-                            const oy = editorDef.imageOffsetY ?? 0;
-                            const minX = editorPreview.minX - 0.5 + ox;
-                            const maxX = editorPreview.maxX + 0.5 + ox;
-                            const minY = editorPreview.minY - 0.5 + oy;
-                            const maxY = editorPreview.maxY + 0.5 + oy;
-                            const baseW = maxX - minX;
-                            const baseH = maxY - minY;
-                            const drawW = baseW * scale;
-                            const drawH = baseH * scale;
-                            const cx = minX + baseW / 2;
-                            const cy = minY + baseH / 2;
-                            return (
-                              <image
-                                href={editorDef.imageDataUrl}
-                                x={cx - drawW / 2}
-                                y={cy - drawH / 2}
-                                width={drawW}
-                                height={drawH}
-                                preserveAspectRatio="none"
-                                className="preview-part-image"
-                              />
-                            );
-                          })()
-                        ) : null}
-                        {editorDef.occupied.map((pt) => (
-                          <rect
-                            key={`occ-${pt.x}-${pt.y}`}
-                            x={pt.x - 0.5}
-                            y={pt.y - 0.5}
-                            width={1}
-                            height={1}
-                            className="preview-occ-cell"
-                          />
-                        ))}
-                        <rect
-                          x={-0.5}
-                          y={-0.5}
-                          width={1}
-                          height={1}
-                          className="preview-origin-cell"
-                        />
-                        {editorDef.pins.map((pin) => (
-                          <circle
-                            key={`pin-${pin.name}`}
-                            cx={pin.pos.x}
-                            cy={pin.pos.y}
-                            r={0.22}
-                            className="preview-pin-dot"
-                          >
-                            <title>{`Pin ${pin.name} (${pin.pos.x}, ${pin.pos.y})`}</title>
-                          </circle>
-                        ))}
-                      </svg>
-                    );
-                  })()}
-                </div>
-                <div className="editor-preview-legend">
-                  <span><i className="legend-box origin" /> Origin</span>
-                  <span><i className="legend-box occupied" /> Occupied</span>
-                  <span><i className="legend-pin" /> Pin</span>
-                </div>
-              </div>
-            ) : null}
-            <div className="toolbar-row">
-              <select
-                className="net-select"
-                value={editorDefId}
-                onChange={(event) => setEditorDefId(event.target.value)}
-              >
-                {partDefs.map((def) => (
-                  <option key={def.id} value={def.id}>
-                    {def.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                className="net-input"
-                value={editorDefName}
-                placeholder="PartDef name"
-                onChange={(event) => setEditorDefName(event.target.value)}
-              />
-              <button type="button" className="btn" onClick={renameEditorPartDef}>
-                Rename Part
-              </button>
-              <button type="button" className="btn" onClick={createEditorPartDef}>
-                New Part
-              </button>
-              <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
-                Delete Part
-              </button>
-            </div>
-            {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
-            <div className="editor-grid">
-              <div className="editor-block">
-                <h3 className="editor-title">Pin設定</h3>
-                <div className="toolbar-row">
-                  <input
-                    type="text"
-                    className="coord-input"
-                    value={editorPinName}
-                    placeholder="Pin name"
-                    onChange={(event) => setEditorPinName(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorPinX}
-                    onChange={(event) => setEditorPinX(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorPinY}
-                    onChange={(event) => setEditorPinY(event.target.value)}
-                  />
-                  <button type="button" className="btn" onClick={addEditorPin}>
-                    Add Pin
-                  </button>
-                </div>
-                <table className="editor-table">
-                  <thead>
-                    <tr>
-                      <th>Pin名</th>
-                      <th>X座標</th>
-                      <th>Y座標</th>
-                      <th className="action-col" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editorDef?.pins ?? []).map((pin) => (
-                      <tr key={pin.name}>
-                        <td>{pin.name}</td>
-                        <td>{pin.pos.x}</td>
-                        <td>{pin.pos.y}</td>
-                        <td className="action-col">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={() => removeEditorPin(pin.name)}
-                            aria-label={`remove pin ${pin.name}`}
-                            title="Delete"
-                          >
-                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
-                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="editor-block">
-                <h3 className="editor-title">Occupied設定</h3>
-                <div className="toolbar-row">
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorOccX}
-                    onChange={(event) => setEditorOccX(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorOccY}
-                    onChange={(event) => setEditorOccY(event.target.value)}
-                  />
-                  <button type="button" className="btn" onClick={addEditorOccupied}>
-                    Add Occ
-                  </button>
-                </div>
-                <table className="editor-table">
-                  <thead>
-                    <tr>
-                      <th>X座標</th>
-                      <th>Y座標</th>
-                      <th className="action-col" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editorDef?.occupied ?? []).map((pt) => (
-                      <tr key={`${pt.x}:${pt.y}`}>
-                        <td>{pt.x}</td>
-                        <td>{pt.y}</td>
-                        <td className="action-col">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={() => removeEditorOccupied(pt.x, pt.y)}
-                            aria-label={`remove occupied ${pt.x},${pt.y}`}
-                            title="Delete"
-                          >
-                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
-                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="editor-block">
-                <h3 className="editor-title">画像設定</h3>
-                <div className="toolbar-row">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      partImageInputRef.current?.click();
-                    }}
-                  >
-                    Set Image
-                  </button>
-                  <button type="button" className="btn" onClick={clearEditorPartImage}>
-                    Clear Image
-                  </button>
-                  <span className="net-label">
-                    {editorDef?.imageDataUrl ? "画像: 設定済み" : "画像: 未設定"}
-                  </span>
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-scale">
-                    Scale
-                  </label>
-                  <input
-                    id="editor-image-scale"
-                    type="range"
-                    min="0.1"
-                    max="4"
-                    step="0.05"
-                    className="image-range"
-                    value={imageScaleSlider}
-                    onChange={(event) => setEditorImageScale(event.target.value)}
-                    title="Image scale"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageScale}
-                    onChange={(event) => setEditorImageScale(event.target.value)}
-                    title="Image scale"
-                  />
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-offset-x">
-                    Offset X
-                  </label>
-                  <input
-                    id="editor-image-offset-x"
-                    type="range"
-                    min="-10"
-                    max="10"
-                    step="0.1"
-                    className="image-range"
-                    value={imageOffsetXSlider}
-                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
-                    title="Image offset X"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageOffsetX}
-                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
-                    title="Image offset X"
-                  />
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-offset-y">
-                    Offset Y
-                  </label>
-                  <input
-                    id="editor-image-offset-y"
-                    type="range"
-                    min="-10"
-                    max="10"
-                    step="0.1"
-                    className="image-range"
-                    value={imageOffsetYSlider}
-                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
-                    title="Image offset Y"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageOffsetY}
-                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
-                    title="Image offset Y"
-                  />
-                </div>
-                <div className="toolbar-row">
-                  <button type="button" className="btn" onClick={applyEditorImageTransform}>
-                    Apply
-                  </button>
-                </div>
-                <input
-                  ref={partImageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden-file-input"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      onPartImagePicked(file);
-                    }
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </div>
-            </div>
-            <div className="toolbar-row">
-              <button type="button" className="btn" onClick={exportPartLibraryJson}>
-                Export Library
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  partLibraryInputRef.current?.click();
-                }}
-              >
-                Import Library
-              </button>
-            </div>
-            <input
-              ref={partLibraryInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden-file-input"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void importPartLibraryJson(file);
-                }
-                event.currentTarget.value = "";
-              }}
-            />
-          </section>
         </div>
         <div className="toolbar-row sidebar-status">
           <span className={coreBridgeBadgeClass}>Core: {coreBridgeLabel}</span>
@@ -2402,6 +1984,425 @@ export function App(): JSX.Element {
           </div>
         </section>
       </section>
+      <aside className="editor-sidebar" aria-label="Part Editor">
+        <section className="tool-card part-editor-card">
+          <h2 className="card-title">Part Editor</h2>
+          {editorDef && editorPreview ? (
+            <div className="editor-preview-wrap">
+              <div className="editor-preview-header">
+                <div className="editor-preview-title">Preview</div>
+                <div className="preview-zoom-tools">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setEditorPreviewZoom(1)}
+                  >
+                    Fit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setEditorPreviewZoom((prev) => Math.max(0.5, Number((prev / 1.25).toFixed(2))))
+                    }
+                  >
+                    -
+                  </button>
+                  <span className="zoom-label">{editorPreviewZoom.toFixed(2)}x</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setEditorPreviewZoom((prev) => Math.min(8, Number((prev * 1.25).toFixed(2))))
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="editor-preview-canvas">
+                {(() => {
+                  const span = editorPreview.fitSpan / editorPreviewZoom;
+                  const viewMinX = editorPreview.centerX - span / 2;
+                  const viewMinY = editorPreview.centerY - span / 2;
+                  const gridStartX = Math.floor(viewMinX) - 1;
+                  const gridEndX = Math.ceil(viewMinX + span) + 1;
+                  const gridStartY = Math.floor(viewMinY) - 1;
+                  const gridEndY = Math.ceil(viewMinY + span) + 1;
+                  const gridXs = Array.from({ length: gridEndX - gridStartX + 1 }, (_, i) => gridStartX + i);
+                  const gridYs = Array.from({ length: gridEndY - gridStartY + 1 }, (_, i) => gridStartY + i);
+                  return (
+                    <svg
+                      viewBox={`${viewMinX - 0.5} ${viewMinY - 0.5} ${span} ${span}`}
+                      className="editor-preview-svg"
+                    >
+                      {gridXs.map((x) => (
+                        <line
+                          key={`gx-${x}`}
+                          x1={x}
+                          y1={gridStartY}
+                          x2={x}
+                          y2={gridEndY}
+                          className="preview-grid-line"
+                        />
+                      ))}
+                      {gridYs.map((y) => (
+                        <line
+                          key={`gy-${y}`}
+                          x1={gridStartX}
+                          y1={y}
+                          x2={gridEndX}
+                          y2={y}
+                          className="preview-grid-line"
+                        />
+                      ))}
+                      {editorDef.imageDataUrl ? (
+                        (() => {
+                          const scale = editorDef.imageScale ?? 1;
+                          const ox = editorDef.imageOffsetX ?? 0;
+                          const oy = editorDef.imageOffsetY ?? 0;
+                          const minX = editorPreview.minX - 0.5 + ox;
+                          const maxX = editorPreview.maxX + 0.5 + ox;
+                          const minY = editorPreview.minY - 0.5 + oy;
+                          const maxY = editorPreview.maxY + 0.5 + oy;
+                          const baseW = maxX - minX;
+                          const baseH = maxY - minY;
+                          const drawW = baseW * scale;
+                          const drawH = baseH * scale;
+                          const cx = minX + baseW / 2;
+                          const cy = minY + baseH / 2;
+                          return (
+                            <image
+                              href={editorDef.imageDataUrl}
+                              x={cx - drawW / 2}
+                              y={cy - drawH / 2}
+                              width={drawW}
+                              height={drawH}
+                              preserveAspectRatio="none"
+                              className="preview-part-image"
+                            />
+                          );
+                        })()
+                      ) : null}
+                      {editorDef.occupied.map((pt) => (
+                        <rect
+                          key={`occ-${pt.x}-${pt.y}`}
+                          x={pt.x - 0.5}
+                          y={pt.y - 0.5}
+                          width={1}
+                          height={1}
+                          className="preview-occ-cell"
+                        />
+                      ))}
+                      <rect
+                        x={-0.5}
+                        y={-0.5}
+                        width={1}
+                        height={1}
+                        className="preview-origin-cell"
+                      />
+                      {editorDef.pins.map((pin) => (
+                        <circle
+                          key={`pin-${pin.name}`}
+                          cx={pin.pos.x}
+                          cy={pin.pos.y}
+                          r={0.22}
+                          className="preview-pin-dot"
+                        >
+                          <title>{`Pin ${pin.name} (${pin.pos.x}, ${pin.pos.y})`}</title>
+                        </circle>
+                      ))}
+                    </svg>
+                  );
+                })()}
+              </div>
+              <div className="editor-preview-legend">
+                <span><i className="legend-box origin" /> Origin</span>
+                <span><i className="legend-box occupied" /> Occupied</span>
+                <span><i className="legend-pin" /> Pin</span>
+              </div>
+            </div>
+          ) : null}
+          <div className="toolbar-row">
+            <select
+              className="net-select"
+              value={editorDefId}
+              onChange={(event) => setEditorDefId(event.target.value)}
+            >
+              {partDefs.map((def) => (
+                <option key={def.id} value={def.id}>
+                  {def.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              className="net-input"
+              value={editorDefName}
+              placeholder="PartDef name"
+              onChange={(event) => setEditorDefName(event.target.value)}
+            />
+            <button type="button" className="btn" onClick={renameEditorPartDef}>
+              Rename Part
+            </button>
+            <button type="button" className="btn" onClick={createEditorPartDef}>
+              New Part
+            </button>
+            <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
+              Delete Part
+            </button>
+          </div>
+          {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
+          <div className="editor-grid">
+            <div className="editor-block">
+              <h3 className="editor-title">Pin設定</h3>
+              <div className="toolbar-row">
+                <input
+                  type="text"
+                  className="coord-input"
+                  value={editorPinName}
+                  placeholder="Pin name"
+                  onChange={(event) => setEditorPinName(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorPinX}
+                  onChange={(event) => setEditorPinX(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorPinY}
+                  onChange={(event) => setEditorPinY(event.target.value)}
+                />
+                <button type="button" className="btn" onClick={addEditorPin}>
+                  Add Pin
+                </button>
+              </div>
+              <table className="editor-table">
+                <thead>
+                  <tr>
+                    <th>Pin名</th>
+                    <th>X座標</th>
+                    <th>Y座標</th>
+                    <th className="action-col" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(editorDef?.pins ?? []).map((pin) => (
+                    <tr key={pin.name}>
+                      <td>{pin.name}</td>
+                      <td>{pin.pos.x}</td>
+                      <td>{pin.pos.y}</td>
+                      <td className="action-col">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => removeEditorPin(pin.name)}
+                          aria-label={`remove pin ${pin.name}`}
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="editor-block">
+              <h3 className="editor-title">Occupied設定</h3>
+              <div className="toolbar-row">
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorOccX}
+                  onChange={(event) => setEditorOccX(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorOccY}
+                  onChange={(event) => setEditorOccY(event.target.value)}
+                />
+                <button type="button" className="btn" onClick={addEditorOccupied}>
+                  Add Occ
+                </button>
+              </div>
+              <table className="editor-table">
+                <thead>
+                  <tr>
+                    <th>X座標</th>
+                    <th>Y座標</th>
+                    <th className="action-col" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(editorDef?.occupied ?? []).map((pt) => (
+                    <tr key={`${pt.x}:${pt.y}`}>
+                      <td>{pt.x}</td>
+                      <td>{pt.y}</td>
+                      <td className="action-col">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => removeEditorOccupied(pt.x, pt.y)}
+                          aria-label={`remove occupied ${pt.x},${pt.y}`}
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="editor-block">
+              <h3 className="editor-title">画像設定</h3>
+              <div className="toolbar-row">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    partImageInputRef.current?.click();
+                  }}
+                >
+                  Set Image
+                </button>
+                <button type="button" className="btn" onClick={clearEditorPartImage}>
+                  Clear Image
+                </button>
+                <span className="net-label">
+                  {editorDef?.imageDataUrl ? "画像: 設定済み" : "画像: 未設定"}
+                </span>
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-scale">
+                  Scale
+                </label>
+                <input
+                  id="editor-image-scale"
+                  type="range"
+                  min="0.1"
+                  max="4"
+                  step="0.05"
+                  className="image-range"
+                  value={imageScaleSlider}
+                  onChange={(event) => setEditorImageScale(event.target.value)}
+                  title="Image scale"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageScale}
+                  onChange={(event) => setEditorImageScale(event.target.value)}
+                  title="Image scale"
+                />
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-offset-x">
+                  Offset X
+                </label>
+                <input
+                  id="editor-image-offset-x"
+                  type="range"
+                  min="-10"
+                  max="10"
+                  step="0.1"
+                  className="image-range"
+                  value={imageOffsetXSlider}
+                  onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                  title="Image offset X"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageOffsetX}
+                  onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                  title="Image offset X"
+                />
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-offset-y">
+                  Offset Y
+                </label>
+                <input
+                  id="editor-image-offset-y"
+                  type="range"
+                  min="-10"
+                  max="10"
+                  step="0.1"
+                  className="image-range"
+                  value={imageOffsetYSlider}
+                  onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                  title="Image offset Y"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageOffsetY}
+                  onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                  title="Image offset Y"
+                />
+              </div>
+              <div className="toolbar-row">
+                <button type="button" className="btn" onClick={applyEditorImageTransform}>
+                  Apply
+                </button>
+              </div>
+              <input
+                ref={partImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    onPartImagePicked(file);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+          </div>
+          <div className="toolbar-row">
+            <button type="button" className="btn" onClick={exportPartLibraryJson}>
+              Export Library
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                partLibraryInputRef.current?.click();
+              }}
+            >
+              Import Library
+            </button>
+          </div>
+          <input
+            ref={partLibraryInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden-file-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void importPartLibraryJson(file);
+              }
+              event.currentTarget.value = "";
+            }}
+          />
+        </section>
+      </aside>
     </main>
   );
 }
