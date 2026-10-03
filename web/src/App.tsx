@@ -1902,6 +1902,9 @@ export function App(): JSX.Element {
                 }}
               />
             </div>
+            <p className="local-data-note">
+              設計データはこのブラウザー内に保存されます。別のPCへ移す場合は Export ZIP を使ってください。
+            </p>
           </section>
 
           <section className="tool-card part-editor-card">

@@ -61,6 +61,21 @@ cargo check
 cargo build
 ```
 
+## GitHub Pages で公開
+
+1. GitHub のリポジトリ設定で **Pages → Build and deployment → Source: GitHub Actions** を選ぶ。
+2. レビュー済みの変更を `main` にマージする。`.github/workflows/ci.yml` が Web・Rust・E2E を検証し、全件成功後に `web/dist` を Pages へデプロイする。
+3. `https://siroyan.github.io/uniuni/` を開き、画面の `Core: WASM` 表示を確認する。Pages の URL は Actions の `deploy GitHub Pages` ジョブにも表示される。
+
+Pages 向けビルドはリポジトリ名から `/uniuni/` を設定する。ローカルで同じ構成を確認するには次を実行する。
+
+```bash
+PAGES_BASE_PATH=/uniuni/ npm run build -w web
+PAGES_BASE_PATH=/uniuni/ npm run preview -w web -- --host 127.0.0.1
+```
+
+プロジェクト、部品ライブラリ、画像はブラウザーの IndexedDB に保存される。ZIP の作成と読み込みもブラウザー内で行い、これらの内容をサーバーへ送信する機能はない。ページの Content Security Policy は外部への接続を許可しない。端末間同期はないため、必要なデータは ZIP でバックアップする。
+
 ## Notes
 - 仕様は `doc/specification_ja.md` を参照。
 - MVP Step1-7 roadmap is complete; next phase candidates are tracked in `doc/implementation_guide_ja.md`.

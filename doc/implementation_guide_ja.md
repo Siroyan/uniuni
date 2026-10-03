@@ -220,12 +220,18 @@ uniuni/
 ## 9. Core接続モード（WASM/Fallback）
 
 ### 9.1 判定方針
-- 開発・本番ビルドの前に `scripts/build-core-wasm.sh` で Rust Core を Web 向けに生成し、`web/public/core/pkg` からブラウザーが読み込む
+- 開発・本番ビルドの前に `scripts/build-core-wasm.sh` で Rust Core を Web 向けに `web/src/generated/core` へ生成する。Vite が JS と WASM をアセットとして配布する
 - `wasm32-unknown-unknown` ターゲットと `wasm-bindgen-cli` 0.2.114 が必要
-- まず `/core/pkg/uniuni_core.js` をブラウザーの動的 import で読み込む
+- まず生成した `uniuni_core.js` を動的 import で読み込む
 - 成功時: `wasm`
 - 失敗時: fallback許可なら `fallback`
 - fallback不許可時: 初期化エラー
+
+### 9.3 GitHub Pages とローカルデータ
+- `PAGES_BASE_PATH` を Vite の `base` に適用し、Pages の `/uniuni/` 配下で JS・CSS・WASM を読み込む
+- 編集データと画像は IndexedDB とユーザーがダウンロードする ZIP で扱い、HTTP API に送らない
+- CSP は接続先を同一オリジンに制限し、外部画像・スクリプトも読み込まない
+- `main` への push で Web・Rust・E2E 検証が全て成功したときだけ Pages にデプロイする
 
 ### 9.2 fallback制御
 優先順:

@@ -8,5 +8,5 @@ if ! command -v cargo >/dev/null || ! command -v wasm-bindgen >/dev/null; then
 fi
 
 cargo build --locked --manifest-path "$repo_root/core/Cargo.toml" --target wasm32-unknown-unknown --release
-wasm-bindgen --target web --out-dir "$repo_root/web/public/core/pkg" \
+wasm-bindgen --target web --out-dir "$repo_root/web/src/generated/core" \
   "$repo_root/core/target/wasm32-unknown-unknown/release/uniuni_core.wasm"

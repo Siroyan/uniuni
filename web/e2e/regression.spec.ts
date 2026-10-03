@@ -28,7 +28,7 @@ async function clickGrid(page: Page, x: number, y: number): Promise<void> {
 }
 
 async function openApp(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.getByText(/Core: WASM/)).toBeVisible();
 }
 
@@ -49,7 +49,10 @@ async function exportProject(page: Page): Promise<ExportedProject> {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    indexedDB.deleteDatabase("uniuni-db");
+    if (!sessionStorage.getItem("uniuni-e2e-initialized")) {
+      sessionStorage.setItem("uniuni-e2e-initialized", "1");
+      indexedDB.deleteDatabase("uniuni-db");
+    }
   });
 });
 
@@ -124,4 +127,49 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
   expect(project.part_defs).toHaveLength(3);
+});
+
+test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {
+  const appOrigin = new URL(test.info().project.use.baseURL!).origin;
+  const externalRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== appOrigin) {
+      externalRequests.push(request.url());
+    }
+  });
+
+  await openApp(page);
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]'))
+    .toHaveAttribute("content", /connect-src 'self'/);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("Escape");
+
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    if (!db.objectStoreNames.contains("project_snapshots")) {
+      db.close();
+      return 0;
+    }
+    const count = await new Promise<number>((resolve, reject) => {
+      const request = db.transaction("project_snapshots", "readonly")
+        .objectStore("project_snapshots").get("active_project");
+      request.onsuccess = () => resolve(request.result?.coreStateJson
+        ? JSON.parse(request.result.coreStateJson).part_insts.length : 0);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return count;
+  })).toBe(1);
+
+  await page.reload();
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const project = await exportProject(page);
+  expect(project.part_insts).toHaveLength(1);
+  expect(externalRequests).toEqual([]);
 });

@@ -4,7 +4,7 @@ type CoreApi = {
   create_empty_project_json: () => string;
   apply_command_json: (stateJson: string, cmdJson: string) => string;
   drc_json: (stateJson: string) => string;
-  default?: () => Promise<void>;
+  default?: () => Promise<unknown>;
 };
 
 export type CoreBridgeMode = "wasm" | "fallback";
@@ -537,11 +537,7 @@ async function loadCoreRuntime(): Promise<CoreRuntime> {
   if (!coreRuntimePromise) {
     coreRuntimePromise = (async (): Promise<CoreRuntime> => {
       try {
-        const modulePath = "/core/pkg/uniuni_core.js";
-        // Vite forbids transforming imports from public/, so let the browser load this
-        // generated ES module directly in both development and production.
-        const nativeImport = new Function("path", "return import(path)") as (path: string) => Promise<CoreApi>;
-        const mod = await nativeImport(modulePath);
+        const mod = (await import("./generated/core/uniuni_core.js")) as CoreApi;
         if (typeof mod.default === "function") {
           await mod.default();
         }

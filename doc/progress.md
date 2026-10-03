@@ -2,6 +2,19 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-03 (GitHub Pages 公開準備)
+実装内容:
+- Vite の base と生成 WASM の読み込みを Pages の `/uniuni/` 配下に対応。
+- 画像の data URL をブラウザー内で Blob に変換し、外部送信を伴わない IndexedDB 保存を維持。
+- Content Security Policy で外部通信先を許可せず、ブラウザー内保存と ZIP バックアップを README に記載。
+- GitHub Actions の既存 CI が全件成功した場合だけ `main` の成果物を Pages にデプロイ。
+- Pages 配下のプレビューと外部通信がないことを E2E で検証。
+
+検証:
+- `npm run test -w web`、`cargo check --locked`、`PAGES_BASE_PATH=/uniuni/ npm run build -w web` 成功。
+- Chromium で通常の開発サーバーと `/uniuni/` 配下の本番プレビューを各6件確認。
+
+
 ## 2026-10-02 (dev レビューの高優先度課題を修正)
 実装内容:
 - 標準の Web 開発・本番ビルドで Rust Core の WASM を生成・配布し、CI と手順書にも依存ツールを明記。
