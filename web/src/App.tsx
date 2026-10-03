@@ -128,7 +128,7 @@ const builtInPartIds = {
   capacitor: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
   inductor: "01d260e9-ea3a-488f-9e8a-031ca0d679ce"
 };
-const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLORS = ["#2563eb", "#a16207", "#be185d", "#15803d", "#c2410c", "#7c3aed"];
 const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function nextRefdes(parts: PartInst[], defId: string): string {
@@ -232,7 +232,7 @@ export function App(): JSX.Element {
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
   const [selectedNetId, setSelectedNetId] = useState<string>(() => nets[0]?.id ?? "");
   const [netNameDraft, setNetNameDraft] = useState<string>("");
-  const [netColorDraft, setNetColorDraft] = useState<string>("#51c4ff");
+  const [netColorDraft, setNetColorDraft] = useState<string>("#2563eb");
   const [pinNameDraft, setPinNameDraft] = useState<string>("");
   const [editorDefId, setEditorDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorDefName, setEditorDefName] = useState<string>(defaultPartDefs[0].name);
@@ -306,7 +306,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!selectedNetId) {
       setNetNameDraft("");
-      setNetColorDraft("#51c4ff");
+      setNetColorDraft("#2563eb");
       return;
     }
     const selected = nets.find((net) => net.id === selectedNetId);

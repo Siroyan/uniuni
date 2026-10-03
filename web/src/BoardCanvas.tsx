@@ -22,7 +22,7 @@ type Props = {
 
 const CELL_SIZE = 24;
 const BOARD_MARGIN_CELLS = 2.3;
-const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLORS = ["#2563eb", "#a16207", "#be185d", "#15803d", "#c2410c", "#7c3aed"];
 const AKIZUKI_B_LEGACY_GRID_WIDTH = 37;
 const AKIZUKI_B_LEGACY_GRID_HEIGHT = 28;
 const AKIZUKI_B_GRID_WIDTH = 36;
@@ -310,7 +310,7 @@ export function BoardCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    ctx.fillStyle = "#0d131b";
+    ctx.fillStyle = "#f1f5f9";
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     const isBBoard = isAkizukiBBoard(board);
@@ -342,12 +342,12 @@ export function BoardCanvas({
     const boardScreenHeight = bottomRight.y - topLeft.y;
 
     if (boardScreenWidth > 0 && boardScreenHeight > 0) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+      ctx.fillStyle = "rgba(45, 55, 72, 0.1)";
       ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
 
       const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
-      boardGrad.addColorStop(0, "#f2d297");
-      boardGrad.addColorStop(1, "#f2d297");
+      boardGrad.addColorStop(0, "#fffdf8");
+      boardGrad.addColorStop(1, "#faf5e9");
       ctx.fillStyle = boardGrad;
       ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
 
@@ -367,12 +367,12 @@ export function BoardCanvas({
 
       const drawThroughHole = (gridX: number, gridY: number): void => {
         const center = worldToScreen({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE }, viewport);
-        ctx.fillStyle = "#c4c9d1";
+        ctx.fillStyle = "#b7c1cb";
         ctx.beginPath();
         ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = "#a8afbb";
+        ctx.fillStyle = "#778391";
         ctx.beginPath();
         ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
         ctx.fill();
@@ -418,18 +418,18 @@ export function BoardCanvas({
             { x: (bottomRight.x + gridBottomRight.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 }
           ];
       for (const center of mountCenters) {
-        ctx.fillStyle = "#ded3bd";
+        ctx.fillStyle = "#d2dae3";
         ctx.beginPath();
         ctx.arc(center.x, center.y, mountHoleRadius + 0.8, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = "#8d93a0";
+        ctx.fillStyle = "#84909e";
         ctx.beginPath();
         ctx.arc(center.x, center.y, mountHoleRadius, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      ctx.strokeStyle = "#cfc5ad";
+      ctx.strokeStyle = "#c9b895";
       ctx.lineWidth = 1.2;
       ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
     }
@@ -441,14 +441,14 @@ export function BoardCanvas({
         ctx,
         wire.path,
         viewport,
-        isSelected ? "#ffd166" : color,
-        isSelected ? "#ffd166" : color,
+        isSelected ? "#b45309" : color,
+        isSelected ? "#b45309" : color,
         isSelected ? 4.6 : 3.6
       );
     }
 
     if (wireDraftPath.length > 0) {
-      drawWirePath(ctx, wireDraftPath, viewport, "#ffd166", "#ffd166", 3.8);
+      drawWirePath(ctx, wireDraftPath, viewport, "#b45309", "#b45309", 3.8);
     }
 
     for (const part of parts) {
@@ -460,8 +460,8 @@ export function BoardCanvas({
         part,
         def,
         viewport,
-        isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)",
-        "#ff9f1c",
+        isSelected ? "rgba(245, 158, 11, 0.32)" : "rgba(37, 99, 235, 0.28)",
+        "#c2410c",
         imageCacheRef.current.get(def.id) ?? null
       );
     }
@@ -474,8 +474,8 @@ export function BoardCanvas({
           movePreviewPart,
           def,
           viewport,
-          movePreviewValid ? "rgba(102, 217, 125, 0.35)" : "rgba(217, 102, 102, 0.4)",
-          movePreviewValid ? "#6fe893" : "#ff9090",
+          movePreviewValid ? "rgba(21, 128, 61, 0.28)" : "rgba(180, 35, 53, 0.26)",
+          movePreviewValid ? "#15803d" : "#b42335",
           imageCacheRef.current.get(def.id) ?? null
         );
       }
@@ -489,8 +489,8 @@ export function BoardCanvas({
           placePreviewPart,
           def,
           viewport,
-          placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
-          placePreviewValid ? "#99f2b0" : "#ffb0b0",
+          placePreviewValid ? "rgba(21, 128, 61, 0.24)" : "rgba(180, 35, 53, 0.24)",
+          placePreviewValid ? "#15803d" : "#b42335",
           imageCacheRef.current.get(def.id) ?? null
         );
       }
@@ -499,7 +499,7 @@ export function BoardCanvas({
     if (hoverGrid) {
       const snappedWorld = gridToWorld(hoverGrid, CELL_SIZE);
       const snapped = worldToScreen(snappedWorld, viewport);
-      ctx.fillStyle = "#ffd166";
+      ctx.fillStyle = "#b45309";
       ctx.beginPath();
       ctx.arc(snapped.x, snapped.y, 4, 0, Math.PI * 2);
       ctx.fill();
