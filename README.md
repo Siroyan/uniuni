@@ -25,6 +25,15 @@ Browser-based universal perfboard CAD (MVP bootstrap).
 npm install
 ```
 
+Web 開発・ビルドには Rust、`wasm32-unknown-unknown` ターゲット、
+`wasm-bindgen-cli` 0.2.114 が必要です。初回のみ次を実行してください。
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install --locked wasm-bindgen-cli --version 0.2.114
+```
+
+`npm run dev -w web` と `npm run build -w web` は Rust Core の WASM を自動生成します。
+
 2. Start the web app (Vite dev server):
 ```bash
 npm run dev -w web
@@ -51,6 +60,21 @@ cd core
 cargo check
 cargo build
 ```
+
+## GitHub Pages で公開
+
+1. GitHub のリポジトリ設定で **Pages → Build and deployment → Source: GitHub Actions** を選ぶ。
+2. レビュー済みの変更を `main` にマージする。`.github/workflows/ci.yml` が Web・Rust・E2E を検証し、全件成功後に `web/dist` を Pages へデプロイする。
+3. `https://siroyan.github.io/uniuni/` を開き、画面の `Core: WASM` 表示を確認する。Pages の URL は Actions の `deploy GitHub Pages` ジョブにも表示される。
+
+Pages 向けビルドはリポジトリ名から `/uniuni/` を設定する。ローカルで同じ構成を確認するには次を実行する。
+
+```bash
+PAGES_BASE_PATH=/uniuni/ npm run build -w web
+PAGES_BASE_PATH=/uniuni/ npm run preview -w web -- --host 127.0.0.1
+```
+
+プロジェクト、部品ライブラリ、画像はブラウザーの IndexedDB に保存される。ZIP の作成と読み込みもブラウザー内で行い、これらの内容をサーバーへ送信する機能はない。ページの Content Security Policy は外部への接続を許可しない。端末間同期はないため、必要なデータは ZIP でバックアップする。
 
 ## Notes
 - 仕様は `doc/specification_ja.md` を参照。

@@ -231,6 +231,12 @@ body,
   letter-spacing: 0.02em;
 }
 
+.local-data-note {
+  margin: 0;
+  color: #bfd7f3;
+  font-size: 12px;
+}
+
 .editor-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

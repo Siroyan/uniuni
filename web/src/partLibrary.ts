@@ -72,11 +72,14 @@ async function toAssetId(dataUrl: string): Promise<string> {
 }
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  const res = await fetch(dataUrl);
-  if (!res.ok) {
-    throw new Error("failed to decode image data");
-  }
-  return res.blob();
+  const match = /^data:([^,]*),(.*)$/s.exec(dataUrl);
+  if (!match) throw new Error("failed to decode image data");
+  const metadata = match[1];
+  const mime = metadata.split(";")[0] || "text/plain";
+  const bytes = metadata.split(";").includes("base64")
+    ? Uint8Array.from(atob(match[2]), (character) => character.charCodeAt(0))
+    : new TextEncoder().encode(decodeURIComponent(match[2]));
+  return new Blob([bytes], { type: mime });
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

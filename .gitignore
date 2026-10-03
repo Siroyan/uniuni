@@ -2,6 +2,8 @@ node_modules
 dist
 *.log
 web/dist
+web/public/core/pkg
+web/src/generated/core
 web/node_modules
 core/pkg
 core/target

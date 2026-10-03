@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import type { PartDef } from "./types";
+import { validateProjectStateJson } from "./projectStateValidation";
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
   imageDataUrl?: string | null;
@@ -155,6 +156,12 @@ async function decodePartLibraryFromZip(zip: JSZip): Promise<PartDef[] | null> {
 }
 
 export async function buildProjectZip(coreStateJson: string, partDefs: PartDef[]): Promise<Blob> {
+  validateProjectStateJson(coreStateJson);
+  const coreDefs = (JSON.parse(coreStateJson) as { part_defs: Array<Pick<PartDef, "id" | "name" | "pins" | "occupied">> }).part_defs;
+  const geometry = (def: Pick<PartDef, "id" | "name" | "pins" | "occupied">): string => JSON.stringify([def.id, def.name, def.pins, def.occupied]);
+  if (coreDefs.length !== partDefs.length || coreDefs.some((def, index) => geometry(def) !== geometry(partDefs[index]))) {
+    throw new Error("project and part library do not match");
+  }
   const zip = new JSZip();
   const { snapshot, assets } = await encodePartLibrary(partDefs);
 
@@ -178,6 +185,7 @@ export async function parseProjectZip(file: Blob): Promise<{
   }
 
   const coreStateJson = await projectFile.async("string");
+  validateProjectStateJson(coreStateJson);
   const partDefs = await decodePartLibraryFromZip(zip);
 
   return {

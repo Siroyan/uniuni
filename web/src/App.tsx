@@ -29,6 +29,7 @@ import {
 import { loadPartLibrary, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import { buildProjectZip, parseProjectZip } from "./projectPackage";
+import { validateProjectStateJson } from "./projectStateValidation";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 import type { HitCandidate } from "./parts";
 
@@ -166,6 +167,7 @@ function fallbackNetColor(netId: string): string {
 
 type HistoryEntry = {
   stateJson: string;
+  partDefs: PartDef[];
   selectedPartId: string | null;
   selectedWireId: string | null;
 };
@@ -260,6 +262,8 @@ export function App(): JSX.Element {
   const [historyPast, setHistoryPast] = useState<HistoryEntry[]>([]);
   const [historyFuture, setHistoryFuture] = useState<HistoryEntry[]>([]);
   const coreStateJsonRef = useRef<string | null>(null);
+  const partDefsRef = useRef<PartDef[]>(defaultPartDefs);
+  const partDefsUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
   const selectedPartIdRef = useRef<string | null>(null);
   const selectedWireIdRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -279,10 +283,6 @@ export function App(): JSX.Element {
     if (!hoverGrid) return null;
     return findPartAtGrid(hoverGrid, parts, defsById);
   }, [defsById, hoverGrid, parts]);
-
-  useEffect(() => {
-    coreStateJsonRef.current = coreStateJson;
-  }, [coreStateJson]);
 
   useEffect(() => {
     selectedPartIdRef.current = selectedPartId;
@@ -363,6 +363,7 @@ export function App(): JSX.Element {
 
   const syncFromCoreState = (nextState: string): { board: Board; parts: PartInst[]; wires: Wire[]; nets: Net[] } => {
     const view = extractViewStateFromCoreJson(nextState);
+    coreStateJsonRef.current = nextState;
     setCoreStateJson(nextState);
     setBoard(view.board);
     setParts(view.parts);
@@ -394,6 +395,7 @@ export function App(): JSX.Element {
         ...prev.slice(-99),
         {
           stateJson: prevState,
+          partDefs: partDefsRef.current,
           selectedPartId: selectedPartIdRef.current,
           selectedWireId: selectedWireIdRef.current
         }
@@ -410,6 +412,33 @@ export function App(): JSX.Element {
   const refreshDrcForState = async (stateJson: string): Promise<void> => {
     const drcJson = await runCoreDrcJson(stateJson);
     setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
+  };
+
+  const applyPartDefsChange = (change: (defs: PartDef[]) => PartDef[], notice?: string): Promise<boolean> => {
+    const operation = partDefsUpdateQueueRef.current.then(async () => {
+      const currentState = coreStateJsonRef.current;
+      if (!currentState) throw new Error("core is not ready");
+      const nextDefs = change(partDefsRef.current);
+      const nextState = await replacePartDefsInStateJson(currentState, nextDefs);
+      commitStateTransition(currentState, nextState);
+      partDefsRef.current = nextDefs;
+      setPartDefs(nextDefs);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+      if (notice) setEditorNotice(notice);
+      try {
+        await savePartLibrary(nextDefs);
+      } catch (err) {
+        setCoreError(`部品ライブラリの保存に失敗: ${String(err)}`);
+      }
+    });
+    partDefsUpdateQueueRef.current = operation.catch(() => undefined);
+    return operation.then(() => true).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setEditorNotice(message);
+      setCoreError(message);
+      return false;
+    });
   };
 
   const canUndo = historyPast.length > 0;
@@ -441,9 +470,6 @@ export function App(): JSX.Element {
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
         }
-        if (!cancelled) {
-          setPartDefs(effectivePartDefs);
-        }
 
         const createFreshState = async (): Promise<string> => {
           let fresh = await createInitialCoreStateJson(board, effectivePartDefs);
@@ -467,6 +493,8 @@ export function App(): JSX.Element {
         let nextSelectedNetId = selectedNetId;
         if (snapshot?.coreStateJson) {
           try {
+            if (snapshot.schemaVersion !== 1) throw new Error("unsupported snapshot schemaVersion");
+            validateProjectStateJson(snapshot.coreStateJson);
             nextState = snapshot.coreStateJson;
             nextSelectedNetId = snapshot.selectedNetId ?? "";
             nextState = await replacePartDefsInStateJson(nextState, effectivePartDefs);
@@ -479,6 +507,8 @@ export function App(): JSX.Element {
           nextState = await createFreshState();
         }
         if (cancelled) return;
+        partDefsRef.current = effectivePartDefs;
+        setPartDefs(effectivePartDefs);
         const view = syncFromCoreState(nextState);
         if (nextSelectedNetId && view.nets.some((net) => net.id === nextSelectedNetId)) {
           setSelectedNetId(nextSelectedNetId);
@@ -532,33 +562,6 @@ export function App(): JSX.Element {
       window.clearTimeout(timer);
     };
   }, [coreStateJson, selectedNetId]);
-
-  useEffect(() => {
-    if (partDefs.length === 0) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const currentState = coreStateJsonRef.current;
-          if (!currentState) return;
-          const nextState = await replacePartDefsInStateJson(currentState, partDefs);
-          syncFromCoreState(nextState);
-          await refreshDrcForState(nextState);
-          await savePartLibrary(partDefs);
-        } catch (err) {
-          if (!cancelled) {
-            setCoreError(
-              err instanceof Error ? err.message : "part definition update failed"
-            );
-          }
-        }
-      })();
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [partDefs]);
 
   const armPlacement = (defId: string): void => {
     if (!defId) return;
@@ -808,10 +811,10 @@ export function App(): JSX.Element {
       setEditorNotice("同名の部品が既に存在します。");
       return;
     }
-    setPartDefs((prev) =>
-      prev.map((def) => (def.id === editorDefId ? { ...def, name } : def))
+    void applyPartDefsChange(
+      (prev) => prev.map((def) => (def.id === editorDefId ? { ...def, name } : def)),
+      "部品名を更新しました。"
     );
-    setEditorNotice("部品名を更新しました。");
   };
 
   const addEditorPin = (): void => {
@@ -835,17 +838,15 @@ export function App(): JSX.Element {
       setEditorNotice("同名のPinが既に存在します。");
       return;
     }
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) => {
         if (def.id !== editorDefId) return def;
         return {
           ...def,
           pins: [...def.pins, { name, pos: { x, y } }]
         };
-      })
-    );
-    setEditorPinName("");
-    setEditorNotice("Pinを追加しました。");
+      }), "Pinを追加しました。"
+    ).then((ok) => { if (ok) setEditorPinName(""); });
   };
 
   const removeEditorPin = (pinName: string): void => {
@@ -854,14 +855,12 @@ export function App(): JSX.Element {
       setEditorNotice("Pinは最低1つ必要です。");
       return;
     }
-    setPartDefs((prev) =>
-      prev.map((def) =>
-        def.id === editorDefId
-          ? { ...def, pins: def.pins.filter((pin) => pin.name !== pinName) }
-          : def
-      )
+    void applyPartDefsChange(
+      (prev) => prev.map((def) =>
+        def.id === editorDefId ? { ...def, pins: def.pins.filter((pin) => pin.name !== pinName) } : def
+      ),
+      `Pin ${pinName} を削除しました。`
     );
-    setEditorNotice(`Pin ${pinName} を削除しました。`);
   };
 
   const addEditorOccupied = (): void => {
@@ -881,16 +880,15 @@ export function App(): JSX.Element {
       setEditorNotice("同じOccupied座標が既に存在します。");
       return;
     }
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) => {
         if (def.id !== editorDefId) return def;
         return {
           ...def,
           occupied: [...def.occupied, { x, y }]
         };
-      })
+      }), "Occupied座標を追加しました。"
     );
-    setEditorNotice("Occupied座標を追加しました。");
   };
 
   const removeEditorOccupied = (x: number, y: number): void => {
@@ -899,7 +897,7 @@ export function App(): JSX.Element {
       setEditorNotice("Occupiedは最低1セル必要です。");
       return;
     }
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) =>
         def.id === editorDefId
           ? {
@@ -907,21 +905,20 @@ export function App(): JSX.Element {
               occupied: def.occupied.filter((pt) => !(pt.x === x && pt.y === y))
             }
           : def
-      )
+      ), `Occupied (${x},${y}) を削除しました。`
     );
-    setEditorNotice(`Occupied (${x},${y}) を削除しました。`);
   };
 
   const setEditorPartImage = (dataUrl: string): void => {
     if (!editorDefId) return;
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl } : def))
     );
   };
 
   const clearEditorPartImage = (): void => {
     if (!editorDefId) return;
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null } : def))
     );
   };
@@ -939,14 +936,13 @@ export function App(): JSX.Element {
       setEditorNotice("Image offset は数値で入力してください。");
       return;
     }
-    setPartDefs((prev) =>
+    void applyPartDefsChange((prev) =>
       prev.map((def) =>
         def.id === editorDefId
           ? { ...def, imageScale: scale, imageOffsetX: ox, imageOffsetY: oy }
           : def
-      )
+      ), "画像表示設定を更新しました。"
     );
-    setEditorNotice("画像表示設定を更新しました。");
   };
 
   const onPartImagePicked = (file: File): void => {
@@ -976,15 +972,16 @@ export function App(): JSX.Element {
       imageOffsetX: 0,
       imageOffsetY: 0
     };
-    setPartDefs((prev) => [...prev, nextDef]);
-    setEditorDefId(nextId);
-    setEditorDefName(baseName);
-    setEditorPinName("1");
-    setEditorPinX("0");
-    setEditorPinY("0");
-    setEditorOccX("0");
-    setEditorOccY("0");
-    setEditorNotice("新しい部品を作成しました。");
+    void applyPartDefsChange((prev) => [...prev, nextDef], "新しい部品を作成しました。").then((ok) => {
+      if (!ok) return;
+      setEditorDefId(nextId);
+      setEditorDefName(baseName);
+      setEditorPinName("1");
+      setEditorPinX("0");
+      setEditorPinY("0");
+      setEditorOccX("0");
+      setEditorOccY("0");
+    });
   };
 
   const exportPartLibraryJson = (): void => {
@@ -1050,7 +1047,7 @@ export function App(): JSX.Element {
       if (normalized.length === 0) {
         throw new Error("library has no valid part definitions");
       }
-      setPartDefs(normalized);
+      if (!await applyPartDefsChange(() => normalized)) return;
       setEditorDefId(normalized[0].id);
       setEditorDefName(normalized[0].name);
       setEditorNotice("部品ライブラリをインポートしました。");
@@ -1070,7 +1067,7 @@ export function App(): JSX.Element {
       setEditorNotice("部品定義は最低1件必要です。");
       return;
     }
-    setPartDefs((prev) => prev.filter((def) => def.id !== editorDefId));
+    void applyPartDefsChange((prev) => prev.filter((def) => def.id !== editorDefId), "部品を削除しました。");
     if (placeArmedDefId === editorDefId) {
       setPlaceArmedDefId(null);
       setTool("select");
@@ -1079,7 +1076,6 @@ export function App(): JSX.Element {
       const next = partDefs.find((def) => def.id !== editorDefId);
       if (next) setPlaceDefId(next.id);
     }
-    setEditorNotice("部品を削除しました。");
   };
 
   const runDrc = async (): Promise<void> => {
@@ -1094,11 +1090,12 @@ export function App(): JSX.Element {
   };
 
   const exportProjectZip = (): void => {
-    const state = coreStateJsonRef.current;
-    if (!state) return;
     void (async () => {
       try {
-        const blob = await buildProjectZip(state, partDefs);
+        await partDefsUpdateQueueRef.current;
+        const state = coreStateJsonRef.current;
+        if (!state) return;
+        const blob = await buildProjectZip(state, partDefsRef.current);
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         const timestamp = new Date().toISOString().replace(/:/g, "-");
@@ -1117,17 +1114,15 @@ export function App(): JSX.Element {
 
   const importProjectZip = async (file: File): Promise<void> => {
     try {
+      await partDefsUpdateQueueRef.current;
       const packed = await parseProjectZip(file);
-      const parsed = JSON.parse(packed.coreStateJson) as { schema_version?: unknown };
-      if (typeof parsed.schema_version !== "number") {
-        throw new Error("invalid project zip: missing schema_version");
-      }
       const importedPartDefs = packed.partDefs ?? partDefsFromCoreStateJson(packed.coreStateJson);
       if (importedPartDefs.length === 0) {
         throw new Error("invalid project zip: part definitions not found");
       }
 
       const nextState = await replacePartDefsInStateJson(packed.coreStateJson, importedPartDefs);
+      partDefsRef.current = importedPartDefs;
       setPartDefs(importedPartDefs);
       const nextView = extractViewStateFromCoreJson(nextState);
       const preferredNetId = nextView.nets[0]?.id ?? "";
@@ -1145,12 +1140,14 @@ export function App(): JSX.Element {
       setHistoryFuture([]);
       await refreshDrcForState(nextState);
       setCoreError(null);
+      await savePartLibrary(importedPartDefs);
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "import project zip failed");
     }
   };
 
   const undo = async (): Promise<void> => {
+    await partDefsUpdateQueueRef.current;
     const current = coreStateJsonRef.current;
     if (!current || historyPast.length === 0) return;
     const previousEntry = historyPast[historyPast.length - 1];
@@ -1158,12 +1155,16 @@ export function App(): JSX.Element {
     setHistoryFuture((prev) => [
       {
         stateJson: current,
+        partDefs: partDefsRef.current,
         selectedPartId: selectedPartIdRef.current,
         selectedWireId: selectedWireIdRef.current
       },
       ...prev
     ]);
     const view = syncFromCoreState(previousEntry.stateJson);
+    partDefsRef.current = previousEntry.partDefs;
+    setPartDefs(previousEntry.partDefs);
+    await savePartLibrary(previousEntry.partDefs);
     setSelectedPartId(resolveSelectedPartId(view.parts, previousEntry.selectedPartId));
     setSelectedWireId(resolveSelectedWireId(view.wires, previousEntry.selectedWireId));
     setSelectionAnchorGrid(null);
@@ -1177,6 +1178,7 @@ export function App(): JSX.Element {
   };
 
   const redo = async (): Promise<void> => {
+    await partDefsUpdateQueueRef.current;
     const current = coreStateJsonRef.current;
     if (!current || historyFuture.length === 0) return;
     const [nextEntry, ...rest] = historyFuture;
@@ -1185,11 +1187,15 @@ export function App(): JSX.Element {
       ...prev.slice(-99),
       {
         stateJson: current,
+        partDefs: partDefsRef.current,
         selectedPartId: selectedPartIdRef.current,
         selectedWireId: selectedWireIdRef.current
       }
     ]);
     const view = syncFromCoreState(nextEntry.stateJson);
+    partDefsRef.current = nextEntry.partDefs;
+    setPartDefs(nextEntry.partDefs);
+    await savePartLibrary(nextEntry.partDefs);
     setSelectedPartId(resolveSelectedPartId(view.parts, nextEntry.selectedPartId));
     setSelectedWireId(resolveSelectedWireId(view.wires, nextEntry.selectedWireId));
     setSelectionAnchorGrid(null);
@@ -1896,6 +1902,9 @@ export function App(): JSX.Element {
                 }}
               />
             </div>
+            <p className="local-data-note">
+              設計データはこのブラウザー内に保存されます。別のPCへ移す場合は Export ZIP を使ってください。
+            </p>
           </section>
 
           <section className="tool-card part-editor-card">
