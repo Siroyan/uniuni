@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import {
   applyCoreCommandJson,
@@ -735,7 +736,7 @@ export function App(): JSX.Element {
     const state = coreStateJsonRef.current;
     if (!state || !selectedNetId) return;
     const name = netNameDraft.trim();
-    if (!name) return;
+    if (!name || name === selectedNet?.name) return;
     try {
       const nextState = await applyCoreCommandJson(
         state,
@@ -1076,17 +1077,6 @@ export function App(): JSX.Element {
     if (placeDefId === editorDefId) {
       const next = partDefs.find((def) => def.id !== editorDefId);
       if (next) setPlaceDefId(next.id);
-    }
-  };
-
-  const runDrc = async (): Promise<void> => {
-    const state = coreStateJsonRef.current;
-    if (!state) return;
-    try {
-      await refreshDrcForState(state);
-      setCoreError(null);
-    } catch (err) {
-      setCoreError(err instanceof Error ? err.message : "drc failed");
     }
   };
 
@@ -1690,10 +1680,10 @@ export function App(): JSX.Element {
           </section>
 
           <section className="tool-card">
-            <h2 className="card-title">配線とネット</h2>
-            <div className="toolbar-row">
+            <h2 className="card-title">ネット</h2>
+            <div className="toolbar-row net-field-row">
               <label className="net-label" htmlFor="net-select">
-                Net
+                ネット
               </label>
               <select
                 id="net-select"
@@ -1709,96 +1699,121 @@ export function App(): JSX.Element {
                   </option>
                 ))}
               </select>
+              <button type="button" className="btn btn-with-icon" onClick={() => void addNet()}>
+                <ActionIcon name="add" />追加
+              </button>
+            </div>
+            <div className="toolbar-row net-field-row">
+              <label className="net-label" htmlFor="net-name-input">
+                名前
+              </label>
               <input
+                id="net-name-input"
                 type="text"
                 className="net-input"
                 value={netNameDraft}
                 placeholder="Net name"
                 onChange={(event) => setNetNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void renameSelectedNet();
+                  }
+                }}
               />
-              <button type="button" className="btn" onClick={() => void addNet()}>
-                Add Net
-              </button>
               <button
                 type="button"
-                className="btn"
+                className="btn btn-with-icon"
                 onClick={() => void renameSelectedNet()}
-                disabled={!selectedNetId || netNameDraft.trim().length === 0}
+                disabled={!selectedNetId || !netNameDraft.trim() || netNameDraft.trim() === selectedNet?.name}
               >
-                Rename Net
-              </button>
-              <label className="net-label" htmlFor="net-color-input">
-                Color
-              </label>
-              <input
-                id="net-color-input"
-                type="color"
-                className="net-color-input"
-                value={netColorDraft}
-                onChange={(event) => setNetColorDraft(event.target.value)}
-                disabled={!selectedNetId}
-              />
-              <span
-                className="net-color-chip"
-                style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void applySelectedNetColor()}
-                disabled={!selectedNetId}
-              >
-                Apply Color
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void resetSelectedNetColor()}
-                disabled={!selectedNetId || !selectedNet?.color}
-              >
-                Reset Color
+                <ActionIcon name="save" />保存
               </button>
             </div>
+            {selectedPart ? (
+              <div className="toolbar-row net-field-row">
+                <label className="net-label" htmlFor="net-pin-select">
+                  {selectedPart.refdes} のピン
+                </label>
+                <select
+                  id="net-pin-select"
+                  className="net-select"
+                  value={pinNameDraft}
+                  onChange={(event) => setPinNameDraft(event.target.value)}
+                  disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
+                >
+                  {(selectedPartDef?.pins ?? []).map((pin) => (
+                    <option key={pin.name} value={pin.name}>
+                      Pin {pin.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-with-icon"
+                  onClick={() => void assignSelectedPinToNet()}
+                  disabled={!selectedNetId || !pinNameDraft}
+                >
+                  <ActionIcon name="connect" />割り当て
+                </button>
+              </div>
+            ) : null}
+            <details className="net-details">
+              <summary><ActionIcon name="palette" />ネットの色</summary>
+              <div className="toolbar-row net-field-row">
+                <label className="net-label" htmlFor="net-color-input">変更色</label>
+                <input
+                  id="net-color-input"
+                  type="color"
+                  className="net-color-input"
+                  value={netColorDraft}
+                  onChange={(event) => setNetColorDraft(event.target.value)}
+                  disabled={!selectedNetId}
+                />
+                <span className="net-label">現在</span>
+                <span
+                  className="net-color-chip"
+                  title="現在の色"
+                  role="img"
+                  aria-label="現在のネット色"
+                  style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-with-icon"
+                  onClick={() => void applySelectedNetColor()}
+                  disabled={!selectedNetId || netColorDraft === (selectedNet?.color ?? fallbackNetColor(selectedNetId))}
+                >
+                  <ActionIcon name="save" />色を適用
+                </button>
+                {selectedNet?.color ? (
+                  <button
+                    type="button"
+                    className="btn btn-with-icon"
+                    onClick={() => void resetSelectedNetColor()}
+                  >
+                    <ActionIcon name="reset" />既定色に戻す
+                  </button>
+                ) : null}
+              </div>
+            </details>
+          </section>
+
+          <section className="tool-card">
+            <h2 className="card-title">プロジェクト</h2>
             <div className="toolbar-row">
-              <select
-                className="net-select"
-                value={pinNameDraft}
-                onChange={(event) => setPinNameDraft(event.target.value)}
-                disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
-              >
-                {(selectedPartDef?.pins ?? []).map((pin) => (
-                  <option key={pin.name} value={pin.name}>
-                    Pin {pin.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void assignSelectedPinToNet()}
-                disabled={!selectedPart || !selectedNetId || !pinNameDraft}
-              >
-                Assign Pin To Net
-              </button>
-              <button type="button" className="btn" onClick={() => void commitWireDraft()}>
-                Commit Wire
-              </button>
-              <button type="button" className="btn" onClick={() => setWireDraftPath([])}>
-                Cancel Wire
-              </button>
-              <button type="button" className="btn" onClick={() => void runDrc()}>
-                Run DRC
-              </button>
-              <button type="button" className="btn" onClick={exportProjectZip}>
+              <button type="button" className="btn btn-with-icon" onClick={exportProjectZip}>
+                <ActionIcon name="export" />
                 Export ZIP
               </button>
               <button
                 type="button"
-                className="btn"
+                className="btn btn-with-icon"
                 onClick={() => {
                   importInputRef.current?.click();
                 }}
               >
+                <ActionIcon name="import" />
                 Import ZIP
               </button>
               <input

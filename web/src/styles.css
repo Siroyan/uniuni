@@ -247,6 +247,37 @@ body,
   gap: 8px;
 }
 
+.net-field-row {
+  align-items: center;
+}
+
+.net-field-row > .net-select,
+.net-field-row > .net-input {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+
+.net-details {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+}
+
+.net-details summary {
+  color: #2257a8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.net-details summary .action-icon {
+  margin-right: 5px;
+  vertical-align: -3px;
+}
+
+.net-details[open] .net-field-row {
+  margin-top: 10px;
+}
+
 .bridge-badge {
   display: inline-flex;
   align-items: center;
@@ -568,6 +599,19 @@ body,
   cursor: pointer;
   box-shadow: 0 1px 1px rgba(30, 41, 59, 0.04);
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.action-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
 }
 
 .btn.active {

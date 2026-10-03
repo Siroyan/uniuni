@@ -86,6 +86,34 @@ test("狭い画面でも編集領域と設定を操作できる", async ({ page 
   await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
 });
 
+test("ネット欄は必要な操作だけを表示し、名前と色を編集できる", async ({ page }) => {
+  await openApp(page);
+  const netCard = page.locator("section.tool-card").filter({
+    has: page.getByRole("heading", { name: "ネット", exact: true })
+  });
+
+  await expect(netCard.getByRole("button")).toHaveCount(2);
+  await netCard.getByRole("button", { name: "追加" }).click();
+  await netCard.getByRole("textbox", { name: "名前" }).fill("Signal");
+  await netCard.getByRole("textbox", { name: "名前" }).press("Enter");
+  await expect(netCard.locator("#net-select option:checked")).toHaveText("Signal");
+
+  await netCard.locator("summary").click();
+  const applyColor = netCard.getByRole("button", { name: "色を適用" });
+  await expect(applyColor).toBeDisabled();
+  await netCard.locator("#net-color-input").fill("#2357a8");
+  await applyColor.click();
+  await expect(netCard.locator(".net-color-chip")).toHaveCSS("background-color", "rgb(35, 87, 168)");
+  await netCard.getByRole("button", { name: "既定色に戻す" }).click();
+  await expect(netCard.getByRole("button", { name: "既定色に戻す" })).toHaveCount(0);
+
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("Escape");
+  await clickGrid(page, 0, 0);
+  await expect(netCard.getByRole("button", { name: "割り当て" })).toBeVisible();
+});
+
 test("部品を連続配置できる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");
