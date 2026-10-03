@@ -19,6 +19,22 @@ Browser-based universal perfboard CAD (MVP bootstrap).
   - WASM/fallback bridge mode detection + visibility
   - Hit-test priority (`pin -> wire -> occupied`) + Tab candidate cycle
 
+## Dev Container でローカル実行
+
+Docker Desktop（Linux では Docker Engine）、VS Code、Dev Containers 拡張機能を用意する。
+
+1. このリポジトリをローカルに clone し、VS Code でフォルダーを開く。
+2. コマンドパレットから **Dev Containers: Reopen in Container** を実行する。初回は Node 22、Rust、WASM ターゲット、`wasm-bindgen-cli` 0.2.114 のイメージを作成し、`npm ci` を実行するため時間がかかる。
+3. コンテナー内のターミナルで次を実行する。
+
+```bash
+npm run dev -w web -- --host 0.0.0.0
+```
+
+4. VS Code の **ポート** タブで転送された `5173` をブラウザーで開く（通常は `http://localhost:5173`）。画面に `Core: WASM` と表示されれば起動できている。
+
+コンテナー内で `npm run build -w web` と `cd core && cargo check` も実行できる。設計データは開いたブラウザーの IndexedDB に保存される。
+
 ## Local Run
 1. Install dependencies (root workspace):
 ```bash

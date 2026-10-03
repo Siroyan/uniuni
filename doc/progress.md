@@ -2,6 +2,17 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-03 (ローカル用 Dev Container)
+実装内容:
+- Node 22 と Rust stable、WASM ターゲット、`wasm-bindgen-cli` 0.2.114 を含む Dev Container 設定を追加。
+- コンテナー作成時に `npm ci` を実行し、Vite の 5173 番ポートを転送。
+- README に VS Code からの起動・確認手順を追加。
+
+検証:
+- Docker イメージのビルドに成功し、コンテナー内で Node 22、Rust、WASM ターゲット、`wasm-bindgen` 0.2.114 を確認。
+- コンテナー内で `npm ci`、`npm run build -w web`、`cd core && cargo check --locked` が成功。
+- コンテナー内の Vite を 5173 番ポートで起動し、Chromium で `Core: WASM` を確認。
+
 ## 2026-10-03 (GitHub Pages 公開準備)
 実装内容:
 - Vite の base と生成 WASM の読み込みを Pages の `/uniuni/` 配下に対応。
