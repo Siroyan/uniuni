@@ -56,6 +56,36 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("狭い画面でも編集領域と設定を操作できる", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openApp(page);
+
+  const canvas = page.locator("canvas.board-canvas");
+  const assertCanvasSize = async (): Promise<void> => {
+    await expect.poll(() => canvas.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      return {
+        widthGap: Math.abs(element.width - Math.floor(rect.width * scale)),
+        heightGap: Math.abs(element.height - Math.floor(rect.height * scale))
+      };
+    })).toEqual({ widthGap: 0, heightGap: 0 });
+  };
+
+  expect((await canvas.boundingBox())?.height).toBeGreaterThan(350);
+  await assertCanvasSize();
+  await page.getByRole("button", { name: "設定を開く" }).click();
+  await expect(page.getByRole("heading", { name: "基板設定" })).toBeVisible();
+  await assertCanvasSize();
+  await page.getByRole("button", { name: "設定を閉じる" }).click();
+  await assertCanvasSize();
+
+  await page.getByRole("group", { name: "編集ツール" }).getByRole("button", { name: "配置" }).click();
+  await expect(page.getByRole("button", { name: "配置", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await clickGrid(page, 0, 0);
+  await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
+});
+
 test("部品を連続配置できる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");

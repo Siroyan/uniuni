@@ -236,6 +236,7 @@ export function BoardCanvas({
     zoom: 1
   });
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
   const partDefMap = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
   const netColorMap = useMemo(
@@ -249,6 +250,21 @@ export function BoardCanvas({
     }),
     [board.height, board.width]
   );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setCanvasSize((current) =>
+        current.width === width && current.height === height ? current : { width, height }
+      );
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const cache = imageCacheRef.current;
@@ -491,6 +507,7 @@ export function BoardCanvas({
   }, [
     board.height,
     board.width,
+    canvasSize,
     gridMaxWorld.x,
     gridMaxWorld.y,
     hoverGrid,
@@ -502,6 +519,7 @@ export function BoardCanvas({
     placePreviewPart,
     placePreviewValid,
     selectedPartId,
+    selectedWireId,
     viewport,
     wireDraftPath,
     wires

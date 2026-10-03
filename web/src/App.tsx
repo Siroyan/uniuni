@@ -224,6 +224,7 @@ export function App(): JSX.Element {
   const [boardHeightDraft, setBoardHeightDraft] = useState<string>(String(DEFAULT_BOARD.height));
   const [boardPresetId, setBoardPresetId] = useState<BoardPresetId>("custom");
   const [tool, setTool] = useState<ToolMode>("select");
+  const [showSettings, setShowSettings] = useState(false);
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
   const [parts, setParts] = useState<PartInst[]>([]);
@@ -1579,16 +1580,44 @@ export function App(): JSX.Element {
         ? "bridge-badge wasm"
         : "bridge-badge";
   const isCustomBoardPreset = boardPresetId === "custom";
+  const selectedPlaceDef = partDefs.find((def) => def.id === placeDefId);
+  const toolHint = tool === "wire"
+    ? "基板の穴を順に選び、2点以上で配線を確定します。"
+    : tool === "place"
+      ? `${selectedPlaceDef?.name ?? "部品"}を基板に配置します。回転は R キーでも操作できます。`
+      : "部品や配線を選択できます。移動は M キー、回転は R キーです。";
+
+  const activateTool = (nextTool: ToolMode): void => {
+    setTool(nextTool);
+    setMoveArmedPartId(null);
+    setMoveArmedRot(null);
+    if (nextTool === "place" && placeDefId) {
+      setPlaceArmedDefId(placeDefId);
+      setPlaceArmedRot(activeRot);
+    } else {
+      setPlaceArmedDefId(null);
+    }
+    if (nextTool !== "wire") setWireDraftPath([]);
+  };
 
   return (
     <main className="app-root">
-      <aside className="sidebar">
+      <aside className="sidebar" data-expanded={showSettings}>
         <header className="toolbar">
-        <h1>uniuni</h1>
-        <p>
-          Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消 | Tab: 候補選択
-        </p>
-        <div className="toolbar-grid">
+        <div className="app-brand-row">
+          <h1>uniuni</h1>
+          <button
+            type="button"
+            className="btn panel-toggle"
+            aria-expanded={showSettings}
+            aria-controls="settings-panel"
+            onClick={() => setShowSettings((value) => !value)}
+          >
+            {showSettings ? "設定を閉じる" : "設定を開く"}
+          </button>
+        </div>
+        <p>ユニバーサル基板 CAD · 編集内容はこのブラウザーに保存</p>
+        <div id="settings-panel" className="toolbar-grid">
           <section className="tool-card">
             <h2 className="card-title">基板設定</h2>
             <div className="toolbar-row">
@@ -1656,122 +1685,6 @@ export function App(): JSX.Element {
                 disabled={!isCustomBoardPreset}
               >
                 Apply Size
-              </button>
-            </div>
-          </section>
-
-          <section className="tool-card">
-            <h2 className="card-title">編集操作</h2>
-            <div className="toolbar-row">
-              <button
-                type="button"
-                className={tool === "place" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("place");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setWireDraftPath([]);
-              if (placeDefId) {
-                setPlaceArmedDefId(placeDefId);
-                setPlaceArmedRot(activeRot);
-              }
-            }}
-          >
-            Place
-              </button>
-              <button
-                type="button"
-                className={tool === "select" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("select");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setPlaceArmedDefId(null);
-              setWireDraftPath([]);
-            }}
-              >
-                Select
-              </button>
-              <button
-                type="button"
-                className={tool === "wire" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("wire");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setPlaceArmedDefId(null);
-            }}
-              >
-                Wire
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const next = nextRot(activeRot);
-                  setActiveRot(next);
-                  if (placeArmedDefId) {
-                    setPlaceArmedRot(next);
-                  }
-                }}
-              >
-                Rotate Place: {placeArmedDefId ? placeArmedRot : activeRot}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.resistor) ?? partDefs[0];
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm R
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.capacitor);
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm C
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.inductor);
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm L
-              </button>
-              <select
-                className="net-select"
-                value={placeDefId}
-                onChange={(event) => {
-                  const id = event.target.value;
-                  setPlaceDefId(id);
-                  if (tool === "place") {
-                    setPlaceArmedDefId(id);
-                  }
-                }}
-              >
-                {partDefs.map((def) => (
-                  <option key={def.id} value={def.id}>
-                    Place: {def.name}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="btn danger" onClick={handleDeleteSelected}>
-                Delete Selected
-              </button>
-              <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
-                Undo
-              </button>
-              <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
-                Redo
               </button>
             </div>
           </section>
@@ -2325,13 +2238,13 @@ export function App(): JSX.Element {
             />
           </section>
         </div>
-        <div className="toolbar-row">
+        <div className="toolbar-row sidebar-status">
           <span className={coreBridgeBadgeClass}>Core: {coreBridgeLabel}</span>
           <span>DRC Issues: {drcIssues.length}</span>
           {coreError ? <span className="error-text">Error: {coreError}</span> : null}
         </div>
         {drcIssues.length > 0 ? (
-          <div className="toolbar-row">
+          <div className="toolbar-row sidebar-status">
             {drcIssues.slice(0, 3).map((issue, idx) => (
               <span key={`${issue.code}-${idx}`}>
                 [{issue.level}] {issue.code}
@@ -2344,6 +2257,86 @@ export function App(): JSX.Element {
       </aside>
       <section className="main-pane">
         <section className="workspace-pane">
+          <div className="workspace-toolbar">
+            <div className="workspace-tool-group" role="group" aria-label="編集ツール">
+              <button
+                type="button"
+                className={tool === "select" ? "btn active" : "btn"}
+                aria-pressed={tool === "select"}
+                onClick={() => activateTool("select")}
+              >
+                選択
+              </button>
+              <button
+                type="button"
+                className={tool === "place" ? "btn active" : "btn"}
+                aria-pressed={tool === "place"}
+                onClick={() => activateTool("place")}
+              >
+                配置
+              </button>
+              <button
+                type="button"
+                className={tool === "wire" ? "btn active" : "btn"}
+                aria-pressed={tool === "wire"}
+                onClick={() => activateTool("wire")}
+              >
+                配線
+              </button>
+            </div>
+            <label className="workspace-part-picker">
+              <span>部品</span>
+              <select
+                className="net-select"
+                value={placeDefId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setPlaceDefId(id);
+                  if (tool === "place") setPlaceArmedDefId(id);
+                }}
+              >
+                {partDefs.map((def) => (
+                  <option key={def.id} value={def.id}>{def.name}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const next = nextRot(activeRot);
+                setActiveRot(next);
+                if (placeArmedDefId) setPlaceArmedRot(next);
+              }}
+            >
+              配置を回転 · {(placeArmedDefId ? placeArmedRot : activeRot).replace("Deg", "")}°
+            </button>
+            <div className="workspace-actions">
+              {tool === "wire" ? (
+                <>
+                  <button type="button" className="btn" disabled={wireDraftPath.length < 2} onClick={() => void commitWireDraft()}>
+                    配線を確定
+                  </button>
+                  <button type="button" className="btn" disabled={wireDraftPath.length === 0} onClick={() => setWireDraftPath([])}>
+                    取消
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
+                元に戻す
+              </button>
+              <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
+                やり直す
+              </button>
+              <button type="button" className="btn danger" onClick={handleDeleteSelected} disabled={!selectedPartId && !selectedWireId}>
+                削除
+              </button>
+            </div>
+            <div className="workspace-hint" role="status">
+              <span>{toolHint}</span>
+              <span>{selectedPart ? `選択: ${selectedPart.refdes}` : selectedWireId ? "配線を選択中" : ""}</span>
+            </div>
+          </div>
           <BoardCanvas
             board={board}
             parts={parts}
