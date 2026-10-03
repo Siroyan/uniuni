@@ -29,8 +29,19 @@ const PART_DEFS: PartDef[] = [
   }
 ];
 
+function validState(): string {
+  return JSON.stringify({
+    schema_version: 1,
+    board: { width: 64, height: 40, grid_pitch_mm: 2.54 },
+    part_defs: PART_DEFS.map(({ id, name, pins, occupied }) => ({ id, name, pins, occupied })),
+    part_insts: [],
+    nets: [],
+    wires: []
+  });
+}
+
 test("buildProjectZip packages project.json + deduplicated assets", async () => {
-  const coreStateJson = JSON.stringify({ schema_version: 1, board: { width: 64, height: 40, grid_pitch_mm: 2.54 } });
+  const coreStateJson = validState();
   const blob = await buildProjectZip(coreStateJson, PART_DEFS);
 
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
@@ -63,7 +74,7 @@ test("parseProjectZip rejects zip without project.json", async () => {
 
 test("parseProjectZip can read legacy part-library schemaVersion 1", async () => {
   const zip = new JSZip();
-  const coreStateJson = JSON.stringify({ schema_version: 1 });
+  const coreStateJson = validState();
   zip.file("project.json", coreStateJson);
   zip.file(
     "part-library.json",
@@ -78,4 +89,17 @@ test("parseProjectZip can read legacy part-library schemaVersion 1", async () =>
   assert.equal(parsed.coreStateJson, coreStateJson);
   assert.ok(parsed.partDefs);
   assert.equal(parsed.partDefs?.[0].imageDataUrl, DATA_URL);
+});
+
+test("parseProjectZip rejects unsupported schema and invalid board or wire", async () => {
+  for (const change of [
+    { schema_version: 99 },
+    { board: { width: -5, height: 0, grid_pitch_mm: 2.54 } },
+    { wires: [{ id: "33333333-3333-3333-3333-333333333333", net_id: "44444444-4444-4444-4444-444444444444", path: [{ x: -1, y: 0 }, { x: 0, y: 0 }] }] }
+  ]) {
+    const zip = new JSZip();
+    zip.file("project.json", JSON.stringify({ ...JSON.parse(validState()), ...change }));
+    const blob = await zip.generateAsync({ type: "blob" });
+    await assert.rejects(parseProjectZip(blob));
+  }
 });

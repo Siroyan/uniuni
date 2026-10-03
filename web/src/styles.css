@@ -231,6 +231,12 @@ body,
   letter-spacing: 0.02em;
 }
 
+.local-data-note {
+  margin: 0;
+  color: #bfd7f3;
+  font-size: 12px;
+}
+
 .editor-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -445,6 +451,24 @@ body,
   padding: 6px 8px 5px;
   font-size: 12px;
   min-width: 120px;
+}
+
+.net-color-input {
+  width: 36px;
+  height: 28px;
+  border: 1px solid #456082;
+  border-radius: 4px;
+  background: #0f1b2c;
+  padding: 2px;
+}
+
+.net-color-chip {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #5a7599;
+  border-radius: 999px;
+  display: inline-block;
+  align-self: center;
 }
 
 .coord-input {

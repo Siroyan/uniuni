@@ -1,7 +1,7 @@
 # uniuni 実装ガイド（日本語）
 
-最終更新日: 2026-03-12
-対象バージョン: MVP Step1〜Step7 完了時点
+最終更新日: 2026-03-13
+対象バージョン: MVP Step1〜Step7 + 改善実装
 
 ## 1. この文書の位置づけ
 この文書は `uniuni` の実装構造と実装上の判断基準を共有するためのガイドである。
@@ -15,9 +15,11 @@
 MVP Step1〜Step7 は完了している。
 
 実装済みの主要機能:
+- 基板サイズの任意設定と秋月A/B/Cプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
 - Net 追加/改名、Pin への Net 割当
+- Net ごとの配線色カスタマイズ（未設定時は既定パレット）
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 自動保存/復元
@@ -26,6 +28,7 @@ MVP Step1〜Step7 は完了している。
 - ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
 - WASM/Fallback 接続モード表示
 - ヒットテスト優先順位（Pin > Wire > Occupied）と Tab サイクル選択
+- E2E 回帰テスト基盤（Playwright）
 
 ## 3. システム構成
 
@@ -122,11 +125,14 @@ uniuni/
 - `ReplacePartDefs`
 - `AddPartInst`
 - `MovePartInst`
+- `MoveRotatePartInst`
+- `ResizeBoard`
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
 - `DeleteWire`
 - `AssignNetName`
+- `AssignNetColor`
 - `AssignPinToNet`
 
 ### 6.4 主要検証
@@ -141,6 +147,9 @@ uniuni/
   - 最短長（2点以上）
   - 1ステップ Manhattan
   - ボード内
+- Board整合:
+  - 正のサイズのみ許可
+  - 既存部品/配線が盤外になるサイズ変更を拒否
 - `ReplacePartDefs` は失敗時ロールバック
 
 ### 6.5 DRC
@@ -206,14 +215,23 @@ uniuni/
 - Import:
   - `project.json` 必須
   - `part-library schemaVersion: 1/2` 対応
+  - `project.json` のスキーマ、盤面寸法、部品・ネット参照、占有セル、配線経路を復元前に検証
 
 ## 9. Core接続モード（WASM/Fallback）
 
 ### 9.1 判定方針
-- まず `core/pkg/uniuni_core.js` の動的importを試行
+- 開発・本番ビルドの前に `scripts/build-core-wasm.sh` で Rust Core を Web 向けに `web/src/generated/core` へ生成する。Vite が JS と WASM をアセットとして配布する
+- `wasm32-unknown-unknown` ターゲットと `wasm-bindgen-cli` 0.2.114 が必要
+- まず生成した `uniuni_core.js` を動的 import で読み込む
 - 成功時: `wasm`
 - 失敗時: fallback許可なら `fallback`
 - fallback不許可時: 初期化エラー
+
+### 9.3 GitHub Pages とローカルデータ
+- `PAGES_BASE_PATH` を Vite の `base` に適用し、Pages の `/uniuni/` 配下で JS・CSS・WASM を読み込む
+- 編集データと画像は IndexedDB とユーザーがダウンロードする ZIP で扱い、HTTP API に送らない
+- CSP は接続先を同一オリジンに制限し、外部画像・スクリプトも読み込まない
+- `main` への push で Web・Rust・E2E 検証が全て成功したときだけ Pages にデプロイする
 
 ### 9.2 fallback制御
 優先順:
@@ -233,23 +251,37 @@ uniuni/
 ### 10.2 現在の自動テスト
 - `core/src/model.rs`
   - `ReplacePartDefs` の正常/異常/ロールバック
+  - `AssignNetColor` の正常/異常（`#RRGGBB`）/新規Net生成
+  - `ResizeBoard` の正常/異常（既存部品・配線の盤外化）
 - `web/test/coreBridge.test.ts`
   - bridgeのコマンド適用
   - fallback判定
+  - `AssignNetColor` の設定/解除と形式エラー
+  - `ResizeBoard` の設定反映と拒否ケース
 - `web/test/partLibrary.test.ts`
   - 画像アセット分離、重複排除、移行
 - `web/test/projectPackage.test.ts`
   - ZIP構成、互換読込、異常ZIP
 - `web/test/partsSelection.test.ts`
   - ヒット優先順位、候補サイクル
+- `web/e2e/regression.spec.ts`（Playwright）
+  - 部品の連続配置
+  - 手動配線の確定
+  - Pin優先選択 + Tabサイクルによる候補切替
 
 ### 10.3 実行コマンド
 ```bash
 npm run test -w web
 npm run build -w web
+npm run e2e:install -w web
+npm run test:e2e -w web
 cd core && cargo check
 cd core && cargo test
 ```
+
+補足:
+- Linux 環境では Playwright のブラウザ実行に追加ライブラリが必要な場合がある。
+- 依存不足時は `npx playwright install-deps chromium` で導入する（権限が必要）。
 
 ## 11. 変更時チェックリスト
 - `core` の検証責務を壊していないか
@@ -261,10 +293,26 @@ cd core && cargo test
 
 ## 12. 今後の改善候補
 - ZIP Importの進捗表示とエラー詳細化
-- E2Eテスト整備（主要ショートカット、配置・配線回帰）
+- E2Eテスト拡充（ネット編集、Part Editor操作、Import/Export回帰）
 - 大規模データ時の描画/ヒットテスト性能最適化
 
-## 13. 参照
+## 13. CI運用
+- GitHub Actions: `.github/workflows/ci.yml`
+- 実行ジョブ:
+  - `web unit + build`
+    - `npm ci`
+    - `npm run test -w web`
+    - `npm run build -w web`
+  - `core check + test`
+    - `cd core && cargo check`
+    - `cd core && cargo test`
+  - `web e2e regression`
+    - `npm ci`
+    - `npx playwright install --with-deps chromium`
+    - `npm run test:e2e -w web`
+    - 失敗時を含め `web/playwright-report` と `web/test-results` を artifact 保存
+
+## 14. 参照
 - 仕様: [specification_ja.md](./specification_ja.md)
 - 進捗: [progress.md](./progress.md)
 - 利用方法: [README.md](../README.md)

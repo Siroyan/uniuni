@@ -26,6 +26,8 @@ pub struct Wire {
 pub struct Net {
     pub id: Uuid,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,10 +91,28 @@ impl Default for ProjectState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
-    ReplacePartDefs { part_defs: Vec<PartDef> },
-    CommitWire { net_id: Uuid, path: Vec<GridPt> },
-    DeleteWire { wire_id: Uuid },
-    AssignNetName { net_id: Uuid, name: String },
+    ReplacePartDefs {
+        part_defs: Vec<PartDef>,
+    },
+    CommitWire {
+        net_id: Uuid,
+        path: Vec<GridPt>,
+    },
+    DeleteWire {
+        wire_id: Uuid,
+    },
+    ResizeBoard {
+        width: i32,
+        height: i32,
+    },
+    AssignNetName {
+        net_id: Uuid,
+        name: String,
+    },
+    AssignNetColor {
+        net_id: Uuid,
+        color: Option<String>,
+    },
     AssignPinToNet {
         part_id: Uuid,
         pin_name: String,
@@ -107,6 +127,11 @@ pub enum Command {
     MovePartInst {
         part_id: Uuid,
         to: GridPt,
+    },
+    MoveRotatePartInst {
+        part_id: Uuid,
+        to: GridPt,
+        rot: Rot,
     },
     RotatePartInst {
         part_id: Uuid,
@@ -178,6 +203,19 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             state.part_insts[index].at = to;
             Ok(())
         }
+        Command::MoveRotatePartInst { part_id, to, rot } => {
+            let Some(index) = state.part_insts.iter().position(|part| part.id == part_id) else {
+                return Err("part instance not found".to_owned());
+            };
+            let part = state.part_insts[index].clone();
+            let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+                return Err("part definition not found".to_owned());
+            };
+            validate_part_placement(state, part_def, part.id, to, rot)?;
+            state.part_insts[index].at = to;
+            state.part_insts[index].rot = rot;
+            Ok(())
+        }
         Command::RotatePartInst { part_id, rot } => {
             let Some(index) = state.part_insts.iter().position(|part| part.id == part_id) else {
                 return Err("part instance not found".to_owned());
@@ -217,12 +255,64 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             }
             Ok(())
         }
+        Command::ResizeBoard { width, height } => {
+            if width < 1 || height < 1 {
+                return Err("board size must be positive".to_owned());
+            }
+            let resized = Board {
+                grid_pitch_mm: state.board.grid_pitch_mm,
+                width,
+                height,
+            };
+
+            for wire in &state.wires {
+                for pt in &wire.path {
+                    if !is_inside_board(&resized, *pt) {
+                        return Err("board resize would place wire outside board".to_owned());
+                    }
+                }
+            }
+
+            for part in &state.part_insts {
+                let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id)
+                else {
+                    return Err("part definition not found".to_owned());
+                };
+                for occ in absolute_occupied_points(part_def, part.at, part.rot) {
+                    if !is_inside_board(&resized, occ) {
+                        return Err("board resize would place part outside board".to_owned());
+                    }
+                }
+            }
+
+            state.board = resized;
+            Ok(())
+        }
         Command::AssignNetName { net_id, name } => {
             if let Some(net) = state.nets.iter_mut().find(|n| n.id == net_id) {
                 net.name = name;
                 return Ok(());
             }
-            state.nets.push(Net { id: net_id, name });
+            state.nets.push(Net {
+                id: net_id,
+                name,
+                color: None,
+            });
+            Ok(())
+        }
+        Command::AssignNetColor { net_id, color } => {
+            if let Some(value) = color.as_deref() {
+                validate_net_color(value)?;
+            }
+            if let Some(net) = state.nets.iter_mut().find(|n| n.id == net_id) {
+                net.color = color;
+                return Ok(());
+            }
+            state.nets.push(Net {
+                id: net_id,
+                name: default_net_name(net_id),
+                color,
+            });
             Ok(())
         }
         Command::AssignPinToNet {
@@ -422,10 +512,7 @@ fn validate_part_defs(part_defs: &[PartDef]) -> Result<(), String> {
         for pin in &def.pins {
             let normalized_pin_name = pin.name.trim();
             if normalized_pin_name.is_empty() {
-                return Err(format!(
-                    "pin name is empty in part definition {}",
-                    def.id
-                ));
+                return Err(format!("pin name is empty in part definition {}", def.id));
             }
             if !pin_names.insert(normalized_pin_name.to_owned()) {
                 return Err(format!(
@@ -499,6 +586,17 @@ fn validate_wire_inside_board(state: &ProjectState, path: &[GridPt]) -> Result<(
     Ok(())
 }
 
+fn validate_net_color(color: &str) -> Result<(), String> {
+    let bytes = color.as_bytes();
+    if bytes.len() != 7 || bytes[0] != b'#' {
+        return Err("net color must be #RRGGBB".to_owned());
+    }
+    if bytes[1..].iter().all(|ch| ch.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    Err("net color must be #RRGGBB".to_owned())
+}
+
 fn absolute_occupied_points(part_def: &PartDef, at: GridPt, rot: Rot) -> Vec<GridPt> {
     part_def
         .occupied
@@ -541,6 +639,7 @@ fn ensure_net_exists(state: &mut ProjectState, net_id: Uuid) {
     state.nets.push(Net {
         id: net_id,
         name: default_net_name(net_id),
+        color: None,
     });
 }
 
@@ -595,6 +694,7 @@ mod tests {
             nets: vec![Net {
                 id: net_id,
                 name: "N-1".to_owned(),
+                color: None,
             }],
             wires: Vec::new(),
         }
@@ -725,6 +825,147 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.expect_err("must fail").contains("outside board"));
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn assign_net_color_updates_existing_net() {
+        let mut state = test_state();
+        let net_id = state.nets[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id,
+                color: Some("#12Ab9F".to_owned()),
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.nets[0].color.as_deref(), Some("#12Ab9F"));
+    }
+
+    #[test]
+    fn assign_net_color_rejects_invalid_format() {
+        let mut state = test_state();
+        let before_json = as_json(&state);
+        let net_id = state.nets[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id,
+                color: Some("red".to_owned()),
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result.expect_err("must fail").contains("#RRGGBB"));
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn assign_net_color_creates_missing_net() {
+        let mut state = test_state();
+        let new_net_id = uuid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        let result = apply_command(
+            &mut state,
+            Command::AssignNetColor {
+                net_id: new_net_id,
+                color: Some("#00cc88".to_owned()),
+            },
+        );
+
+        assert!(result.is_ok());
+        let net = state
+            .nets
+            .iter()
+            .find(|net| net.id == new_net_id)
+            .expect("net should be created");
+        assert_eq!(net.name, "N-aaaaaaaa");
+        assert_eq!(net.color.as_deref(), Some("#00cc88"));
+    }
+
+    #[test]
+    fn move_rotate_part_inst_applies_position_and_rotation_together() {
+        let mut state = test_state();
+        let part_id = state.part_insts[0].id;
+
+        let result = apply_command(
+            &mut state,
+            Command::MoveRotatePartInst {
+                part_id,
+                to: GridPt { x: 4, y: 2 },
+                rot: Rot::Deg90,
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.part_insts[0].at, GridPt { x: 4, y: 2 });
+        assert!(matches!(state.part_insts[0].rot, Rot::Deg90));
+    }
+
+    #[test]
+    fn resize_board_updates_dimensions_when_all_objects_fit() {
+        let mut state = test_state();
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 80,
+                height: 50,
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(state.board.width, 80);
+        assert_eq!(state.board.height, 50);
+    }
+
+    #[test]
+    fn resize_board_rejects_when_part_would_be_outside() {
+        let mut state = test_state();
+        state.part_insts[0].at = GridPt { x: 10, y: 0 };
+        let before_json = as_json(&state);
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 5,
+                height: 5,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("part outside board"));
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn resize_board_rejects_when_wire_would_be_outside() {
+        let mut state = test_state();
+        state.wires.push(Wire {
+            id: uuid("44444444-4444-4444-4444-444444444444"),
+            net_id: state.nets[0].id,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 20, y: 0 }],
+        });
+        let before_json = as_json(&state);
+
+        let result = apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 8,
+                height: 8,
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("must fail")
+            .contains("wire outside board"));
         assert_eq!(as_json(&state), before_json);
     }
 }

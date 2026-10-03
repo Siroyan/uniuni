@@ -2,6 +2,138 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-03 (GitHub Pages 公開準備)
+実装内容:
+- Vite の base と生成 WASM の読み込みを Pages の `/uniuni/` 配下に対応。
+- 画像の data URL をブラウザー内で Blob に変換し、外部送信を伴わない IndexedDB 保存を維持。
+- Content Security Policy で外部通信先を許可せず、ブラウザー内保存と ZIP バックアップを README に記載。
+- GitHub Actions の既存 CI が全件成功した場合だけ `main` の成果物を Pages にデプロイ。
+- Pages 配下のプレビューと外部通信がないことを E2E で検証。
+
+検証:
+- `npm run test -w web`、`cargo check --locked`、`PAGES_BASE_PATH=/uniuni/ npm run build -w web` 成功。
+- Chromium で通常の開発サーバーと `/uniuni/` 配下の本番プレビューを各6件確認。
+
+
+## 2026-10-02 (dev レビューの高優先度課題を修正)
+実装内容:
+- 標準の Web 開発・本番ビルドで Rust Core の WASM を生成・配布し、CI と手順書にも依存ツールを明記。
+- fallback の配線盤面境界チェックと DRC の部品衝突・配線部品衝突・未接続 Pin 検出を Rust Core に合わせた。
+- 部品定義編集を Core 検証後に確定し、Undo/Redo、保存、ZIP 出力で定義とプロジェクトの組を維持。
+- ZIP・IndexedDB 復元時にプロジェクトスキーマと構造、参照、盤面境界、占有、配線経路を検証。
+- WASM 動作、編集拒否、ZIP 拒否の回帰テストを追加。
+
+検証:
+- `npm run test -w web`、`npm run build -w web`、`cargo check --locked`、`cargo test --locked` 成功。
+- Chromium の E2E 5 件成功。開発サーバーで `Core: WASM` を確認。
+
+
+## 2026-03-13 (Step8着手: 自動回帰化基盤)
+実装内容:
+- `dev` から `feature/step8-e2e-regression` を作成し、Draft PR を作成。
+- Playwright を導入し、E2E 回帰テスト基盤を追加。
+  - `web/playwright.config.ts` を追加
+  - `web/e2e/regression.spec.ts` を追加
+  - `web/package.json` に E2E 実行スクリプトを追加
+    - `test:e2e`, `test:e2e:headed`, `test:e2e:ui`, `e2e:install`
+  - `.gitignore` に `web/playwright-report`, `web/test-results` を追加
+- 回帰シナリオ（初版）を追加。
+  - 部品の連続配置
+  - 手動配線の確定
+  - Pin優先選択 + Tab サイクルによる候補切替
+- ドキュメント更新。
+  - `README.md` に E2E 実行手順を追記
+  - `doc/implementation_guide_ja.md` に E2E 基盤と実行前提を追記
+- CI を追加し、自動回帰化を GitHub Actions に組み込み。
+  - `.github/workflows/ci.yml` を追加
+  - `web unit + build` / `core check + test` / `web e2e regression` の3ジョブを定義
+  - E2E ジョブで Playwright report / trace を artifact 保存
+
+検証:
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+- `npm run test:e2e -w web` は環境依存ライブラリ不足（`libnspr4.so`）で未通過
+  - `npx playwright install chromium` 実行済み
+  - `npx playwright install-deps chromium` は権限要件（sudoパスワード）により本環境で未実施
+
+## 2026-03-13 (基板境界表示の補正)
+実装内容:
+- CAD描画で、基板境界を「最外周グリッドの半ピッチ外側」に表示するよう修正。
+  - 境界線上に配線しているように見える表示を解消
+  - グリッド描画範囲を有効グリッド点の範囲に合わせて調整
+- 基板プリセットの Cタイプを `25 x 15` grid に補正。
+- 基板プリセットの Aタイプ表記を公式寸法に合わせて `155x114mm` に補正。
+
+検証:
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+
+## 2026-03-13 (基板サイズ任意設定 + 秋月A/B/Cプリセット)
+実装内容:
+- 基板サイズ変更用コマンドを `core` に追加。
+  - `ResizeBoard { width, height }`
+  - `width/height` は正整数のみ許可
+  - 変更後に既存 Wire 点や Part occupied が盤外になる場合は拒否
+- `web` に基板サイズ変更UIを追加。
+  - 任意の `Width/Height` を入力して `Apply Size`
+  - 秋月 `A/B/C` プリセットを選択して `Apply Preset`
+  - 現在のグリッドサイズと mm 相当値を表示
+- fallback bridge に `ResizeBoard` を追加し、WASM未使用時でも同挙動を保証。
+- `extractViewStateFromCoreJson` で `board` を返すよう拡張し、UI側の board state と同期。
+- テストを追加。
+  - `core/src/model.rs`: `ResizeBoard` の正常系/部品盤外/配線盤外
+  - `web/test/coreBridge.test.ts`: fallback での `ResizeBoard` 成功/拒否
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
+## 2026-03-13 (M移動中の回転が配置時に失われる不具合修正)
+実装内容:
+- 移動中プレビューの最終姿勢をそのまま確定できるよう `core` に `MoveRotatePartInst` コマンドを追加。
+  - `part_id`, `to`, `rot` を同時に受け取り、単一検証で配置を確定
+- `web` 側を `MoveRotatePartInst` 利用へ切替。
+  - `M` で持ち上げ中に `R` で変更した回転が、クリック配置後にも保持されるよう修正
+- fallback bridge にも `MoveRotatePartInst` を追加し、WASM未使用時でも同挙動を保証。
+- テストを追加。
+  - `core/src/model.rs`: `MoveRotatePartInst` の同時適用テスト
+  - `web/test/coreBridge.test.ts`: fallback 経由で位置+回転が同時反映されることを検証
+
+検証:
+- `cd core && cargo test` 成功
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
+## 2026-03-13 (ネットごとの配線色カスタマイズ)
+実装内容:
+- ネットに配線色を保持できるよう `core` のドメインを拡張。
+  - `Net` に `color: Option<String>` を追加
+  - `AssignNetColor { net_id, color }` コマンドを追加
+  - 色文字列は `#RRGGBB` 形式のみ許可（不正値は拒否）
+- `web` の Core bridge/fallback を拡張。
+  - `AssignNetColor` コマンドを追加
+  - fallback 実装でも色検証を実施
+  - state 変換時に `Net.color` を UI に反映
+- 配線描画をネット色対応に変更。
+  - `BoardCanvas` で `Net.color` 指定時はその色を優先
+  - 未指定時は既存のハッシュ色パレットを継続使用
+- サイドバーの「配線とネット」UIを拡張。
+  - Net color picker を追加
+  - `Apply Color` で設定、`Reset Color` で既定色（未設定）に戻す操作を追加
+- テストを追加。
+  - `core/src/model.rs`: `AssignNetColor` の正常系/異常系/新規Net生成を検証
+  - `web/test/coreBridge.test.ts`: fallback 経由の色設定/解除と不正値拒否を検証
+
+検証:
+- `cd core && cargo test` 成功（7件 pass）
+- `npm run test -w web` 成功
+- `npm run build -w web` 成功
+- `cd core && cargo check` 成功
+
 ## 2026-03-12 (`impl_brief.md` 廃止)
 実装内容:
 - `doc/impl_brief.md` を削除。

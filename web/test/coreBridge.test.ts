@@ -3,8 +3,13 @@ import test from "node:test";
 import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
+  commandAssignNetColorJson,
+  commandCommitWireJson,
+  commandMoveRotatePartInstJson,
+  commandResizeBoardJson,
   commandReplacePartDefsJson,
-  detectCoreBridgeMode
+  detectCoreBridgeMode,
+  runCoreDrcJson
 } from "../src/coreBridge";
 import type { Rot } from "../src/types";
 
@@ -28,7 +33,7 @@ type CoreState = {
     refdes: string;
     net_assign: Record<string, string>;
   }>;
-  nets: Array<{ id: string; name: string }>;
+  nets: Array<{ id: string; name: string; color?: string | null }>;
   wires: Array<{ id: string; net_id: string; path: CoreGridPt[] }>;
 };
 
@@ -58,7 +63,7 @@ function baseState(): CoreState {
         net_assign: { "1": NET_ID }
       }
     ],
-    nets: [{ id: NET_ID, name: "N-1" }],
+    nets: [{ id: NET_ID, name: "N-1", color: null }],
     wires: []
   };
 }
@@ -67,6 +72,28 @@ test("bridge mode is fallback when wasm package is unavailable in test runtime",
   __resetCoreRuntimeForTest();
   const mode = await detectCoreBridgeMode();
   assert.equal(mode, "fallback");
+});
+
+test("fallback rejects a wire outside the board", async () => {
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(baseState()), commandCommitWireJson(NET_ID, [{ x: -1, y: 0 }, { x: 0, y: 0 }])),
+    /outside board/
+  );
+});
+
+test("fallback DRC reports occupied wire points and unconnected pins", async () => {
+  const state = baseState();
+  state.part_defs[0].occupied.push({ x: 1, y: 0 });
+  state.wires.push({ id: "44444444-4444-4444-4444-444444444444", net_id: NET_ID, path: [{ x: 1, y: 0 }, { x: 2, y: 0 }] });
+  const issues = JSON.parse(await runCoreDrcJson(JSON.stringify(state))) as Array<{ code: string }>;
+  assert.deepEqual(new Set(issues.map((issue) => issue.code)), new Set(["WIRE_PART_COLLISION", "UNCONNECTED_PIN"]));
+});
+
+test("fallback DRC reports invalid part occupancy", async () => {
+  const state = baseState();
+  state.part_insts.push({ ...state.part_insts[0], id: "55555555-5555-5555-5555-555555555555" });
+  const issues = JSON.parse(await runCoreDrcJson(JSON.stringify(state))) as Array<{ code: string }>;
+  assert.ok(issues.some((issue) => issue.code === "PART_COLLISION"));
 });
 
 test("bridge can disable fallback via env", async () => {
@@ -181,5 +208,58 @@ test("bridge ReplacePartDefs rejects updates that create part collisions", async
   await assert.rejects(
     applyCoreCommandJson(JSON.stringify(state), cmd),
     /part-part occupancy collision/
+  );
+});
+
+test("bridge AssignNetColor can set and clear net color", async () => {
+  const state = baseState();
+  const withColorJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandAssignNetColorJson(NET_ID, "#00cc88")
+  );
+  const withColor = JSON.parse(withColorJson) as CoreState;
+  assert.equal(withColor.nets[0].color, "#00cc88");
+
+  const clearedJson = await applyCoreCommandJson(
+    withColorJson,
+    commandAssignNetColorJson(NET_ID, null)
+  );
+  const cleared = JSON.parse(clearedJson) as CoreState;
+  assert.equal(cleared.nets[0].color, null);
+});
+
+test("bridge AssignNetColor rejects invalid color format", async () => {
+  const state = baseState();
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandAssignNetColorJson(NET_ID, "red")),
+    /#RRGGBB/
+  );
+});
+
+test("bridge MoveRotatePartInst applies target position and rotation together", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandMoveRotatePartInstJson(PART_ID, { x: 5, y: 4 }, "Deg90")
+  );
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.deepEqual(next.part_insts[0].at, { x: 5, y: 4 });
+  assert.equal(next.part_insts[0].rot, "Deg90");
+});
+
+test("bridge ResizeBoard updates board size when existing objects fit", async () => {
+  const state = baseState();
+  const nextJson = await applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(80, 50));
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.equal(next.board.width, 80);
+  assert.equal(next.board.height, 50);
+});
+
+test("bridge ResizeBoard rejects when part would be outside board", async () => {
+  const state = baseState();
+  state.part_insts[0].at = { x: 10, y: 0 };
+  await assert.rejects(
+    applyCoreCommandJson(JSON.stringify(state), commandResizeBoardJson(5, 5)),
+    /part outside board/
   );
 });
