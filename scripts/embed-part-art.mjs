@@ -10,7 +10,13 @@ const names = [
   "pin-header-1x2",
   "pin-header-1x3",
   "pin-header-1x4",
-  "pin-header-2x3"
+  "pin-header-2x3",
+  "diode-axial",
+  "led-5mm",
+  "transistor-to-92",
+  "dip-8-ic",
+  "terminal-block-2p",
+  "push-button-2p"
 ];
 
 const entries = await Promise.all(names.map(async (name) => {

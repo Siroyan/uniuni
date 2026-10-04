@@ -83,7 +83,7 @@ test("部品サイズのドット絵を描いて登録し、再読込とZIPへ�
   await expect(editor.getByRole("button", { name: "部品画像に登録" })).toBeEnabled();
 });
 
-test("旧ライブラリには7種類の絵を一度だけ追加し、利用者の画像削除を維持する", async ({ page }) => {
+test("旧ライブラリには初期部品の絵を一度だけ追加し、利用者の画像削除を維持する", async ({ page }) => {
   await page.goto("./");
   await expect(page.getByText(/Core: WASM/)).toBeVisible();
   const [download] = await Promise.all([
@@ -111,7 +111,7 @@ test("旧ライブラリには7種類の絵を一度だけ追加し、利用者�
   }, project.part_defs);
 
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(7);
+  await expect(page.locator(".part-card img")).toHaveCount(13);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await editor.getByRole("button", { name: "Clear Image" }).click();
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveCount(0);
@@ -126,7 +126,59 @@ test("旧ライブラリには7種類の絵を一度だけ追加し、利用者�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([2, null]);
+  })).toEqual([3, null]);
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(6);
+  await expect(page.locator(".part-card img")).toHaveCount(12);
+});
+
+test("画像付きの旧カタログには新しい6部品だけを追加し、後の削除を維持する", async ({ page }) => {
+  await page.goto("./");
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const sources = await page.locator(".part-card img").evaluateAll((images) =>
+    images.map((image) => (image as HTMLImageElement).src)
+  );
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const directory = await mkdtemp(path.join(tmpdir(), "uniuni-catalog-v2-"));
+  const downloaded = path.join(directory, "project.zip");
+  await download.saveAs(downloaded);
+  const zip = await JSZip.loadAsync(await readFile(downloaded));
+  const project = JSON.parse(await zip.file("project.json")!.async("string")) as { part_defs: object[] };
+  await page.evaluate(async ({ defs, images }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({
+        schemaVersion: 2,
+        builtInCatalogVersion: 2,
+        partDefs: defs.map((def, index) => ({
+          ...def,
+          imageDataUrl: images[index === 0 ? 1 : index],
+          imagePixelated: true
+        }))
+      }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { defs: project.part_defs.slice(0, 7), images: sources });
+
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("13 items");
+  await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveAttribute("src", sources[1]);
+  for (const name of ["Diode Axial", "LED 5mm", "Transistor TO-92", "DIP-8 IC", "Terminal Block 2P", "Push Button 2P"]) {
+    await expect(page.locator(".part-card").filter({ hasText: name }).locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+  }
+  await page.getByRole("complementary", { name: "Part Editor" }).locator("select.net-select").first()
+    .selectOption({ label: "Push Button 2P" });
+  await page.getByRole("complementary", { name: "Part Editor" }).getByRole("button", { name: "Delete Part" }).click();
+  await expect(page.locator(".library-header span")).toHaveText("12 items");
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("12 items");
 });

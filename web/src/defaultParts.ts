@@ -46,6 +46,107 @@ export const pinHeaderPartDefs: PartDef[] = [
   )
 ];
 
+function occupiedRectangle(width: number, height: number): GridPt[] {
+  return Array.from({ length: width * height }, (_, index) => ({
+    x: index % width,
+    y: Math.floor(index / width)
+  }));
+}
+
+export const additionalPartDefs: PartDef[] = [
+  {
+    id: "a9bf042c-20cf-429a-97e3-14aaac011571",
+    name: "Diode Axial",
+    pins: [
+      { name: "A", pos: { x: 0, y: 0 } },
+      { name: "K", pos: { x: 2, y: 0 } }
+    ],
+    occupied: occupiedRectangle(3, 1),
+    imageDataUrl: builtInPartArt["diode-axial"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "25da8655-cbdc-4221-b7c3-6c13bde21d75",
+    name: "LED 5mm",
+    pins: [
+      { name: "A", pos: { x: 0, y: 1 } },
+      { name: "K", pos: { x: 1, y: 1 } }
+    ],
+    occupied: occupiedRectangle(2, 2),
+    imageDataUrl: builtInPartArt["led-5mm"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "8acc092b-3960-46cb-b0f2-0995cc01a107",
+    name: "Transistor TO-92",
+    pins: [
+      { name: "1", pos: { x: 0, y: 1 } },
+      { name: "2", pos: { x: 1, y: 1 } },
+      { name: "3", pos: { x: 2, y: 1 } }
+    ],
+    occupied: occupiedRectangle(3, 2),
+    imageDataUrl: builtInPartArt["transistor-to-92"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "ac18d4fc-a392-4a23-9783-787704df3e09",
+    name: "DIP-8 IC",
+    pins: [
+      { name: "1", pos: { x: 0, y: 0 } },
+      { name: "2", pos: { x: 0, y: 1 } },
+      { name: "3", pos: { x: 0, y: 2 } },
+      { name: "4", pos: { x: 0, y: 3 } },
+      { name: "5", pos: { x: 3, y: 3 } },
+      { name: "6", pos: { x: 3, y: 2 } },
+      { name: "7", pos: { x: 3, y: 1 } },
+      { name: "8", pos: { x: 3, y: 0 } }
+    ],
+    occupied: occupiedRectangle(4, 4),
+    imageDataUrl: builtInPartArt["dip-8-ic"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "53000741-8a21-48a3-92c3-22fdb3769ff5",
+    name: "Terminal Block 2P",
+    pins: [
+      { name: "1", pos: { x: 0, y: 1 } },
+      { name: "2", pos: { x: 2, y: 1 } }
+    ],
+    occupied: occupiedRectangle(3, 2),
+    imageDataUrl: builtInPartArt["terminal-block-2p"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "fb6a0559-572f-4f65-a3e9-3f6f8029aa26",
+    name: "Push Button 2P",
+    pins: [
+      { name: "1", pos: { x: 0, y: 1 } },
+      { name: "2", pos: { x: 2, y: 1 } }
+    ],
+    occupied: occupiedRectangle(3, 3),
+    imageDataUrl: builtInPartArt["push-button-2p"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  }
+];
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -89,7 +190,8 @@ export const defaultPartDefs: PartDef[] = [
     imageOffsetX: 0,
     imageOffsetY: 0
   },
-  ...pinHeaderPartDefs
+  ...pinHeaderPartDefs,
+  ...additionalPartDefs
 ];
 
 export function addBuiltInArtwork(existing: PartDef[]): PartDef[] {
@@ -107,8 +209,16 @@ export function addBuiltInArtwork(existing: PartDef[]): PartDef[] {
 }
 
 export function addMissingPinHeaders(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, pinHeaderPartDefs);
+}
+
+export function addMissingAdditionalParts(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, additionalPartDefs);
+}
+
+function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {
   const ids = new Set(existing.map((def) => def.id));
   const names = new Set(existing.map((def) => def.name));
-  const added = pinHeaderPartDefs.filter((def) => !ids.has(def.id) && !names.has(def.name));
+  const added = candidates.filter((def) => !ids.has(def.id) && !names.has(def.name));
   return added.length > 0 ? [...existing, ...added] : existing;
 }

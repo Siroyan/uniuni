@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingPinHeaders, defaultPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingPinHeaders, additionalPartDefs, defaultPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
 
-test("all seven built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 7);
+test("all 13 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 13);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -15,6 +15,39 @@ test("all seven built-in drawings match their footprints and source PNGs", () =>
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("additional part pins follow the intended 2.54 mm hole patterns", () => {
+  assert.deepEqual(additionalPartDefs.map((def) => [def.name, def.pins.length]), [
+    ["Diode Axial", 2],
+    ["LED 5mm", 2],
+    ["Transistor TO-92", 3],
+    ["DIP-8 IC", 8],
+    ["Terminal Block 2P", 2],
+    ["Push Button 2P", 2]
+  ]);
+  assert.deepEqual(additionalPartDefs[0].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["A", 0, 0], ["K", 2, 0]]);
+  assert.deepEqual(additionalPartDefs[1].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["A", 0, 1], ["K", 1, 1]]);
+  assert.deepEqual(additionalPartDefs[3].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
+    ["1", 0, 0], ["2", 0, 1], ["3", 0, 2], ["4", 0, 3],
+    ["5", 3, 3], ["6", 3, 2], ["7", 3, 1], ["8", 3, 0]
+  ]);
+  assert.deepEqual(additionalPartDefs[4].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[0, 1], [2, 1]]);
+  assert.deepEqual(additionalPartDefs[5].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[0, 1], [2, 1]]);
+});
+
+test("new catalog parts append once without replacing matching names or IDs", () => {
+  const customized = { ...additionalPartDefs[0], name: "My Diode" };
+  const sameName = { ...additionalPartDefs[1], id: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb" };
+  const existing = [...defaultPartDefs.slice(0, 7), customized, sameName];
+  const merged = addMissingAdditionalParts(existing);
+
+  assert.equal(merged[7], customized);
+  assert.equal(merged[8], sameName);
+  assert.deepEqual(merged.slice(9).map((def) => def.name), [
+    "Transistor TO-92", "DIP-8 IC", "Terminal Block 2P", "Push Button 2P"
+  ]);
+  assert.equal(addMissingAdditionalParts(merged), merged);
 });
 
 test("art migration only fills unmodified built-ins without existing images", () => {

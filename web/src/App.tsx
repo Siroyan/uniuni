@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingPinHeaders, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingPinHeaders, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
@@ -73,6 +73,12 @@ const defPrefixById: Record<string, string> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "C",
   "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L",
+  "a9bf042c-20cf-429a-97e3-14aaac011571": "D",
+  "25da8655-cbdc-4221-b7c3-6c13bde21d75": "D",
+  "8acc092b-3960-46cb-b0f2-0995cc01a107": "Q",
+  "ac18d4fc-a392-4a23-9783-787704df3e09": "U",
+  "53000741-8a21-48a3-92c3-22fdb3769ff5": "J",
+  "fb6a0559-572f-4f65-a3e9-3f6f8029aa26": "SW",
   ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"]))
 };
 
@@ -431,6 +437,7 @@ export function App(): JSX.Element {
             effectivePartDefs = library.partDefs;
             if (catalogVersion < 1) effectivePartDefs = addMissingPinHeaders(effectivePartDefs);
             if (catalogVersion < 2) effectivePartDefs = addBuiltInArtwork(effectivePartDefs);
+            if (catalogVersion < 3) effectivePartDefs = addMissingAdditionalParts(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
