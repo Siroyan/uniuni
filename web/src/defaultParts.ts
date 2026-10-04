@@ -1,5 +1,6 @@
 import type { GridPt, PartDef } from "./types";
 import { builtInPartArt } from "./builtInPartArt";
+import { partCategory } from "./partCategories";
 
 function pinHeader(id: string, name: string, positions: GridPt[], art: string): PartDef {
   return {
@@ -217,6 +218,61 @@ export const nextPartDefs: PartDef[] = [
   }
 ];
 
+function illustratedPart(
+  id: string, name: string, pins: PartDef["pins"], width: number, height: number, imageDataUrl: string
+): PartDef {
+  return {
+    id, name, pins, occupied: occupiedRectangle(width, height), imageDataUrl,
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  };
+}
+
+export const newestPartDefs: PartDef[] = [
+  illustratedPart(
+    "799559c3-a49b-4905-9b85-777aa4a982c8", "Capacitor Ceramic Disc",
+    [{ name: "1", pos: { x: 0, y: 1 } }, { name: "2", pos: { x: 1, y: 1 } }],
+    2, 2, builtInPartArt["capacitor-ceramic-disc"]
+  ),
+  illustratedPart(
+    "3ef2adda-02f1-4d21-b0ad-f817993c004e", "Fuse Axial",
+    [{ name: "1", pos: { x: 0, y: 0 } }, { name: "2", pos: { x: 3, y: 0 } }],
+    4, 1, builtInPartArt["fuse-axial"]
+  ),
+  illustratedPart(
+    "97c4076e-3a81-4a7a-8db7-f187e0157358", "Photoresistor Radial",
+    [{ name: "1", pos: { x: 0, y: 1 } }, { name: "2", pos: { x: 1, y: 1 } }],
+    2, 2, builtInPartArt["photoresistor-radial"]
+  ),
+  illustratedPart(
+    "008e51b2-6271-4c03-9dac-dc235fe15175", "RGB LED 4-pin",
+    Array.from({ length: 4 }, (_, x) => ({ name: String(x + 1), pos: { x, y: 1 } })),
+    4, 2, builtInPartArt["rgb-led-4-pin"]
+  ),
+  illustratedPart(
+    "6a69eb4c-d4a1-4121-b5fd-44a0a34ea986", "DIP-16 IC",
+    [
+      ...Array.from({ length: 8 }, (_, y) => ({ name: String(y + 1), pos: { x: 0, y } })),
+      ...Array.from({ length: 8 }, (_, index) => ({ name: String(index + 9), pos: { x: 3, y: 7 - index } }))
+    ],
+    4, 8, builtInPartArt["dip-16-ic"]
+  ),
+  pinHeader(
+    "3b359d03-cea0-4e3c-a187-fe737dd8d800", "Pin Header 2x5",
+    Array.from({ length: 10 }, (_, index) => ({ x: index % 2, y: Math.floor(index / 2) })),
+    builtInPartArt["pin-header-2x5"]
+  ),
+  illustratedPart(
+    "78bdfa3c-df5d-4247-bbc9-9feeb9f0a96b", "Buzzer 2P",
+    [{ name: "+", pos: { x: 0, y: 2 } }, { name: "-", pos: { x: 2, y: 2 } }],
+    3, 3, builtInPartArt["buzzer-2p"]
+  ),
+  illustratedPart(
+    "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb", "Terminal Block 4P",
+    [0, 2, 4, 6].map((x, index) => ({ name: String(index + 1), pos: { x, y: 1 } })),
+    7, 2, builtInPartArt["terminal-block-4p"]
+  )
+].map((def) => ({ ...def, category: partCategory(def) }));
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -262,8 +318,9 @@ export const defaultPartDefs: PartDef[] = [
   },
   ...pinHeaderPartDefs,
   ...additionalPartDefs,
-  ...nextPartDefs
-];
+  ...nextPartDefs,
+  ...newestPartDefs
+].map((def) => ({ ...def, category: partCategory(def) }));
 
 const oldRadialCapacitorArt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC";
 
@@ -310,6 +367,10 @@ export function addMissingAdditionalParts(existing: PartDef[]): PartDef[] {
 
 export function addMissingNextParts(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, nextPartDefs);
+}
+
+export function addMissingNewestParts(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, newestPartDefs);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

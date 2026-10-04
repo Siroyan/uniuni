@@ -1,10 +1,11 @@
 import type { PartDef } from "./types";
+import { isPartCategory } from "./partCategories";
 
 const DB_NAME = "uniuni-db";
 const STORE_NAME = "part_library";
 const KEY = "default_library";
 const ASSET_PREFIX = "asset:";
-export const BUILT_IN_CATALOG_VERSION = 4;
+export const BUILT_IN_CATALOG_VERSION = 5;
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
   imageDataUrl?: string | null;
@@ -161,6 +162,7 @@ async function expandSnapshotV2(db: IDBDatabase, snapshot: LibrarySnapshotV2): P
   return snapshot.partDefs.map((def) => ({
     id: def.id,
     name: def.name,
+    ...(isPartCategory(def.category) ? { category: def.category } : {}),
     pins: def.pins,
     occupied: def.occupied,
     imageScale: def.imageScale,

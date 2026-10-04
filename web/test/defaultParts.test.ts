@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, nextPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+import { categorizeParts, partCategory } from "../src/partCategories";
+import type { PartDef } from "../src/types";
 
-test("all 19 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 19);
+test("all 27 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 27);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -15,6 +17,38 @@ test("all 19 built-in drawings match their footprints and source PNGs", () => {
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("eight newest parts have 2.54 mm hole patterns and categories", () => {
+  assert.deepEqual(newestPartDefs.map((def) => [def.name, def.pins.length, partCategory(def)]), [
+    ["Capacitor Ceramic Disc", 2, "passive"], ["Fuse Axial", 2, "other"],
+    ["Photoresistor Radial", 2, "passive"], ["RGB LED 4-pin", 4, "semiconductor"],
+    ["DIP-16 IC", 16, "ic"], ["Pin Header 2x5", 10, "connector"],
+    ["Buzzer 2P", 2, "other"], ["Terminal Block 4P", 4, "connector"]
+  ]);
+  assert.deepEqual(newestPartDefs[4].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
+    ...Array.from({ length: 8 }, (_, y) => [String(y + 1), 0, y]),
+    ...Array.from({ length: 8 }, (_, index) => [String(index + 9), 3, 7 - index])
+  ]);
+  assert.deepEqual(newestPartDefs[5].pins.map((pin) => [pin.pos.x, pin.pos.y]),
+    Array.from({ length: 10 }, (_, index) => [index % 2, Math.floor(index / 2)]));
+  assert.deepEqual(newestPartDefs[7].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[0, 1], [2, 1], [4, 1], [6, 1]]);
+  const existing = defaultPartDefs.slice(0, 19);
+  const merged = addMissingNewestParts(existing);
+  assert.equal(merged.length, 27);
+  assert.equal(addMissingNewestParts(merged), merged);
+});
+
+test("category migration keeps user choices and assigns old built-ins", () => {
+  const older: PartDef[] = defaultPartDefs.slice(0, 19).map((def) => ({ ...def, category: undefined }));
+  older[0].category = "other";
+  const custom = { ...older[0], id: "99999999-9999-4999-9999-999999999999", category: undefined };
+  const categorized = categorizeParts([...older, custom]);
+  assert.equal(categorized[0].category, "other");
+  assert.equal(categorized[1].category, "passive");
+  assert.equal(categorized[3].category, "connector");
+  assert.equal(categorized.at(-1)?.category, "other");
+  assert.equal(categorizeParts(categorized), categorized);
 });
 
 test("six new footprints follow the hole grid and pin order", () => {

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNextParts, addMissingPinHeaders, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
+import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
@@ -33,7 +34,7 @@ import { BUILT_IN_CATALOG_VERSION, loadPartLibraryWithVersion, savePartLibrary }
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import { validateProjectStateJson } from "./projectStateValidation";
-import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
+import type { Board, DrcIssue, GridPt, Net, PartCategory, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 import type { HitCandidate } from "./parts";
 
 const DEFAULT_BOARD: Board = {
@@ -85,6 +86,14 @@ const defPrefixById: Record<string, string> = {
   "4bb91cd4-5cee-4cc1-97b4-e75305b5f101": "SW",
   "cf3f301b-1aef-407a-8335-dbd07b0a833c": "J",
   "28adb8b0-79cf-4e9f-8ad5-6b71855fefc1": "RV",
+  "799559c3-a49b-4905-9b85-777aa4a982c8": "C",
+  "3ef2adda-02f1-4d21-b0ad-f817993c004e": "F",
+  "97c4076e-3a81-4a7a-8db7-f187e0157358": "R",
+  "008e51b2-6271-4c03-9dac-dc235fe15175": "D",
+  "6a69eb4c-d4a1-4121-b5fd-44a0a34ea986": "U",
+  "3b359d03-cea0-4e3c-a187-fe737dd8d800": "J",
+  "78bdfa3c-df5d-4247-bbc9-9feeb9f0a96b": "BZ",
+  "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb": "J",
   ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"]))
 };
 
@@ -174,6 +183,7 @@ function partDefsFromCoreStateJson(stateJson: string): PartDef[] {
         name: def.name,
         pins,
         occupied,
+        category: partCategory({ id: def.id }),
         imageDataUrl: null,
         imageScale: 1,
         imageOffsetX: 0,
@@ -192,6 +202,7 @@ export function App(): JSX.Element {
   const [showSettings, setShowSettings] = useState(false);
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
+  const [libraryCategory, setLibraryCategory] = useState<PartCategory | "all">("all");
   const [parts, setParts] = useState<PartInst[]>([]);
   const [wires, setWires] = useState<Wire[]>([]);
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
@@ -237,6 +248,16 @@ export function App(): JSX.Element {
   const partLibraryInputRef = useRef<HTMLInputElement | null>(null);
 
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
+  const partGroups = useMemo(() => PART_CATEGORIES
+    .map((category) => ({ ...category, parts: partDefs.filter((def) => partCategory(def) === category.id) }))
+    .filter((category) => category.parts.length > 0), [partDefs]);
+  const libraryGroups = partGroups.filter((category) => libraryCategory === "all" || libraryCategory === category.id);
+
+  useEffect(() => {
+    if (libraryCategory !== "all" && !partDefs.some((def) => partCategory(def) === libraryCategory)) {
+      setLibraryCategory("all");
+    }
+  }, [libraryCategory, partDefs]);
   const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
   const imageScaleSlider = Math.min(4, Math.max(0.1, Number(editorImageScale) || 1));
   const imageOffsetXSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetX) || 0));
@@ -447,6 +468,10 @@ export function App(): JSX.Element {
             if (catalogVersion < 4) {
               effectivePartDefs = correctBuiltInArtwork(effectivePartDefs);
               effectivePartDefs = addMissingNextParts(effectivePartDefs);
+            }
+            if (catalogVersion < 5) {
+              effectivePartDefs = addMissingNewestParts(effectivePartDefs);
+              effectivePartDefs = categorizeParts(effectivePartDefs);
             }
           }
         } catch (err) {
@@ -973,6 +998,7 @@ export function App(): JSX.Element {
     const nextDef: PartDef = {
       id: nextId,
       name: baseName,
+      category: "other",
       pins: [{ name: "1", pos: { x: 0, y: 0 } }],
       occupied: [{ x: 0, y: 0 }],
       imageDataUrl: null,
@@ -1043,6 +1069,7 @@ export function App(): JSX.Element {
           return {
             id: def.id,
             name: def.name,
+            category: isPartCategory(def.category) ? def.category : partCategory({ id: def.id }),
             pins,
             occupied,
             imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null,
@@ -1811,7 +1838,7 @@ export function App(): JSX.Element {
           <section className="tool-card">
             <h2 className="card-title">プロジェクト</h2>
             <div className="toolbar-row">
-              <button type="button" className="btn btn-with-icon" onClick={exportProjectZip}>
+              <button type="button" className="btn btn-with-icon" onClick={exportProjectZip} disabled={!coreStateJson}>
                 <ActionIcon name="export" />
                 Export ZIP
               </button>
@@ -1901,9 +1928,9 @@ export function App(): JSX.Element {
                   if (tool === "place") setPlaceArmedDefId(id);
                 }}
               >
-                {partDefs.map((def) => (
-                  <option key={def.id} value={def.id}>{def.name}</option>
-                ))}
+                {partGroups.map((category) => <optgroup key={category.id} label={category.label}>
+                  {category.parts.map((def) => <option key={def.id} value={def.id}>{def.name}</option>)}
+                </optgroup>)}
               </select>
             </label>
             <button
@@ -1965,8 +1992,23 @@ export function App(): JSX.Element {
             <h2>部品ライブラリ</h2>
             <span>{partDefs.length} items</span>
           </header>
+          <div className="library-filters" role="group" aria-label="部品カテゴリ">
+            <button type="button" className="library-filter" aria-pressed={libraryCategory === "all"}
+              onClick={() => setLibraryCategory("all")}>すべて</button>
+            {partGroups.map((category) => {
+              return (
+                <button key={category.id} type="button" className="library-filter"
+                  aria-pressed={libraryCategory === category.id}
+                  onClick={() => setLibraryCategory(category.id)}>
+                  {category.label} <span>{category.parts.length}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="library-list">
-            {partDefs.map((def) => {
+            {libraryGroups.map((category) => <section className="library-category" key={category.id} aria-label={category.label}>
+              <h3>{category.label} <span>{category.parts.length}</span></h3>
+              <div className="library-category-items">{category.parts.map((def) => {
               const armed = placeArmedDefId === def.id && tool === "place";
               return (
                 <button
@@ -1989,7 +2031,8 @@ export function App(): JSX.Element {
                   </div>
                 </button>
               );
-            })}
+              })}</div>
+            </section>)}
           </div>
         </section>
       </section>
@@ -2139,11 +2182,9 @@ export function App(): JSX.Element {
               value={editorDefId}
               onChange={(event) => setEditorDefId(event.target.value)}
             >
-              {partDefs.map((def) => (
-                <option key={def.id} value={def.id}>
-                  {def.name}
-                </option>
-              ))}
+              {partGroups.map((category) => <optgroup key={category.id} label={category.label}>
+                {category.parts.map((def) => <option key={def.id} value={def.id}>{def.name}</option>)}
+              </optgroup>)}
             </select>
             <input
               type="text"
@@ -2162,6 +2203,21 @@ export function App(): JSX.Element {
               Delete Part
             </button>
           </div>
+          {editorDef ? (
+            <label className="part-category-editor">カテゴリ
+              <select className="net-select" value={partCategory(editorDef)}
+                onChange={(event) => {
+                  const category = event.target.value;
+                  if (!isPartCategory(category)) return;
+                  void applyPartDefsChange(
+                    (prev) => prev.map((def) => def.id === editorDefId ? { ...def, category } : def),
+                    "部品カテゴリを更新しました。"
+                  );
+                }}>
+                {PART_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+              </select>
+            </label>
+          ) : null}
           {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
           <div className="editor-grid">
             <div className="editor-block">

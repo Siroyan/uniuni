@@ -22,7 +22,15 @@ const names = [
   "dip-14-ic",
   "slide-switch-spdt",
   "terminal-block-3p",
-  "trimmer-3p-inline"
+  "trimmer-3p-inline",
+  "capacitor-ceramic-disc",
+  "fuse-axial",
+  "photoresistor-radial",
+  "rgb-led-4-pin",
+  "dip-16-ic",
+  "pin-header-2x5",
+  "buzzer-2p",
+  "terminal-block-4p"
 ];
 
 const entries = await Promise.all(names.map(async (name) => {

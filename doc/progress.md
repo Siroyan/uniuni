@@ -2,6 +2,17 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-04 (初期部品を27種類へ拡充し、カテゴリ表示を追加)
+実装内容:
+- Capacitor Ceramic Disc、Fuse Axial、Photoresistor Radial、RGB LED 4-pin、DIP-16 IC、Pin Header 2x5、Buzzer 2P、Terminal Block 4Pを追加。穴中心にリード・端子を合わせたドット絵を制作した。
+- ライブラリを6カテゴリの見出しで区切り、カテゴリボタンから絞り込めるようにした。配置ツールとPart Editorの部品選択メニューもカテゴリ別に表示し、Part Editorからカテゴリ変更できる。
+- カタログv5移行で不足する8部品と旧ライブラリのカテゴリを補完。利用者が変更・削除した部品と画像を維持する。
+- [全部品の画像一覧](./built-in-part-art.png)を更新。
+
+検証:
+- Dev Containerの `npm run build -w web`、Webユニットテスト5件、Chromium E2E全19件が成功。新部品の配置、カテゴリの絞り込み・変更・再読込・ZIP保存を確認。
+- カタログ移行中にZIP出力を押しても反応しない状態を防ぐため、初期化完了までExportボタンを無効化した。
+
 ## 2026-10-04 (初期部品を19種類へ拡充し、穴位置に合わせて画像を補正)
 実装内容:
 - Capacitor Electrolytic、TO-220 3-pin、DIP-14 IC、Slide Switch SPDT、Terminal Block 3P、Trimmer 3P Inlineを追加し、各リード・端子を基板の穴中心へ合わせたドット絵を制作。

@@ -129,7 +129,7 @@ test("部品を連続配置できる", async ({ page }) => {
 test("ピンヘッダーを選んで配置できる", async ({ page }) => {
   await openApp(page);
   const library = await exportProject(page);
-  expect(library.part_defs).toHaveLength(19);
+  expect(library.part_defs).toHaveLength(27);
   const header = library.part_defs.find((def) => def.name === "Pin Header 2x3");
   expect(header?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
     ["1", 0, 0], ["2", 1, 0],
@@ -206,6 +206,65 @@ test("新しい6種類を画像付きで配置できる", async ({ page }) => {
   ]);
 });
 
+test("カテゴリで部品を絞り込み、Part Editorの変更をZIPと再読込へ保存できる", async ({ page }) => {
+  await openApp(page);
+  const filters = page.getByRole("group", { name: "部品カテゴリ" });
+  await expect(page.locator(".library-category")).toHaveCount(6);
+  await expect(page.locator(".part-card")).toHaveCount(27);
+  await filters.getByRole("button", { name: /IC 3/ }).click();
+  await expect(page.locator(".part-card")).toHaveCount(3);
+  await expect(page.locator(".part-card").filter({ hasText: "DIP-16 IC" })).toBeVisible();
+
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: "DIP-16 IC" });
+  await editor.getByLabel("カテゴリ").selectOption("passive");
+  await expect(page.locator(".part-card")).toHaveCount(2);
+  await filters.getByRole("button", { name: /受動部品 8/ }).click();
+  await expect(page.locator(".part-card").filter({ hasText: "DIP-16 IC" })).toBeVisible();
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const tempDir = await mkdtemp(path.join(tmpdir(), "uniuni-category-"));
+  const filePath = path.join(tempDir, "project.zip");
+  await download.saveAs(filePath);
+  const zip = await JSZip.loadAsync(await readFile(filePath));
+  const library = JSON.parse(await zip.file("part-library.json")!.async("string")) as {
+    partDefs: Array<{ name: string; category?: string }>;
+  };
+  expect(library.partDefs.find((def) => def.name === "DIP-16 IC")?.category).toBe("passive");
+  await page.reload();
+  await expect(editor.getByLabel("カテゴリ")).toHaveValue("passive");
+});
+
+test("さらに追加した8種類を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const newParts = [
+    { name: "Capacitor Ceramic Disc", refdes: "C1", at: [0, 5] },
+    { name: "Fuse Axial", refdes: "F1", at: [5, 5] },
+    { name: "Photoresistor Radial", refdes: "R1", at: [12, 5] },
+    { name: "RGB LED 4-pin", refdes: "D1", at: [18, 5] },
+    { name: "DIP-16 IC", refdes: "U1", at: [0, 13] },
+    { name: "Pin Header 2x5", refdes: "J1", at: [6, 13] },
+    { name: "Buzzer 2P", refdes: "BZ1", at: [11, 13] },
+    { name: "Terminal Block 4P", refdes: "J2", at: [16, 13] }
+  ] as const;
+  for (const part of newParts) {
+    const card = page.locator(".part-card").filter({ hasText: part.name });
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await card.click();
+    await clickGrid(page, part.at[0], part.at[1]);
+    await expect(page.locator(".workspace-hint span").last()).toHaveText(`選択: ${part.refdes}`);
+  }
+  const project = await exportProject(page);
+  expect(project.part_insts).toHaveLength(8);
+  const defsById = new Map(project.part_defs.map((def) => [def.id, def]));
+  expect(project.part_insts.map((inst) => [defsById.get(inst.def_id)?.name, inst.refdes])).toEqual(
+    newParts.map((part) => [part.name, part.refdes])
+  );
+});
+
 test("古い部品ライブラリへ一度だけ追加し、後の削除を維持する", async ({ page }) => {
   await openApp(page);
   const oldDefs = (await exportProject(page)).part_defs.slice(0, 3);
@@ -225,16 +284,16 @@ test("古い部品ライブラリへ一度だけ追加し、後の削除を維�
   }, oldDefs);
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("19 items");
+  await expect(page.locator(".library-header span")).toHaveText("27 items");
   const migrated = await exportProject(page);
   expect(migrated.part_defs.slice(0, 3).map((def) => def.id)).toEqual(oldDefs.map((def) => def.id));
 
   await page.locator(".editor-sidebar select.net-select").first()
     .selectOption({ label: "Pin Header 1x2" });
   await page.locator(".editor-sidebar").getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("18 items");
+  await expect(page.locator(".library-header span")).toHaveText("26 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("18 items");
+  await expect(page.locator(".library-header span")).toHaveText("26 items");
   expect((await exportProject(page)).part_defs.some((def) => def.name === "Pin Header 1x2")).toBe(false);
 });
 
@@ -315,7 +374,7 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
-  expect(project.part_defs).toHaveLength(19);
+  expect(project.part_defs).toHaveLength(27);
 });
 
 test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {
