@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
+import { addMissingPinHeaders, pinHeaderPartDefs } from "./defaultParts";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
@@ -27,7 +28,7 @@ import {
   nextHitCandidateIndex,
   nextRot
 } from "./parts";
-import { loadPartLibrary, savePartLibrary } from "./partLibrary";
+import { BUILT_IN_CATALOG_VERSION, loadPartLibraryWithVersion, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import { validateProjectStateJson } from "./projectStateValidation";
@@ -115,13 +116,15 @@ const defaultPartDefs: PartDef[] = [
     imageScale: 1,
     imageOffsetX: 0,
     imageOffsetY: 0
-  }
+  },
+  ...pinHeaderPartDefs
 ];
 
 const defPrefixById: Record<string, string> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "C",
-  "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L"
+  "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L",
+  ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"]))
 };
 
 const builtInPartIds = {
@@ -454,6 +457,7 @@ export function App(): JSX.Element {
         err instanceof Error && err.message ? err.message : String(err);
 
       let effectivePartDefs: PartDef[] = defaultPartDefs;
+      let saveUpdatedCatalog = false;
       let bridgeMode: "wasm" | "fallback" = "fallback";
 
       try {
@@ -467,8 +471,13 @@ export function App(): JSX.Element {
         }
 
         try {
-          const library = await loadPartLibrary();
-          effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+          const library = await loadPartLibraryWithVersion();
+          if (library && library.partDefs.length > 0) {
+            saveUpdatedCatalog = library.builtInCatalogVersion < BUILT_IN_CATALOG_VERSION;
+            effectivePartDefs = saveUpdatedCatalog
+              ? addMissingPinHeaders(library.partDefs)
+              : library.partDefs;
+          }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
         }
@@ -507,6 +516,14 @@ export function App(): JSX.Element {
           }
         } else {
           nextState = await createFreshState();
+        }
+        if (cancelled) return;
+        if (saveUpdatedCatalog) {
+          try {
+            await savePartLibrary(effectivePartDefs);
+          } catch (err) {
+            warnings.push(`追加部品の保存に失敗: ${asMessage(err)}`);
+          }
         }
         if (cancelled) return;
         partDefsRef.current = effectivePartDefs;

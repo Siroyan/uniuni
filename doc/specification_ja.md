@@ -89,7 +89,7 @@
 
 ## 6. 初期状態
 - 初期ネット: `N-1` を1件生成
-- 初期PartDef: 3件（Resistor Axial / Capacitor Radial / Inductor Axial）
+- 初期PartDef: 7件（Resistor Axial / Capacitor Radial / Inductor Axial / Pin Header 1x2・1x3・1x4・2x3）
 - 初期回転: `Deg0`
 - 初期ツール: `select`
 
@@ -105,6 +105,17 @@
 3. Inductor Axial
 - pins: `(0,0)`, `(3,0)`
 - occupied: `(0,0)`, `(1,0)`, `(2,0)`, `(3,0)`
+
+4. Pin Header 1x2 / 1x3 / 1x4
+- 2.54 mmピッチで縦一列に配置し、上からPin `1..N` を付ける
+- pinsとoccupied: `(0,0)` から `(0,N-1)`
+
+5. Pin Header 2x3
+- 2.54 mmピッチで2列3行に配置する
+- pins: `1=(0,0)`, `2=(1,0)`, `3=(0,1)`, `4=(1,1)`, `5=(0,2)`, `6=(1,2)`
+- occupied: すべてのPin位置
+
+保存済みの古い部品ライブラリには、新しいピンヘッダーを一度だけ追加する。既存部品のID・名前・編集内容を優先し、後から利用者が削除した部品は再追加しない。
 
 ## 7. 操作モード仕様
 

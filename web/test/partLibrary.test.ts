@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { IDBKeyRange as fakeIDBKeyRange, indexedDB as fakeIndexedDB } from "fake-indexeddb";
-import { loadPartLibrary, savePartLibrary } from "../src/partLibrary";
+import { addMissingPinHeaders, pinHeaderPartDefs } from "../src/defaultParts";
+import { BUILT_IN_CATALOG_VERSION, loadPartLibrary, loadPartLibraryWithVersion, savePartLibrary } from "../src/partLibrary";
 import type { PartDef } from "../src/types";
 
 const DB_NAME = "uniuni-db";
@@ -226,4 +227,25 @@ test("load migrates schemaVersion 2 inline data-url records to asset references"
 
   const keys = await listLibraryKeys();
   assert.equal(keys.filter((k) => k.startsWith("asset:")).length, 1);
+});
+
+test("catalog update adds new headers once and preserves later deletions", async () => {
+  await saveRawSnapshot({ schemaVersion: 2, partDefs: buildPartDefs(null) });
+  const oldLibrary = await loadPartLibraryWithVersion();
+  assert.ok(oldLibrary);
+  assert.equal(oldLibrary.builtInCatalogVersion, 0);
+
+  await savePartLibrary(addMissingPinHeaders(oldLibrary.partDefs));
+  const updated = await loadPartLibraryWithVersion();
+  assert.ok(updated);
+  assert.equal(updated.builtInCatalogVersion, BUILT_IN_CATALOG_VERSION);
+  assert.equal(updated.partDefs.length, 6);
+  assert.deepEqual(updated.partDefs.slice(0, 2), buildPartDefs(null));
+
+  const removedId = pinHeaderPartDefs[0].id;
+  await savePartLibrary(updated.partDefs.filter((def) => def.id !== removedId));
+  const afterDeletion = await loadPartLibraryWithVersion();
+  assert.ok(afterDeletion);
+  assert.equal(afterDeletion.builtInCatalogVersion, BUILT_IN_CATALOG_VERSION);
+  assert.ok(!afterDeletion.partDefs.some((def) => def.id === removedId));
 });

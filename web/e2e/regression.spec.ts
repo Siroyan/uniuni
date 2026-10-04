@@ -5,8 +5,8 @@ import path from "node:path";
 import JSZip from "jszip";
 
 type ExportedProject = {
-  part_defs: Array<{ occupied: unknown[] }>;
-  part_insts: Array<{ net_assign: Record<string, string> }>;
+  part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: unknown[] }>;
+  part_insts: Array<{ def_id: string; refdes: string; net_assign: Record<string, string> }>;
   wires: Array<{ net_id: string; path: unknown[] }>;
 };
 
@@ -126,6 +126,56 @@ test("部品を連続配置できる", async ({ page }) => {
   expect(project.part_insts.length).toBe(2);
 });
 
+test("ピンヘッダーを選んで配置できる", async ({ page }) => {
+  await openApp(page);
+  const library = await exportProject(page);
+  expect(library.part_defs).toHaveLength(7);
+  const header = library.part_defs.find((def) => def.name === "Pin Header 2x3");
+  expect(header?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
+    ["1", 0, 0], ["2", 1, 0],
+    ["3", 0, 1], ["4", 1, 1],
+    ["5", 0, 2], ["6", 1, 2]
+  ]);
+
+  await page.locator(".part-card").filter({ hasText: "Pin Header 2x3" }).click();
+  await clickGrid(page, 0, 0);
+  const project = await exportProject(page);
+  expect(project.part_insts[0]?.def_id).toBe(header?.id);
+  expect(project.part_insts[0]?.refdes).toBe("J1");
+});
+
+test("古い部品ライブラリへ一度だけ追加し、後の削除を維持する", async ({ page }) => {
+  await openApp(page);
+  const oldDefs = (await exportProject(page)).part_defs.slice(0, 3);
+  await page.evaluate(async (defs) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, partDefs: defs }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, oldDefs);
+
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("7 items");
+  const migrated = await exportProject(page);
+  expect(migrated.part_defs.slice(0, 3).map((def) => def.id)).toEqual(oldDefs.map((def) => def.id));
+
+  await page.locator(".editor-sidebar select.net-select").first()
+    .selectOption({ label: "Pin Header 1x2" });
+  await page.locator(".editor-sidebar").getByRole("button", { name: "Delete Part" }).click();
+  await expect(page.locator(".library-header span")).toHaveText("6 items");
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("6 items");
+  expect((await exportProject(page)).part_defs.some((def) => def.name === "Pin Header 1x2")).toBe(false);
+});
+
 test("手動配線を確定できる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");
@@ -203,7 +253,7 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
-  expect(project.part_defs).toHaveLength(3);
+  expect(project.part_defs).toHaveLength(7);
 });
 
 test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {

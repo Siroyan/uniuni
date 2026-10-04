@@ -4,6 +4,7 @@ const DB_NAME = "uniuni-db";
 const STORE_NAME = "part_library";
 const KEY = "default_library";
 const ASSET_PREFIX = "asset:";
+export const BUILT_IN_CATALOG_VERSION = 1;
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
   imageDataUrl?: string | null;
@@ -18,9 +19,15 @@ type LibrarySnapshotV1 = {
 type LibrarySnapshotV2 = {
   schemaVersion: 2;
   partDefs: PersistedPartDef[];
+  builtInCatalogVersion?: number;
 };
 
 type LibrarySnapshot = LibrarySnapshotV1 | LibrarySnapshotV2;
+
+export type LoadedPartLibrary = {
+  partDefs: PartDef[];
+  builtInCatalogVersion: number;
+};
 
 function openDb(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -244,7 +251,7 @@ function cleanupUnusedAssets(db: IDBDatabase, usedAssetIds: Set<string>): Promis
   });
 }
 
-export async function loadPartLibrary(): Promise<PartDef[] | null> {
+export async function loadPartLibraryWithVersion(): Promise<LoadedPartLibrary | null> {
   const db = await openDbEnsuringStore();
   try {
     const snapshot = await loadRawSnapshot(db);
@@ -252,6 +259,11 @@ export async function loadPartLibrary(): Promise<PartDef[] | null> {
 
     let partDefs: PartDef[];
     let migrationNeeded = false;
+    const builtInCatalogVersion = snapshot.schemaVersion === 2
+      && Number.isInteger(snapshot.builtInCatalogVersion)
+      && (snapshot.builtInCatalogVersion ?? 0) >= 0
+      ? snapshot.builtInCatalogVersion ?? 0
+      : 0;
 
     if (snapshot.schemaVersion === 1) {
       partDefs = snapshot.partDefs;
@@ -269,17 +281,22 @@ export async function loadPartLibrary(): Promise<PartDef[] | null> {
         db,
         {
           schemaVersion: 2,
-          partDefs: persistedDefs
+          partDefs: persistedDefs,
+          builtInCatalogVersion
         },
         assetBlobs
       );
       await cleanupUnusedAssets(db, usedAssetIds);
     }
 
-    return partDefs;
+    return { partDefs, builtInCatalogVersion };
   } finally {
     db.close();
   }
+}
+
+export async function loadPartLibrary(): Promise<PartDef[] | null> {
+  return (await loadPartLibraryWithVersion())?.partDefs ?? null;
 }
 
 export async function savePartLibrary(partDefs: PartDef[]): Promise<void> {
@@ -291,7 +308,8 @@ export async function savePartLibrary(partDefs: PartDef[]): Promise<void> {
       db,
       {
         schemaVersion: 2,
-        partDefs: persistedDefs
+        partDefs: persistedDefs,
+        builtInCatalogVersion: BUILT_IN_CATALOG_VERSION
       },
       assetBlobs
     );
