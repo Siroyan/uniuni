@@ -4,7 +4,7 @@ const DB_NAME = "uniuni-db";
 const STORE_NAME = "part_library";
 const KEY = "default_library";
 const ASSET_PREFIX = "asset:";
-export const BUILT_IN_CATALOG_VERSION = 1;
+export const BUILT_IN_CATALOG_VERSION = 2;
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
   imageDataUrl?: string | null;
@@ -166,7 +166,7 @@ async function expandSnapshotV2(db: IDBDatabase, snapshot: LibrarySnapshotV2): P
     imageScale: def.imageScale,
     imageOffsetX: def.imageOffsetX,
     imageOffsetY: def.imageOffsetY,
-    imagePixelated: def.imagePixelated === true,
+    ...(def.imagePixelated === true ? { imagePixelated: true } : {}),
     imageDataUrl:
       typeof def.imageDataUrl === "string"
         ? def.imageDataUrl

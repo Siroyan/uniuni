@@ -80,7 +80,7 @@ uniuni/
 
 ### 5.1 起動フロー
 1. `detectCoreBridgeMode()` で `wasm/fallback` 判定
-2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）。古い組み込みカタログは、保存済みの部品を残してピンヘッダーを一度だけ追加
+2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）。組み込みカタログv0にはピンヘッダー、v0/v1には未設定の初期部品画像を一度だけ追加
 3. スナップショット読込
 4. スナップショットがあれば PartDef 差し替え適用
 5. 復元失敗時は新規 state を作成して起動継続
@@ -181,6 +181,11 @@ uniuni/
 - Occupiedの外接範囲から、1穴あたり8×8ドットの描画領域を生成
 - 描画中はローカルなピクセル配列を更新し、登録時だけ透明PNGのdata URLを生成
 - 登録は既存のPartDef更新フローを使い、IndexedDBとZIP画像アセットへ保存
+
+### 7.2.2 初期部品の画像
+- 原画は `web/src/assets/parts/*.png`、表示用のdata URLは `web/src/builtInPartArt.ts` に置く
+- 原画を更新したら `node scripts/embed-part-art.mjs` でdata URLを再生成する
+- `defaultParts.ts` が初期画像と旧ライブラリへの一度限りの追加を管理する
 
 ### 7.3 `parts.ts`
 - 幾何計算:

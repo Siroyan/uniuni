@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addMissingPinHeaders, pinHeaderPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingPinHeaders, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
@@ -68,58 +68,6 @@ const AKIZUKI_BOARD_PRESETS = [
   }
 ] as const;
 type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
-
-const defaultPartDefs: PartDef[] = [
-  {
-    id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
-    name: "Resistor Axial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 2, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  },
-  {
-    id: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
-    name: "Capacitor Radial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 1, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  },
-  {
-    id: "01d260e9-ea3a-488f-9e8a-031ca0d679ce",
-    name: "Inductor Axial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 3, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 },
-      { x: 3, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  },
-  ...pinHeaderPartDefs
-];
 
 const defPrefixById: Record<string, string> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
@@ -478,10 +426,11 @@ export function App(): JSX.Element {
         try {
           const library = await loadPartLibraryWithVersion();
           if (library && library.partDefs.length > 0) {
-            saveUpdatedCatalog = library.builtInCatalogVersion < BUILT_IN_CATALOG_VERSION;
-            effectivePartDefs = saveUpdatedCatalog
-              ? addMissingPinHeaders(library.partDefs)
-              : library.partDefs;
+            const catalogVersion = library.builtInCatalogVersion;
+            saveUpdatedCatalog = catalogVersion < BUILT_IN_CATALOG_VERSION;
+            effectivePartDefs = library.partDefs;
+            if (catalogVersion < 1) effectivePartDefs = addMissingPinHeaders(effectivePartDefs);
+            if (catalogVersion < 2) effectivePartDefs = addBuiltInArtwork(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
@@ -2009,7 +1958,7 @@ export function App(): JSX.Element {
                   className={armed ? "part-card armed" : "part-card"}
                   onClick={() => armPlacement(def.id)}
                 >
-                  <div className="part-thumb">
+                  <div className={def.imageDataUrl ? "part-thumb with-image" : "part-thumb"}>
                     {def.imageDataUrl ? (
                       <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" style={def.imagePixelated ? { imageRendering: "pixelated" } : undefined} />
                     ) : (

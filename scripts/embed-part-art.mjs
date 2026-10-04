@@ -1,0 +1,28 @@
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const names = [
+  "resistor-axial",
+  "capacitor-radial",
+  "inductor-axial",
+  "pin-header-1x2",
+  "pin-header-1x3",
+  "pin-header-1x4",
+  "pin-header-2x3"
+];
+
+const entries = await Promise.all(names.map(async (name) => {
+  const bytes = await readFile(path.join(root, "web/src/assets/parts", `${name}.png`));
+  return `  "${name}": "data:image/png;base64,${bytes.toString("base64")}"`;
+}));
+
+const content = [
+  "// Generated from web/src/assets/parts/*.png by scripts/embed-part-art.mjs.",
+  "export const builtInPartArt = {",
+  entries.join(",\n"),
+  "} as const;",
+  ""
+].join("\n");
+await writeFile(path.join(root, "web/src/builtInPartArt.ts"), content);

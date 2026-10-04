@@ -150,7 +150,7 @@ body,
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  grid-auto-columns: minmax(220px, 250px);
+  grid-auto-columns: minmax(170px, 200px);
   gap: 8px;
   overflow: auto;
   padding-right: 4px;
@@ -193,7 +193,7 @@ body,
   border-radius: 10px;
   padding: 6px 8px;
   display: grid;
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: 50px 1fr;
   align-items: center;
   gap: 8px;
   text-align: left;
@@ -206,8 +206,9 @@ body,
 }
 
 .part-thumb {
-  width: 42px;
-  height: 42px;
+  position: relative;
+  width: 50px;
+  height: 50px;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -218,10 +219,17 @@ body,
   overflow: hidden;
 }
 
+.part-thumb.with-image {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
 .part-thumb-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  position: absolute;
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
+  object-fit: contain;
 }
 
 .part-meta {

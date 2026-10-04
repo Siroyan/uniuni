@@ -1,6 +1,37 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addMissingPinHeaders, pinHeaderPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingPinHeaders, defaultPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+
+test("all seven built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 7);
+  for (const def of defaultPartDefs) {
+    assert.equal(def.imagePixelated, true);
+    assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
+    const encoded = (def.imageDataUrl ?? "").split(",")[1];
+    const bytes = Buffer.from(encoded, "base64");
+    const asset = def.name.toLowerCase().replaceAll(" ", "-");
+    assert.deepEqual(bytes, readFileSync(new URL(`../src/assets/parts/${asset}.png`, import.meta.url)));
+    assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
+    assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
+  }
+});
+
+test("art migration only fills unmodified built-ins without existing images", () => {
+  const legacy = defaultPartDefs.map((def) => ({ ...def, imageDataUrl: null, imagePixelated: false }));
+  const customizedImage = { ...legacy[0], imageDataUrl: "data:image/png;base64,Y3VzdG9t" };
+  const customizedFootprint = { ...legacy[1], occupied: [{ x: 4, y: 4 }] };
+  const renamed = { ...legacy[2], name: "My Coil" };
+  const existing = [customizedImage, customizedFootprint, renamed, ...legacy.slice(3, 6)];
+  const migrated = addBuiltInArtwork(existing);
+
+  assert.equal(migrated[0], customizedImage);
+  assert.equal(migrated[1], customizedFootprint);
+  assert.equal(migrated[2], renamed);
+  assert.ok(migrated.slice(3).every((def) => def.imageDataUrl?.startsWith("data:image/png;base64,") && def.imagePixelated));
+  assert.equal(migrated.length, existing.length);
+  assert.equal(addBuiltInArtwork(migrated), migrated);
+});
 
 test("pin header footprints use numbered 2.54 mm grid points", () => {
   assert.deepEqual(pinHeaderPartDefs.map((def) => [def.name, def.pins.length]), [
