@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingPinHeaders, additionalPartDefs, defaultPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, nextPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
 
-test("all 13 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 13);
+test("all 19 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 19);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -15,6 +15,41 @@ test("all 13 built-in drawings match their footprints and source PNGs", () => {
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("six new footprints follow the hole grid and pin order", () => {
+  assert.deepEqual(nextPartDefs.map((def) => [def.name, def.pins.length]), [
+    ["Capacitor Electrolytic", 2], ["TO-220 3-pin", 3], ["DIP-14 IC", 14],
+    ["Slide Switch SPDT", 3], ["Terminal Block 3P", 3], ["Trimmer 3P Inline", 3]
+  ]);
+  assert.deepEqual(nextPartDefs[0].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["+", 0, 1], ["-", 1, 1]]);
+  assert.deepEqual(nextPartDefs[1].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[1, 2], [2, 2], [3, 2]]);
+  assert.deepEqual(nextPartDefs[2].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
+    ...Array.from({ length: 7 }, (_, y) => [String(y + 1), 0, y]),
+    ...Array.from({ length: 7 }, (_, index) => [String(index + 8), 3, 6 - index])
+  ]);
+  assert.deepEqual(nextPartDefs[3].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["1", 0, 1], ["C", 1, 1], ["2", 2, 1]]);
+  assert.deepEqual(nextPartDefs[4].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[0, 1], [2, 1], [4, 1]]);
+  assert.deepEqual(nextPartDefs[5].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[0, 2], [1, 2], [2, 2]]);
+  assert.equal(addMissingNextParts(defaultPartDefs.slice(0, 13)).length, 19);
+  assert.equal(addMissingNextParts(defaultPartDefs), defaultPartDefs);
+});
+
+test("v4 artwork correction replaces the 1x2 sketch and old radial art without touching custom parts", () => {
+  const correctedRadial = "data:image/png;base64," + readFileSync(new URL("../src/assets/parts/capacitor-radial.png", import.meta.url)).toString("base64");
+  const cap = defaultPartDefs[1];
+  const header = pinHeaderPartDefs[0];
+  const oldCap = { ...cap, imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC" };
+  const customCap = { ...cap, imageDataUrl: header.imageDataUrl };
+  const changedHeader = { ...header, imageDataUrl: cap.imageDataUrl, imageScale: 1.5 };
+  const changedFootprint = { ...header, occupied: [{ x: 2, y: 2 }] };
+  const corrected = correctBuiltInArtwork([oldCap, customCap, changedHeader, changedFootprint]);
+  assert.equal(corrected[0].imageDataUrl, correctedRadial);
+  assert.equal(corrected[1], customCap);
+  assert.equal(corrected[2].imageDataUrl, header.imageDataUrl);
+  assert.equal(corrected[2].imageScale, 1);
+  assert.equal(corrected[3], changedFootprint);
+  assert.equal(correctBuiltInArtwork(corrected), corrected);
 });
 
 test("additional part pins follow the intended 2.54 mm hole patterns", () => {

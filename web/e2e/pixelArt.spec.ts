@@ -111,7 +111,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
   }, project.part_defs);
 
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(13);
+  await expect(page.locator(".part-card img")).toHaveCount(19);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await editor.getByRole("button", { name: "Clear Image" }).click();
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveCount(0);
@@ -126,12 +126,12 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([3, null]);
+  })).toEqual([4, null]);
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(12);
+  await expect(page.locator(".part-card img")).toHaveCount(18);
 });
 
-test("画像付きの旧カタログには新しい6部品だけを追加し、後の削除を維持する", async ({ page }) => {
+test("画像付きのv2カタログには不足する12部品を追加し、後の削除を維持する", async ({ page }) => {
   await page.goto("./");
   await expect(page.getByText(/Core: WASM/)).toBeVisible();
   const sources = await page.locator(".part-card img").evaluateAll((images) =>
@@ -170,7 +170,7 @@ test("画像付きの旧カタログには新しい6部品だけを追加し、�
   }, { defs: project.part_defs.slice(0, 7), images: sources });
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("13 items");
+  await expect(page.locator(".library-header span")).toHaveText("19 items");
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveAttribute("src", sources[1]);
   for (const name of ["Diode Axial", "LED 5mm", "Transistor TO-92", "DIP-8 IC", "Terminal Block 2P", "Push Button 2P"]) {
     await expect(page.locator(".part-card").filter({ hasText: name }).locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
@@ -178,7 +178,67 @@ test("画像付きの旧カタログには新しい6部品だけを追加し、�
   await page.getByRole("complementary", { name: "Part Editor" }).locator("select.net-select").first()
     .selectOption({ label: "Push Button 2P" });
   await page.getByRole("complementary", { name: "Part Editor" }).getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("12 items");
+  await expect(page.locator(".library-header span")).toHaveText("18 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("12 items");
+  await expect(page.locator(".library-header span")).toHaveText("18 items");
+});
+
+test("v3カタログの1x2ヘッダーを描き直し、ずれたコンデンサ画像を補正する", async ({ page }) => {
+  await page.goto("./");
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const cards = page.locator(".part-card");
+  const headerImage = cards.filter({ hasText: "Pin Header 1x2" }).locator("img");
+  const capacitorImage = cards.filter({ hasText: "Capacitor Radial" }).locator("img");
+  const expectedHeader = await headerImage.getAttribute("src");
+  const expectedCapacitor = await capacitorImage.getAttribute("src");
+  const capacitorContacts = await capacitorImage.evaluate(async (element) => {
+    const image = element as HTMLImageElement;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    return [3, 11].map((x) => Array.from(context.getImageData(x, 3, 1, 1).data));
+  });
+  expect(capacitorContacts).toEqual([[245, 247, 245, 255], [245, 247, 245, 255]]);
+  const customSketch = await cards.filter({ hasText: "Resistor Axial" }).locator("img").getAttribute("src");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const directory = await mkdtemp(path.join(tmpdir(), "uniuni-catalog-v3-"));
+  const downloaded = path.join(directory, "project.zip");
+  await download.saveAs(downloaded);
+  const zip = await JSZip.loadAsync(await readFile(downloaded));
+  const project = JSON.parse(await zip.file("project.json")!.async("string")) as { part_defs: Array<{ name: string }> };
+  const legacyCapacitor = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC";
+  await page.evaluate(async ({ defs, sketch, capArt }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({
+        schemaVersion: 2,
+        builtInCatalogVersion: 3,
+        partDefs: defs.slice(0, 13).map((def) => ({
+          ...def,
+          imageDataUrl: def.name === "Pin Header 1x2" ? sketch
+            : def.name === "Capacitor Radial" ? capArt : null,
+          imagePixelated: true
+        }))
+      }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { defs: project.part_defs, sketch: customSketch, capArt: legacyCapacitor });
+
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("19 items");
+  await expect(headerImage).toHaveAttribute("src", expectedHeader!);
+  await expect(capacitorImage).toHaveAttribute("src", expectedCapacitor!);
 });

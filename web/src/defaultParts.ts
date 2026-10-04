@@ -147,6 +147,76 @@ export const additionalPartDefs: PartDef[] = [
   }
 ];
 
+export const nextPartDefs: PartDef[] = [
+  {
+    id: "77750a90-4823-4cdf-bfea-a3b36e7872a8",
+    name: "Capacitor Electrolytic",
+    pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
+    occupied: occupiedRectangle(2, 2),
+    imageDataUrl: builtInPartArt["capacitor-electrolytic"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  },
+  {
+    id: "5ed6e5ed-ba33-45d5-aa04-4fe27f9f9ff1",
+    name: "TO-220 3-pin",
+    pins: [
+      { name: "1", pos: { x: 1, y: 2 } },
+      { name: "2", pos: { x: 2, y: 2 } },
+      { name: "3", pos: { x: 3, y: 2 } }
+    ],
+    occupied: occupiedRectangle(5, 3),
+    imageDataUrl: builtInPartArt["to-220-3-pin"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  },
+  {
+    id: "9429852c-4b26-483b-b302-844d11d3b6e8",
+    name: "DIP-14 IC",
+    pins: [
+      ...Array.from({ length: 7 }, (_, y) => ({ name: String(y + 1), pos: { x: 0, y } })),
+      ...Array.from({ length: 7 }, (_, index) => ({ name: String(index + 8), pos: { x: 3, y: 6 - index } }))
+    ],
+    occupied: occupiedRectangle(4, 7),
+    imageDataUrl: builtInPartArt["dip-14-ic"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  },
+  {
+    id: "4bb91cd4-5cee-4cc1-97b4-e75305b5f101",
+    name: "Slide Switch SPDT",
+    pins: [
+      { name: "1", pos: { x: 0, y: 1 } },
+      { name: "C", pos: { x: 1, y: 1 } },
+      { name: "2", pos: { x: 2, y: 1 } }
+    ],
+    occupied: occupiedRectangle(3, 2),
+    imageDataUrl: builtInPartArt["slide-switch-spdt"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  },
+  {
+    id: "cf3f301b-1aef-407a-8335-dbd07b0a833c",
+    name: "Terminal Block 3P",
+    pins: [
+      { name: "1", pos: { x: 0, y: 1 } },
+      { name: "2", pos: { x: 2, y: 1 } },
+      { name: "3", pos: { x: 4, y: 1 } }
+    ],
+    occupied: occupiedRectangle(5, 2),
+    imageDataUrl: builtInPartArt["terminal-block-3p"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  },
+  {
+    id: "28adb8b0-79cf-4e9f-8ad5-6b71855fefc1",
+    name: "Trimmer 3P Inline",
+    pins: [
+      { name: "1", pos: { x: 0, y: 2 } },
+      { name: "2", pos: { x: 1, y: 2 } },
+      { name: "3", pos: { x: 2, y: 2 } }
+    ],
+    occupied: occupiedRectangle(3, 3),
+    imageDataUrl: builtInPartArt["trimmer-3p-inline"],
+    imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
+  }
+];
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -191,8 +261,30 @@ export const defaultPartDefs: PartDef[] = [
     imageOffsetY: 0
   },
   ...pinHeaderPartDefs,
-  ...additionalPartDefs
+  ...additionalPartDefs,
+  ...nextPartDefs
 ];
+
+const oldRadialCapacitorArt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC";
+
+/** Update only unchanged stock footprints. The 1x2 header is explicitly replaced, including user artwork. */
+export function correctBuiltInArtwork(existing: PartDef[]): PartDef[] {
+  const targets = [defaultPartDefs[1], pinHeaderPartDefs[0]];
+  let changed = false;
+  const updated = existing.map((def) => {
+    const canonical = targets.find((candidate) => candidate.id === def.id);
+    if (!canonical || def.name !== canonical.name
+      || JSON.stringify(def.pins) !== JSON.stringify(canonical.pins)
+      || JSON.stringify(def.occupied) !== JSON.stringify(canonical.occupied)) return def;
+    if (canonical.name === "Capacitor Radial" && def.imageDataUrl !== oldRadialCapacitorArt && def.imageDataUrl != null) return def;
+    if (def.imageDataUrl === canonical.imageDataUrl && def.imagePixelated === true
+      && def.imageScale === 1 && def.imageOffsetX === 0 && def.imageOffsetY === 0) return def;
+    changed = true;
+    return { ...def, imageDataUrl: canonical.imageDataUrl, imagePixelated: true,
+      imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 };
+  });
+  return changed ? updated : existing;
+}
 
 export function addBuiltInArtwork(existing: PartDef[]): PartDef[] {
   const canonicalById = new Map(defaultPartDefs.map((def) => [def.id, def]));
@@ -214,6 +306,10 @@ export function addMissingPinHeaders(existing: PartDef[]): PartDef[] {
 
 export function addMissingAdditionalParts(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, additionalPartDefs);
+}
+
+export function addMissingNextParts(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, nextPartDefs);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

@@ -2,6 +2,17 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-04 (初期部品を19種類へ拡充し、穴位置に合わせて画像を補正)
+実装内容:
+- Capacitor Electrolytic、TO-220 3-pin、DIP-14 IC、Slide Switch SPDT、Terminal Block 3P、Trimmer 3P Inlineを追加し、各リード・端子を基板の穴中心へ合わせたドット絵を制作。
+- Capacitor Radialのリード位置を補正し、Pin Header 1x2の画像を描き直した。
+- カタログv4移行で不足する部品を追加。旧標準のCapacitor Radial画像だけ補正し、Pin Header 1x2の登録済み画像を描き直し版に差し替える。
+- [全部品の画像一覧](./built-in-part-art.png)を更新。
+
+検証:
+- Dev Containerの `npm run build -w web`、Webユニットテスト5件、ChromiumのE2E全17件が成功。
+- 部品の穴位置・配置・保存済みライブラリの更新に加え、Capacitor Radialの画像でリードが穴中心のドットに重なることを確認。
+
 ## 2026-10-04 (初期部品を13種類へ拡充)
 実装内容:
 - Diode Axial、LED 5mm、Transistor TO-92、DIP-8 IC、Terminal Block 2P、Push Button 2Pを追加。2.54 mm穴位置に合わせた透明PNGを制作。
