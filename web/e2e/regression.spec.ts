@@ -6,8 +6,8 @@ import JSZip from "jszip";
 
 type ExportedProject = {
   part_defs: Array<{ occupied: unknown[] }>;
-  part_insts: unknown[];
-  wires: Array<{ path: unknown[] }>;
+  part_insts: Array<{ net_assign: Record<string, string> }>;
+  wires: Array<{ net_id: string; path: unknown[] }>;
 };
 
 const CELL = 24;
@@ -111,6 +111,7 @@ test("ネット欄は必要な操作だけを表示し、名前と色を編集�
   await clickGrid(page, 0, 0);
   await page.keyboard.press("Escape");
   await clickGrid(page, 0, 0);
+  await netCard.locator("summary").filter({ hasText: "ピンを手動で割り当てる" }).click();
   await expect(netCard.getByRole("button", { name: "割り当て" })).toBeVisible();
 });
 
@@ -138,6 +139,24 @@ test("手動配線を確定できる", async ({ page }) => {
   const project = await exportProject(page);
   expect(project.wires.length).toBe(1);
   expect(project.wires[0]?.path.length).toBe(3);
+});
+
+test("線を引いて確定するだけで両端のピンが同じネットになる", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await clickGrid(page, 5, 0);
+  await page.keyboard.press("w");
+  for (const x of [2, 3, 4, 5]) await clickGrid(page, x, 0);
+  await page.getByRole("button", { name: "配線を確定" }).click();
+  await expect(page.getByRole("button", { name: "配線を確定" })).toBeDisabled();
+
+  const project = await exportProject(page);
+  const netId = project.wires[0]?.net_id;
+  expect(project.wires).toHaveLength(1);
+  expect(project.part_insts).toHaveLength(2);
+  expect(project.part_insts[0]?.net_assign["2"]).toBe(netId);
+  expect(project.part_insts[1]?.net_assign["1"]).toBe(netId);
 });
 
 test("Pin優先選択後にTabで候補を切替えて配線を削除できる", async ({ page }) => {

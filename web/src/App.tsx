@@ -7,7 +7,7 @@ import {
   commandAssignNetColorJson,
   commandAssignNetNameJson,
   commandAssignPinToNetJson,
-  commandCommitWireJson,
+  commandCommitWireAutoJson,
   commandDeletePartInstJson,
   commandDeleteWireJson,
   commandMoveRotatePartInstJson,
@@ -663,19 +663,24 @@ export function App(): JSX.Element {
   };
 
   const commitWireDraft = async (): Promise<void> => {
-    if (wireDraftPath.length < 2 || !selectedNetId) return;
+    if (wireDraftPath.length < 2) return;
     const state = coreStateJsonRef.current;
     if (!state) return;
 
     try {
-      const cmd = commandCommitWireJson(selectedNetId, wireDraftPath);
+      const cmd = commandCommitWireAutoJson(wireDraftPath);
       const nextState = await applyCoreCommandJson(state, cmd);
-      commitStateTransition(state, nextState);
+      const view = commitStateTransition(state, nextState);
+      const committedWire = view.wires[view.wires.length - 1];
+      if (committedWire) setSelectedNetId(committedWire.netId);
       setWireDraftPath([]);
       await refreshDrcForState(nextState);
       setCoreError(null);
     } catch (err) {
-      setCoreError(err instanceof Error ? err.message : "commit wire failed");
+      const message = err instanceof Error ? err.message : "commit wire failed";
+      setCoreError(message === "wire connects different nets"
+        ? "異なるネットが接続されるため、配線を確定できません。"
+        : message);
     }
   };
 
@@ -1247,7 +1252,6 @@ export function App(): JSX.Element {
 
   const handleGridClick = (grid: GridPt): void => {
     if (tool === "wire") {
-      if (!selectedNetId) return;
       const last = wireDraftPath[wireDraftPath.length - 1];
       if (!last) {
         setWireDraftPath([grid]);
@@ -1553,8 +1557,7 @@ export function App(): JSX.Element {
     tool,
     undo,
     wires,
-    wireDraftPath,
-    selectedNetId
+    wireDraftPath
   ]);
 
   const coreBridgeLabel =
@@ -1572,7 +1575,7 @@ export function App(): JSX.Element {
   const isCustomBoardPreset = boardPresetId === "custom";
   const selectedPlaceDef = partDefs.find((def) => def.id === placeDefId);
   const toolHint = tool === "wire"
-    ? "基板の穴を順に選び、2点以上で配線を確定します。"
+    ? "基板の穴を順に選んで確定します。接続先のネットとピンは自動で割り当てます。"
     : tool === "place"
       ? `${selectedPlaceDef?.name ?? "部品"}を基板に配置します。回転は R キーでも操作できます。`
       : "部品や配線を選択できます。移動は M キー、回転は R キーです。";
@@ -1681,6 +1684,7 @@ export function App(): JSX.Element {
 
           <section className="tool-card">
             <h2 className="card-title">ネット</h2>
+            <p className="local-data-note">配線を確定すると、ネットと接触したピンは自動で割り当てられます。</p>
             <div className="toolbar-row net-field-row">
               <label className="net-label" htmlFor="net-select">
                 ネット
@@ -1731,32 +1735,35 @@ export function App(): JSX.Element {
               </button>
             </div>
             {selectedPart ? (
-              <div className="toolbar-row net-field-row">
-                <label className="net-label" htmlFor="net-pin-select">
-                  {selectedPart.refdes} のピン
-                </label>
-                <select
-                  id="net-pin-select"
-                  className="net-select"
-                  value={pinNameDraft}
-                  onChange={(event) => setPinNameDraft(event.target.value)}
-                  disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
-                >
-                  {(selectedPartDef?.pins ?? []).map((pin) => (
-                    <option key={pin.name} value={pin.name}>
-                      Pin {pin.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-with-icon"
-                  onClick={() => void assignSelectedPinToNet()}
-                  disabled={!selectedNetId || !pinNameDraft}
-                >
-                  <ActionIcon name="connect" />割り当て
-                </button>
-              </div>
+              <details className="net-details">
+                <summary>ピンを手動で割り当てる（任意）</summary>
+                <div className="toolbar-row net-field-row">
+                  <label className="net-label" htmlFor="net-pin-select">
+                    {selectedPart.refdes} のピン
+                  </label>
+                  <select
+                    id="net-pin-select"
+                    className="net-select"
+                    value={pinNameDraft}
+                    onChange={(event) => setPinNameDraft(event.target.value)}
+                    disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
+                  >
+                    {(selectedPartDef?.pins ?? []).map((pin) => (
+                      <option key={pin.name} value={pin.name}>
+                        Pin {pin.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-with-icon"
+                    onClick={() => void assignSelectedPinToNet()}
+                    disabled={!selectedNetId || !pinNameDraft}
+                  >
+                    <ActionIcon name="connect" />割り当て
+                  </button>
+                </div>
+              </details>
             ) : null}
             <details className="net-details">
               <summary><ActionIcon name="palette" />ネットの色</summary>

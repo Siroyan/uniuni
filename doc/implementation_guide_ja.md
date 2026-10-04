@@ -130,6 +130,7 @@ uniuni/
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
+- `CommitWireAuto`（経路からNetを判定・生成し、接触するPinを割り当てる）
 - `DeleteWire`
 - `AssignNetName`
 - `AssignNetColor`
@@ -147,6 +148,7 @@ uniuni/
   - 最短長（2点以上）
   - 1ステップ Manhattan
   - ボード内
+  - 自動確定時に異なる既存Netを接続しない
 - Board整合:
   - 正のサイズのみ許可
   - 既存部品/配線が盤外になるサイズ変更を拒否
@@ -256,6 +258,7 @@ uniuni/
 - `web/test/coreBridge.test.ts`
   - bridgeのコマンド適用
   - fallback判定
+  - 自動配線時のNet再利用・Pin割当・異なるNet間の接続拒否
   - `AssignNetColor` の設定/解除と形式エラー
   - `ResizeBoard` の設定反映と拒否ケース
 - `web/test/partLibrary.test.ts`
