@@ -134,6 +134,7 @@ function drawPart(
             : 0;
     ctx.save();
     ctx.globalAlpha = 0.9;
+    ctx.imageSmoothingEnabled = !def.imagePixelated;
     ctx.translate(center.x, center.y);
     ctx.rotate(rotationRad);
     ctx.drawImage(partImage, -drawW / 2, -drawH / 2, drawW, drawH);
@@ -230,6 +231,7 @@ export function BoardCanvas({
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const [imageRevision, setImageRevision] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({
     panX: 120,
     panY: 80,
@@ -279,6 +281,9 @@ export function BoardCanvas({
       const cached = cache.get(def.id);
       if (cached && cached.src === src) continue;
       const img = new Image();
+      img.onload = () => {
+        if (cache.get(def.id) === img) setImageRevision((revision) => revision + 1);
+      };
       img.src = src;
       cache.set(def.id, img);
     }
@@ -289,6 +294,11 @@ export function BoardCanvas({
       }
     }
   }, [partDefs]);
+
+  const loadedPartImage = (defId: string): HTMLImageElement | null => {
+    const image = imageCacheRef.current.get(defId);
+    return image?.complete && image.naturalWidth > 0 ? image : null;
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -462,7 +472,7 @@ export function BoardCanvas({
         viewport,
         isSelected ? "rgba(245, 158, 11, 0.32)" : "rgba(37, 99, 235, 0.28)",
         "#c2410c",
-        imageCacheRef.current.get(def.id) ?? null
+        loadedPartImage(def.id)
       );
     }
 
@@ -476,7 +486,7 @@ export function BoardCanvas({
           viewport,
           movePreviewValid ? "rgba(21, 128, 61, 0.28)" : "rgba(180, 35, 53, 0.26)",
           movePreviewValid ? "#15803d" : "#b42335",
-          imageCacheRef.current.get(def.id) ?? null
+          loadedPartImage(def.id)
         );
       }
     }
@@ -491,7 +501,7 @@ export function BoardCanvas({
           viewport,
           placePreviewValid ? "rgba(21, 128, 61, 0.24)" : "rgba(180, 35, 53, 0.24)",
           placePreviewValid ? "#15803d" : "#b42335",
-          imageCacheRef.current.get(def.id) ?? null
+          loadedPartImage(def.id)
         );
       }
     }
@@ -511,6 +521,7 @@ export function BoardCanvas({
     gridMaxWorld.x,
     gridMaxWorld.y,
     hoverGrid,
+    imageRevision,
     movePreviewPart,
     movePreviewValid,
     netColorMap,

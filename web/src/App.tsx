@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
+import { PixelArtEditor } from "./PixelArtEditor";
 import { addMissingPinHeaders, pinHeaderPartDefs } from "./defaultParts";
 import {
   applyCoreCommandJson,
@@ -288,6 +289,10 @@ export function App(): JSX.Element {
     if (!hoverGrid) return null;
     return findPartAtGrid(hoverGrid, parts, defsById);
   }, [defsById, hoverGrid, parts]);
+
+  useEffect(() => {
+    if (selectedPart) setEditorDefId(selectedPart.defId);
+  }, [selectedPart?.id, selectedPart?.defId]);
 
   useEffect(() => {
     selectedPartIdRef.current = selectedPartId;
@@ -585,6 +590,7 @@ export function App(): JSX.Element {
   const armPlacement = (defId: string): void => {
     if (!defId) return;
     setPlaceDefId(defId);
+    setEditorDefId(defId);
     setPlaceArmedDefId(defId);
     setPlaceArmedRot(activeRot);
     setMoveArmedPartId(null);
@@ -605,6 +611,8 @@ export function App(): JSX.Element {
     }
     if (candidate.kind === "part") {
       setSelectedPartId(candidate.partId);
+      const part = parts.find((item) => item.id === candidate.partId);
+      if (part) setEditorDefId(part.defId);
       setSelectedWireId(null);
       return;
     }
@@ -936,14 +944,24 @@ export function App(): JSX.Element {
   const setEditorPartImage = (dataUrl: string): void => {
     if (!editorDefId) return;
     void applyPartDefsChange((prev) =>
-      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl } : def))
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl, imagePixelated: false } : def))
+    );
+  };
+
+  const registerEditorPixelArt = (dataUrl: string): Promise<boolean> => {
+    const defId = editorDefId;
+    if (!defId) return Promise.resolve(false);
+    return applyPartDefsChange((prev) =>
+      prev.map((def) => def.id === defId
+        ? { ...def, imageDataUrl: dataUrl, imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 }
+        : def), "ドット絵を部品画像に登録しました。"
     );
   };
 
   const clearEditorPartImage = (): void => {
     if (!editorDefId) return;
     void applyPartDefsChange((prev) =>
-      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null } : def))
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null, imagePixelated: false } : def))
     );
   };
 
@@ -1062,6 +1080,7 @@ export function App(): JSX.Element {
             pins,
             occupied,
             imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null,
+            imagePixelated: def.imagePixelated === true,
             imageScale: typeof def.imageScale === "number" && def.imageScale > 0 ? def.imageScale : 1,
             imageOffsetX: typeof def.imageOffsetX === "number" ? def.imageOffsetX : 0,
             imageOffsetY: typeof def.imageOffsetY === "number" ? def.imageOffsetY : 0
@@ -1992,7 +2011,7 @@ export function App(): JSX.Element {
                 >
                   <div className="part-thumb">
                     {def.imageDataUrl ? (
-                      <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" />
+                      <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" style={def.imagePixelated ? { imageRendering: "pixelated" } : undefined} />
                     ) : (
                       partLabel(def.name)
                     )}
@@ -2098,6 +2117,7 @@ export function App(): JSX.Element {
                           return (
                             <image
                               href={editorDef.imageDataUrl}
+                              imageRendering={editorDef.imagePixelated ? "pixelated" : undefined}
                               x={cx - drawW / 2}
                               y={cy - drawH / 2}
                               width={drawW}
@@ -2397,6 +2417,7 @@ export function App(): JSX.Element {
                 }}
               />
             </div>
+            {editorDef && <PixelArtEditor key={editorDef.id} partDef={editorDef} onRegister={registerEditorPixelArt} />}
           </div>
           <div className="toolbar-row">
             <button type="button" className="btn" onClick={exportPartLibraryJson}>

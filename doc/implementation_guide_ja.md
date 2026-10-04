@@ -23,7 +23,7 @@ MVP Step1〜Step7 は完了している。
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 自動保存/復元
-- Part Editor（Pin / Occupied / 画像 / プレビュー）
+- Part Editor（Pin / Occupied / 画像 / ドット絵 / プレビュー）
 - Part ライブラリ永続化（画像アセット分離保存）
 - ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
 - WASM/Fallback 接続モード表示
@@ -38,6 +38,7 @@ uniuni/
 │  └─ src/
 │     ├─ App.tsx        # 画面状態・操作ハンドリング・UI
 │     ├─ BoardCanvas.tsx# Canvas描画とポインタイベント
+│     ├─ PixelArtEditor.tsx # 部品サイズに合わせたドット絵編集
 │     ├─ coreBridge.ts  # Web ↔ Core(JSON API) 接続
 │     ├─ partLibrary.ts # Partライブラリ IndexedDB
 │     ├─ persistence.ts # プロジェクトスナップショット IndexedDB
@@ -174,6 +175,12 @@ uniuni/
 - ポインタイベント処理
 - Pan/Zoom/Hover座標
 - 部品画像キャッシュ（PartDef ID単位）
+- 部品画像の読み込み完了後に再描画し、ドット絵は最近傍補間で描く
+
+### 7.2.1 `PixelArtEditor.tsx`
+- Occupiedの外接範囲から、1穴あたり8×8ドットの描画領域を生成
+- 描画中はローカルなピクセル配列を更新し、登録時だけ透明PNGのdata URLを生成
+- 登録は既存のPartDef更新フローを使い、IndexedDBとZIP画像アセットへ保存
 
 ### 7.3 `parts.ts`
 - 幾何計算:

@@ -148,6 +148,7 @@ async function decodePartLibraryFromZip(zip: JSZip): Promise<PartDef[] | null> {
       imageScale: def.imageScale,
       imageOffsetX: def.imageOffsetX,
       imageOffsetY: def.imageOffsetY,
+      imagePixelated: def.imagePixelated === true,
       imageDataUrl
     });
   }

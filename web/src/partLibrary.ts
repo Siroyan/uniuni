@@ -166,6 +166,7 @@ async function expandSnapshotV2(db: IDBDatabase, snapshot: LibrarySnapshotV2): P
     imageScale: def.imageScale,
     imageOffsetX: def.imageOffsetX,
     imageOffsetY: def.imageOffsetY,
+    imagePixelated: def.imagePixelated === true,
     imageDataUrl:
       typeof def.imageDataUrl === "string"
         ? def.imageDataUrl
