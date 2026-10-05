@@ -112,7 +112,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
   }, project.part_defs);
 
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(27);
+  await expect(page.locator(".part-card img")).toHaveCount(37);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await expect(editor.getByText("core is not ready")).toBeHidden();
   await editor.getByRole("button", { name: "Clear Image" }).click();
@@ -128,9 +128,9 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([6, null]);
+  })).toEqual([7, null]);
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(26);
+  await expect(page.locator(".part-card img")).toHaveCount(36);
 });
 
 test("電解コンデンサの旧配置はピンを動かさず更新し、基板端だけ保留する", async ({ page }) => {
@@ -328,7 +328,7 @@ test("画像付きのv2カタログには不足する部品を追加し、後の
   }, { defs: project.part_defs.slice(0, 7), images: sources });
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("27 items");
+  await expect(page.locator(".library-header span")).toHaveText("37 items");
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveAttribute("src", sources[1]!);
   for (const name of ["Diode Axial", "LED 5mm", "Transistor TO-92", "DIP-8 IC", "Terminal Block 2P", "Push Button 2P"]) {
     await expect(page.locator(".part-card").filter({ hasText: name }).locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
@@ -336,9 +336,9 @@ test("画像付きのv2カタログには不足する部品を追加し、後の
   await page.getByRole("complementary", { name: "Part Editor" }).locator("select.net-select").first()
     .selectOption({ label: "Push Button 2P" });
   await page.getByRole("complementary", { name: "Part Editor" }).getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("26 items");
+  await expect(page.locator(".library-header span")).toHaveText("36 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("26 items");
+  await expect(page.locator(".library-header span")).toHaveText("36 items");
 });
 
 test("v3カタログの1x2ヘッダーを描き直し、ずれたコンデンサ画像を補正する", async ({ page }) => {
@@ -396,7 +396,7 @@ test("v3カタログの1x2ヘッダーを描き直し、ずれたコンデンサ
   }, { defs: project.part_defs, sketch: customSketch, capArt: legacyCapacitor });
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("27 items");
+  await expect(page.locator(".library-header span")).toHaveText("37 items");
   await expect(headerImage).toHaveAttribute("src", expectedHeader!);
   await expect(capacitorImage).toHaveAttribute("src", expectedCapacitor!);
 });

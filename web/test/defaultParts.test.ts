@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "../src/defaultParts";
 import { categorizeParts, partCategory } from "../src/partCategories";
 import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
-test("all 27 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 27);
+test("all 37 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 37);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -18,6 +18,36 @@ test("all 27 built-in drawings match their footprints and source PNGs", () => {
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("XH top and side connectors cover the housing envelope around the 2.50 mm pin row", () => {
+  assert.equal(xhConnectorPartDefs.length, 10);
+  for (const pins of [2, 3, 4, 5, 6]) {
+    for (const orientation of ["Top", "Side"] as const) {
+      const def = xhConnectorPartDefs.find((candidate) => candidate.name === `XH Connector ${pins}P ${orientation}`)!;
+      const rows = orientation === "Top" ? 3 : 6;
+      assert.equal(def.category, "connector");
+      assert.deepEqual(def.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]),
+        Array.from({ length: pins }, (_, index) => [String(index + 1), index + 1, 1]));
+      assert.equal(def.occupied.length, (pins + 2) * rows);
+      assert.deepEqual([
+        Math.min(...def.occupied.map((cell) => cell.x)),
+        Math.max(...def.occupied.map((cell) => cell.x)),
+        Math.min(...def.occupied.map((cell) => cell.y)),
+        Math.max(...def.occupied.map((cell) => cell.y))
+      ], [0, pins + 1, 0, rows - 1]);
+      // The side housing reaches 9.20 mm ahead of the pin row; row 5 is needed.
+      if (orientation === "Side") assert.ok(def.occupied.some((cell) => cell.y === 5));
+    }
+  }
+  const oldCatalog = defaultPartDefs.slice(0, 27);
+  const migrated = addMissingXhConnectors(oldCatalog);
+  assert.equal(migrated.length, 37);
+  assert.equal(addMissingXhConnectors(migrated), migrated);
+  const edited = { ...xhConnectorPartDefs[0], imageDataUrl: null };
+  const withEdited = addMissingXhConnectors([...oldCatalog, edited]);
+  assert.equal(withEdited.length, 37);
+  assert.equal(withEdited[27], edited);
 });
 
 test("6.3 mm electrolytic can centers 2.5 mm leads in a 4x3 hole envelope", () => {

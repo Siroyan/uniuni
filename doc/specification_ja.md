@@ -91,7 +91,7 @@
 
 ## 6. 初期状態
 - 初期ネット: `N-1` を1件生成
-- 初期PartDef: 27件。基本の抵抗・コンデンサ・コイル・ピンヘッダーに、15.8〜15.10節の部品を加える
+- 初期PartDef: 37件。基本の抵抗・コンデンサ・コイル・ピンヘッダーに、15.8〜15.12節の部品を加える
 - 初期回転: `Deg0`
 - 初期ツール: `select`
 
@@ -361,6 +361,14 @@ DRCは手動実行と状態更新後の再評価で利用する。
 - LED 5mm、Photoresistor Radial、RGB LED 4-pinは円形の上面がクリップされないようOccupiedの高さを3穴へ広げる
 - 電解コンデンサ、LED 5mm、Transistor TO-92、TO-220 3-pin、Capacitor Ceramic Disc、Photoresistor Radial、RGB LED 4-pinの画像を基板の真上から見た図に改める。ほかの20種類も上面表示であることを確認する
 - カタログv5以前の未編集標準画像だけを更新する。形状が変わる部品を基板上に配置済みの場合は、ピンの絶対位置を保つよう配置原点を補正し、新しいOccupiedが基板内で他部品と重ならない場合に限り更新する。更新できない場合は旧形状を維持して画面に理由を表示し、配置条件が解消した後の起動時に再試行する。利用者が変更した画像・ピン・Occupiedは維持する
+
+### 15.12 カタログv7のXHコネクタ
+- JST XHの基板用ヘッダーを2P～6Pそれぞれトップ型（BnB-XH-A相当）とサイド型（SnB-XH-A相当）で追加する。名称は `XH Connector <n>P Top/Side`、カテゴリはコネクタ、参照名は `J` とする
+- 1番ピンを `(1,1)` とし、n番ピンを `(n,1)` とする。ピン番号は画像の左から右へ増やし、1番ピンの位置に赤い印を付ける
+- TopのOccupiedは `x=0..n+1, y=0..2`（`(n+2)×3`穴）、Sideは `x=0..n+1, y=0..5`（`(n+2)×6`穴）とする。基準はKiCad公式の[垂直型B2B](https://github.com/KiCad/kicad-footprints/blob/master/Connector_JST.pretty/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.kicad_mod)・[水平型S2B](https://github.com/KiCad/kicad-footprints/blob/master/Connector_JST.pretty/JST_XH_S2B-XH-A_1x02_P2.50mm_Horizontal.kicad_mod)と同系列の3P～6Pフットプリント。本体の左右端は1番ピンから-2.45 mmと最終ピンから+2.45 mm。奥行はTopがピン列から-2.35～+3.40 mm、Sideが-2.30～+9.20 mm。各外形と交差する穴セルを保守的なOccupied領域に含める
+- XHの公称ピッチは2.50 mm、アプリの標準穴ピッチは2.54 mm。穴位置は整数グリッドへ近似するため、6Pでは端から端まで最大0.20 mmの差が生じる。実物を基板へ実装する際は使用する部品と穴径で適合を確認する
+- カタログv6以前からの更新では不足する10種類だけを追加する。以後の利用者による編集・削除は維持する
+- [10種類の上面画像一覧](./xh-connector-art.png)
 
 ## 16. キャンバス操作仕様
 - 左クリック: グリッドスナップ点に対する主操作（選択/配置/移動/配線）

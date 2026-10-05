@@ -30,7 +30,17 @@ const names = [
   "dip-16-ic",
   "pin-header-2x5",
   "buzzer-2p",
-  "terminal-block-4p"
+  "terminal-block-4p",
+  "xh-connector-2p-top",
+  "xh-connector-2p-side",
+  "xh-connector-3p-top",
+  "xh-connector-3p-side",
+  "xh-connector-4p-top",
+  "xh-connector-4p-side",
+  "xh-connector-5p-top",
+  "xh-connector-5p-side",
+  "xh-connector-6p-top",
+  "xh-connector-6p-side"
 ];
 
 const entries = await Promise.all(names.map(async (name) => {

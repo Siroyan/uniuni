@@ -223,6 +223,7 @@ uniuni/
 - 内蔵カタログv4への初回更新時は不足する6部品を追加し、変更のないCapacitor Radialの旧標準画像とPin Header 1x2の画像を差し替える。後者は利用者の絵も描き直し指定に従って差し替える
 - 内蔵カタログv5への初回更新時は不足する8部品を追加し、カテゴリ未設定の部品にIDごとの既定カテゴリを設定する。利用者が設定済みのカテゴリは維持する。`partCategories.ts` が表示順・ラベルと組み込みIDの分類を定義する
 - 内蔵カタログv6では `legacyTopViewArt.ts` の旧標準画像と一致する部品だけ真上図へ更新する。形状変更を伴う4種類の配置済みインスタンスは、回転を考慮して配置原点を補正し、ピンの絶対位置を維持する。候補の保存状態を検証し、Occupiedが基板外・他部品と衝突する場合だけ更新を保留して次回起動時に再判定する
+- 内蔵カタログv7では `xhConnectorPartDefs` の2P～6P・Top/Sideを不足分だけ追加する。`scripts/draw-xh-connectors.mjs` がJST XHのKiCadフットプリント寸法を穴8ドットのPNGへ描き、`scripts/embed-part-art.mjs` がデータURLを再生成する
 
 ### 8.3 プロジェクトZIP（`projectPackage.ts`）
 - Export:

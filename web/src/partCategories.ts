@@ -36,7 +36,17 @@ const builtInCategoryById: Record<string, PartCategory> = {
   "6a69eb4c-d4a1-4121-b5fd-44a0a34ea986": "ic", // DIP-16 IC
   "3b359d03-cea0-4e3c-a187-fe737dd8d800": "connector", // Pin Header 2x5
   "78bdfa3c-df5d-4247-bbc9-9feeb9f0a96b": "other", // Buzzer 2P
-  "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb": "connector" // Terminal Block 4P
+  "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb": "connector", // Terminal Block 4P
+  "67a6a59b-26fe-5457-bc09-cedc0e59bc2d": "connector", // XH Connector 2P Top
+  "d49f4a2e-2ef2-5d96-99c0-bfc12f054d75": "connector", // XH Connector 2P Side
+  "b9b383f2-18b6-5f2a-bc4c-f10e502b533b": "connector", // XH Connector 3P Top
+  "85ffdcfa-bd4d-5df7-8903-36c97eeddb54": "connector", // XH Connector 3P Side
+  "30902d35-1270-5582-b839-a783827fb455": "connector", // XH Connector 4P Top
+  "dde28fcc-7b06-5b3f-8f75-359c1918a98a": "connector", // XH Connector 4P Side
+  "cd106528-d815-513b-ae86-759b09f9ee1a": "connector", // XH Connector 5P Top
+  "ca000452-17d1-595b-91aa-d918e931c734": "connector", // XH Connector 5P Side
+  "4eb85419-a82d-5e5e-8888-a98c6355b3ff": "connector", // XH Connector 6P Top
+  "21e3a7ae-2575-5e8b-b61d-f2183aa16602": "connector" // XH Connector 6P Side
 };
 
 export function isPartCategory(value: unknown): value is PartCategory {

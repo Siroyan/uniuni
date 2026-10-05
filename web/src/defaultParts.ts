@@ -276,6 +276,34 @@ export const newestPartDefs: PartDef[] = [
   )
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
+const xhConnectorIds = [
+  ["67a6a59b-26fe-5457-bc09-cedc0e59bc2d", "d49f4a2e-2ef2-5d96-99c0-bfc12f054d75"],
+  ["b9b383f2-18b6-5f2a-bc4c-f10e502b533b", "85ffdcfa-bd4d-5df7-8903-36c97eeddb54"],
+  ["30902d35-1270-5582-b839-a783827fb455", "dde28fcc-7b06-5b3f-8f75-359c1918a98a"],
+  ["cd106528-d815-513b-ae86-759b09f9ee1a", "ca000452-17d1-595b-91aa-d918e931c734"],
+  ["4eb85419-a82d-5e5e-8888-a98c6355b3ff", "21e3a7ae-2575-5e8b-b61d-f2183aa16602"]
+] as const;
+
+function xhConnector(pins: number, orientation: "Top" | "Side", id: string): PartDef {
+  const artName = `xh-connector-${pins}p-${orientation.toLowerCase()}` as keyof typeof builtInPartArt;
+  return {
+    ...illustratedPart(
+      id,
+      `XH Connector ${pins}P ${orientation}`,
+      Array.from({ length: pins }, (_, index) => ({ name: String(index + 1), pos: { x: index + 1, y: 1 } })),
+      pins + 2,
+      orientation === "Top" ? 3 : 6,
+      builtInPartArt[artName]
+    ),
+    category: "connector"
+  };
+}
+
+export const xhConnectorPartDefs: PartDef[] = xhConnectorIds.flatMap(([topId, sideId], index) => [
+  xhConnector(index + 2, "Top", topId),
+  xhConnector(index + 2, "Side", sideId)
+]);
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -322,7 +350,8 @@ export const defaultPartDefs: PartDef[] = [
   ...pinHeaderPartDefs,
   ...additionalPartDefs,
   ...nextPartDefs,
-  ...newestPartDefs
+  ...newestPartDefs,
+  ...xhConnectorPartDefs
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
@@ -485,6 +514,10 @@ export function addMissingNextParts(existing: PartDef[]): PartDef[] {
 
 export function addMissingNewestParts(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, newestPartDefs);
+}
+
+export function addMissingXhConnectors(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, xhConnectorPartDefs);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

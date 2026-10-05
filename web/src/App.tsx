@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
 import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
@@ -94,7 +94,8 @@ const defPrefixById: Record<string, string> = {
   "3b359d03-cea0-4e3c-a187-fe737dd8d800": "J",
   "78bdfa3c-df5d-4247-bbc9-9feeb9f0a96b": "BZ",
   "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb": "J",
-  ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"]))
+  ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"])),
+  ...Object.fromEntries(xhConnectorPartDefs.map((def) => [def.id, "J"]))
 };
 
 const builtInPartIds = {
@@ -473,6 +474,7 @@ export function App(): JSX.Element {
               effectivePartDefs = addMissingNewestParts(effectivePartDefs);
               effectivePartDefs = categorizeParts(effectivePartDefs);
             }
+            if (catalogVersion < 7) effectivePartDefs = addMissingXhConnectors(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
