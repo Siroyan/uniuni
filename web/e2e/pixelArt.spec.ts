@@ -133,7 +133,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
   await expect(page.locator(".part-card img")).toHaveCount(26);
 });
 
-test("電解コンデンサの上面図は対称な2穴と4x3のOccupiedを使い、配置済み旧品は保持する", async ({ page }) => {
+test("電解コンデンサの旧配置はピンを動かさず更新し、基板端だけ保留する", async ({ page }) => {
   await page.goto("./");
   await expect(page.getByText(/Core: WASM/)).toBeVisible();
   const editor = page.getByRole("complementary", { name: "Part Editor" });
@@ -214,7 +214,7 @@ test("電解コンデンサの上面図は対称な2穴と4x3のOccupiedを使�
   await expect(canvas).toHaveAttribute("height", "24");
   await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", currentArt!);
 
-  await page.evaluate(async ({ legacyDef, savedProject }) => {
+  const restoreOldPlaced = async (atX: number): Promise<void> => page.evaluate(async ({ legacyDef, savedProject, atX }) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("uniuni-db");
       request.onsuccess = () => resolve(request.result);
@@ -223,7 +223,7 @@ test("電解コンデンサの上面図は対称な2穴と4x3のOccupiedを使�
     const oldProject = {
       ...savedProject,
       part_defs: savedProject.part_defs.map((def: { id: string }) => def.id === legacyDef.id ? legacyDef : def),
-      part_insts: [{ id: crypto.randomUUID(), def_id: legacyDef.id, at: { x: 5, y: 5 }, rot: "Deg0", refdes: "C1", net_assign: {} }]
+      part_insts: [{ id: crypto.randomUUID(), def_id: legacyDef.id, at: { x: atX, y: 5 }, rot: "Deg0", refdes: "C1", net_assign: {} }]
     };
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(["part_library", "project_snapshots"], "readwrite");
@@ -233,7 +233,27 @@ test("電解コンデンサの上面図は対称な2穴と4x3のOccupiedを使�
       tx.onerror = () => reject(tx.error);
     });
     db.close();
-  }, { legacyDef: oldCap, savedProject: project });
+  }, { legacyDef: oldCap, savedProject: project, atX });
+  await restoreOldPlaced(5);
+  await page.reload();
+  await expect(editor.getByText("core is not ready")).toBeHidden();
+  await selector.selectOption({ label: "Capacitor Electrolytic" });
+  await expect(canvas).toHaveAttribute("width", "32");
+  await expect(canvas).toHaveAttribute("height", "24");
+  await expect(capImage).toHaveAttribute("src", currentArt!);
+  const [migratedDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const migratedFile = path.join(directory, "migrated.zip");
+  await migratedDownload.saveAs(migratedFile);
+  const migratedZip = await JSZip.loadAsync(await readFile(migratedFile));
+  const migratedProject = JSON.parse(await migratedZip.file("project.json")!.async("string")) as {
+    part_insts: Array<{ at: { x: number; y: number } }>;
+  };
+  expect(migratedProject.part_insts[0].at).toEqual({ x: 4, y: 5 });
+
+  await restoreOldPlaced(0);
   await page.reload();
   await expect(editor.getByText("core is not ready")).toBeHidden();
   await selector.selectOption({ label: "Capacitor Electrolytic" });

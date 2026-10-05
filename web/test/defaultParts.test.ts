@@ -33,7 +33,7 @@ test("6.3 mm electrolytic can centers 2.5 mm leads in a 4x3 hole envelope", () =
   assert.equal(newestPartDefs[3].occupied.length, 12);
 });
 
-test("top-view migration updates untouched art while preserving placed or edited footprints", () => {
+test("top-view migration moves placed stock parts without moving their pins and preserves blocked or edited footprints", () => {
   const cap = nextPartDefs[0];
   const oldCap: PartDef = {
     ...cap,
@@ -46,17 +46,47 @@ test("top-view migration updates untouched art while preserving placed or edited
   const transistor = additionalPartDefs[2];
   const oldTransistor = { ...transistor, imageDataUrl: legacyTopViewArt["transistor-to-92"] };
   const customCap = { ...oldCap, imageDataUrl: "data:image/png;base64,Y3VzdG9t" };
-  const placed = updateBuiltInTopViews([oldCap, oldLed, oldTransistor, customCap], new Set([cap.id, led.id, transistor.id]));
-  assert.equal(placed[0], oldCap);
-  assert.equal(placed[1], oldLed);
-  assert.equal(placed[2].imageDataUrl, transistor.imageDataUrl);
-  assert.equal(placed[3], customCap);
-  const upgraded = updateBuiltInTopViews([oldCap, oldLed], new Set());
-  assert.deepEqual(upgraded[0].pins, cap.pins);
-  assert.deepEqual(upgraded[0].occupied, cap.occupied);
-  assert.equal(upgraded[0].imageDataUrl, cap.imageDataUrl);
-  assert.deepEqual(upgraded[1].occupied, led.occupied);
-  assert.equal(updateBuiltInTopViews(upgraded, new Set()), upgraded);
+  const originalArt = updateBuiltInTopViews([oldTransistor, customCap], null);
+  assert.equal(originalArt.partDefs[0].imageDataUrl, transistor.imageDataUrl);
+  assert.equal(originalArt.partDefs[1], customCap);
+
+  const snapshot = (atX: number, rot = "Deg0"): string => JSON.stringify({
+    schema_version: 1,
+    board: { width: 20, height: 20, grid_pitch_mm: 2.54 },
+    part_defs: [oldCap],
+    part_insts: [{ id: "f1ab17a9-c2b1-4d37-862f-eb0ed93f53b5", def_id: cap.id,
+      at: { x: atX, y: 5 }, rot, refdes: "C1", net_assign: {} }],
+    nets: [], wires: []
+  });
+  const placed = updateBuiltInTopViews([oldCap], snapshot(5));
+  assert.deepEqual(placed.partDefs[0].pins, cap.pins);
+  assert.deepEqual(placed.partDefs[0].occupied, cap.occupied);
+  const moved = JSON.parse(placed.coreStateJson!);
+  assert.deepEqual(moved.part_insts[0].at, { x: 4, y: 5 });
+  assert.deepEqual(moved.part_defs[0].pins, cap.pins);
+  assert.deepEqual(moved.part_insts[0].at.x + moved.part_defs[0].pins[0].pos.x, 5);
+  const rotated = updateBuiltInTopViews([oldCap], snapshot(5, "Deg90"));
+  assert.deepEqual(JSON.parse(rotated.coreStateJson!).part_insts[0].at, { x: 5, y: 4 });
+  assert.deepEqual(JSON.parse(updateBuiltInTopViews([oldCap], snapshot(1)).coreStateJson!).part_insts[0].at,
+    { x: 0, y: 5 });
+  const librarySavedFirst = updateBuiltInTopViews([cap], snapshot(5));
+  assert.equal(librarySavedFirst.partDefs[0], cap);
+  assert.deepEqual(JSON.parse(librarySavedFirst.coreStateJson!).part_insts[0].at, { x: 4, y: 5 });
+  const projectSavedFirst = updateBuiltInTopViews([oldCap], placed.coreStateJson);
+  assert.deepEqual(projectSavedFirst.partDefs[0].pins, cap.pins);
+  assert.equal(projectSavedFirst.coreStateJson, placed.coreStateJson);
+
+  const blocked = updateBuiltInTopViews([oldCap], snapshot(0));
+  assert.equal(blocked.partDefs[0], oldCap);
+  assert.equal(blocked.coreStateJson, snapshot(0));
+  assert.deepEqual(blocked.blockedNames, [cap.name]);
+  const blockedAfterLibrarySave = updateBuiltInTopViews([cap], snapshot(0));
+  assert.deepEqual(blockedAfterLibrarySave.partDefs[0].pins, oldCap.pins);
+  assert.equal(blockedAfterLibrarySave.partDefs[0].imageDataUrl, oldCap.imageDataUrl);
+  const upgraded = updateBuiltInTopViews([oldCap, oldLed], null);
+  assert.deepEqual(upgraded.partDefs[0].pins, cap.pins);
+  assert.deepEqual(upgraded.partDefs[1].occupied, led.occupied);
+  assert.equal(updateBuiltInTopViews(upgraded.partDefs, null).partDefs, upgraded.partDefs);
 });
 
 test("eight newest parts have 2.54 mm hole patterns and categories", () => {

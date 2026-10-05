@@ -496,21 +496,16 @@ export function App(): JSX.Element {
           warnings.push(`保存スナップショット読込に失敗: ${asMessage(err)}`);
         }
 
-        const placedDefIds = new Set<string>();
-        if (snapshot?.coreStateJson) {
-          try {
-            const saved = JSON.parse(snapshot.coreStateJson) as { part_insts?: Array<{ def_id?: unknown }> };
-            for (const part of saved.part_insts ?? []) {
-              if (typeof part.def_id === "string") placedDefIds.add(part.def_id);
-            }
-          } catch {
-            // Invalid saved states are handled by the existing restore fallback below.
-          }
-        }
-        const topViewDefs = updateBuiltInTopViews(effectivePartDefs, placedDefIds);
-        if (topViewDefs !== effectivePartDefs) {
-          effectivePartDefs = topViewDefs;
+        const topViewUpdate = updateBuiltInTopViews(effectivePartDefs, snapshot?.coreStateJson ?? null);
+        if (topViewUpdate.partDefs !== effectivePartDefs) {
+          effectivePartDefs = topViewUpdate.partDefs;
           saveUpdatedCatalog = true;
+        }
+        if (snapshot && topViewUpdate.coreStateJson && topViewUpdate.coreStateJson !== snapshot.coreStateJson) {
+          snapshot = { ...snapshot, coreStateJson: topViewUpdate.coreStateJson };
+        }
+        if (topViewUpdate.blockedNames.length > 0) {
+          warnings.push(`旧部品の図を更新できません: ${topViewUpdate.blockedNames.join("、")}。保存済みの配置と新しい外形が整合しません。`);
         }
 
         let nextState: string;

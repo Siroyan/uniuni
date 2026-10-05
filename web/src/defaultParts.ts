@@ -1,7 +1,9 @@
-import type { GridPt, PartDef } from "./types";
+import type { GridPt, PartDef, Rot } from "./types";
 import { builtInPartArt } from "./builtInPartArt";
 import { partCategory } from "./partCategories";
 import { legacyTopViewArt } from "./legacyTopViewArt";
+import { rotateRelative } from "./parts";
+import { validateProjectStateJson } from "./projectStateValidation";
 
 function pinHeader(id: string, name: string, positions: GridPt[], art: string): PartDef {
   return {
@@ -352,20 +354,76 @@ const oldTopViewFootprints: Record<string, Pick<PartDef, "pins" | "occupied">> =
   }
 };
 
-/** Upgrade untouched stock art. Keep placed components with changed geometry so saved boards and wires remain valid. */
-export function updateBuiltInTopViews(existing: PartDef[], placedDefIds: ReadonlySet<string>): PartDef[] {
+type SavedTopViewState = {
+  part_defs: Array<Pick<PartDef, "id" | "name" | "pins" | "occupied">>;
+  part_insts: Array<{ def_id: string; at: GridPt; rot: Rot }>;
+};
+
+type TopViewUpdate = { partDefs: PartDef[]; coreStateJson: string | null; blockedNames: string[] };
+
+/** Upgrade untouched stock art and shift placed instances only when their pins and board occupancy stay valid. */
+export function updateBuiltInTopViews(existing: PartDef[], coreStateJson: string | null): TopViewUpdate {
   const canonicalById = new Map(defaultPartDefs.map((def) => [def.id, def]));
-  let changed = false;
+  let stateJson = coreStateJson;
+  let validSavedState = false;
+  if (stateJson) {
+    try {
+      validateProjectStateJson(stateJson);
+      validSavedState = true;
+    } catch {
+      // The restore path below will start a fresh project for invalid snapshots.
+    }
+  }
+  const blockedNames: string[] = [];
   const updated = existing.map((def) => {
     const name = topViewArtById[def.id];
     const canonical = canonicalById.get(def.id);
-    if (!name || !canonical || def.name !== canonical.name || def.imageDataUrl !== legacyTopViewArt[name]
+    if (!name || !canonical || def.name !== canonical.name
       || (def.imageScale ?? 1) !== 1 || (def.imageOffsetX ?? 0) !== 0 || (def.imageOffsetY ?? 0) !== 0) return def;
     const oldFootprint = oldTopViewFootprints[def.id] ?? canonical;
-    if (JSON.stringify(def.pins) !== JSON.stringify(oldFootprint.pins)
-      || JSON.stringify(def.occupied) !== JSON.stringify(oldFootprint.occupied)) return def;
-    if (oldTopViewFootprints[def.id] && placedDefIds.has(def.id)) return def;
-    changed = true;
+    const matchesFootprint = (candidate: Pick<PartDef, "pins" | "occupied">, reference: Pick<PartDef, "pins" | "occupied">): boolean =>
+      JSON.stringify(candidate.pins) === JSON.stringify(reference.pins)
+      && JSON.stringify(candidate.occupied) === JSON.stringify(reference.occupied);
+    const hasOldStock = def.imageDataUrl === legacyTopViewArt[name] && matchesFootprint(def, oldFootprint);
+    const hasNewStock = def.imageDataUrl === canonical.imageDataUrl && matchesFootprint(def, canonical);
+    if (!hasOldStock && !hasNewStock) return def;
+    if (oldTopViewFootprints[def.id] && validSavedState && stateJson) {
+      const candidate = JSON.parse(stateJson) as SavedTopViewState;
+      const placed = candidate.part_insts.filter((inst) => inst.def_id === def.id);
+      if (placed.length > 0) {
+        const coreDef = candidate.part_defs.find((item) => item.id === def.id);
+        if (!coreDef || (!matchesFootprint(coreDef, oldFootprint) && !matchesFootprint(coreDef, canonical))) {
+          blockedNames.push(def.name);
+          return def;
+        }
+        if (matchesFootprint(coreDef, oldFootprint)) {
+          const firstOldPin = oldFootprint.pins[0];
+          const firstNewPin = canonical.pins.find((pin) => pin.name === firstOldPin.name);
+          if (!firstNewPin) return def;
+          const originShift = {
+            x: firstOldPin.pos.x - firstNewPin.pos.x,
+            y: firstOldPin.pos.y - firstNewPin.pos.y
+          };
+          for (const inst of placed) {
+            const shift = rotateRelative(originShift, inst.rot);
+            inst.at = { x: inst.at.x + shift.x, y: inst.at.y + shift.y };
+          }
+          coreDef.pins = canonical.pins;
+          coreDef.occupied = canonical.occupied;
+          const candidateJson = JSON.stringify(candidate);
+          try {
+            validateProjectStateJson(candidateJson);
+            stateJson = candidateJson;
+          } catch {
+            blockedNames.push(def.name);
+            if (hasOldStock) return def;
+            return { ...def, pins: oldFootprint.pins, occupied: oldFootprint.occupied,
+              imageDataUrl: legacyTopViewArt[name] };
+          }
+        }
+      }
+    }
+    if (hasNewStock) return def;
     return {
       ...def,
       pins: canonical.pins.map((pin) => ({ name: pin.name, pos: { ...pin.pos } })),
@@ -374,7 +432,8 @@ export function updateBuiltInTopViews(existing: PartDef[], placedDefIds: Readonl
       imagePixelated: true
     };
   });
-  return changed ? updated : existing;
+  const changed = updated.some((def, index) => def !== existing[index]);
+  return { partDefs: changed ? updated : existing, coreStateJson: stateJson, blockedNames };
 }
 
 const oldRadialCapacitorArt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC";
