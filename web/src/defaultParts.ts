@@ -1,6 +1,7 @@
 import type { GridPt, PartDef } from "./types";
 import { builtInPartArt } from "./builtInPartArt";
 import { partCategory } from "./partCategories";
+import { legacyTopViewArt } from "./legacyTopViewArt";
 
 function pinHeader(id: string, name: string, positions: GridPt[], art: string): PartDef {
   return {
@@ -76,7 +77,7 @@ export const additionalPartDefs: PartDef[] = [
       { name: "A", pos: { x: 0, y: 1 } },
       { name: "K", pos: { x: 1, y: 1 } }
     ],
-    occupied: occupiedRectangle(2, 2),
+    occupied: occupiedRectangle(2, 3),
     imageDataUrl: builtInPartArt["led-5mm"],
     imagePixelated: true,
     imageScale: 1,
@@ -152,8 +153,8 @@ export const nextPartDefs: PartDef[] = [
   {
     id: "77750a90-4823-4cdf-bfea-a3b36e7872a8",
     name: "Capacitor Electrolytic",
-    pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
-    occupied: occupiedRectangle(2, 2),
+    pins: [{ name: "+", pos: { x: 1, y: 1 } }, { name: "-", pos: { x: 2, y: 1 } }],
+    occupied: occupiedRectangle(4, 3),
     imageDataUrl: builtInPartArt["capacitor-electrolytic"],
     imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
   },
@@ -241,12 +242,12 @@ export const newestPartDefs: PartDef[] = [
   illustratedPart(
     "97c4076e-3a81-4a7a-8db7-f187e0157358", "Photoresistor Radial",
     [{ name: "1", pos: { x: 0, y: 1 } }, { name: "2", pos: { x: 1, y: 1 } }],
-    2, 2, builtInPartArt["photoresistor-radial"]
+    2, 3, builtInPartArt["photoresistor-radial"]
   ),
   illustratedPart(
     "008e51b2-6271-4c03-9dac-dc235fe15175", "RGB LED 4-pin",
     Array.from({ length: 4 }, (_, x) => ({ name: String(x + 1), pos: { x, y: 1 } })),
-    4, 2, builtInPartArt["rgb-led-4-pin"]
+    4, 3, builtInPartArt["rgb-led-4-pin"]
   ),
   illustratedPart(
     "6a69eb4c-d4a1-4121-b5fd-44a0a34ea986", "DIP-16 IC",
@@ -321,6 +322,60 @@ export const defaultPartDefs: PartDef[] = [
   ...nextPartDefs,
   ...newestPartDefs
 ].map((def) => ({ ...def, category: partCategory(def) }));
+
+const topViewArtById: Record<string, string> = {
+  "77750a90-4823-4cdf-bfea-a3b36e7872a8": "capacitor-electrolytic",
+  "25da8655-cbdc-4221-b7c3-6c13bde21d75": "led-5mm",
+  "8acc092b-3960-46cb-b0f2-0995cc01a107": "transistor-to-92",
+  "5ed6e5ed-ba33-45d5-aa04-4fe27f9f9ff1": "to-220-3-pin",
+  "799559c3-a49b-4905-9b85-777aa4a982c8": "capacitor-ceramic-disc",
+  "97c4076e-3a81-4a7a-8db7-f187e0157358": "photoresistor-radial",
+  "008e51b2-6271-4c03-9dac-dc235fe15175": "rgb-led-4-pin"
+};
+
+const oldTopViewFootprints: Record<string, Pick<PartDef, "pins" | "occupied">> = {
+  "77750a90-4823-4cdf-bfea-a3b36e7872a8": {
+    pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
+    occupied: occupiedRectangle(2, 2)
+  },
+  "25da8655-cbdc-4221-b7c3-6c13bde21d75": {
+    pins: [{ name: "A", pos: { x: 0, y: 1 } }, { name: "K", pos: { x: 1, y: 1 } }],
+    occupied: occupiedRectangle(2, 2)
+  },
+  "97c4076e-3a81-4a7a-8db7-f187e0157358": {
+    pins: [{ name: "1", pos: { x: 0, y: 1 } }, { name: "2", pos: { x: 1, y: 1 } }],
+    occupied: occupiedRectangle(2, 2)
+  },
+  "008e51b2-6271-4c03-9dac-dc235fe15175": {
+    pins: Array.from({ length: 4 }, (_, x) => ({ name: String(x + 1), pos: { x, y: 1 } })),
+    occupied: occupiedRectangle(4, 2)
+  }
+};
+
+/** Upgrade untouched stock art. Keep placed components with changed geometry so saved boards and wires remain valid. */
+export function updateBuiltInTopViews(existing: PartDef[], placedDefIds: ReadonlySet<string>): PartDef[] {
+  const canonicalById = new Map(defaultPartDefs.map((def) => [def.id, def]));
+  let changed = false;
+  const updated = existing.map((def) => {
+    const name = topViewArtById[def.id];
+    const canonical = canonicalById.get(def.id);
+    if (!name || !canonical || def.name !== canonical.name || def.imageDataUrl !== legacyTopViewArt[name]
+      || (def.imageScale ?? 1) !== 1 || (def.imageOffsetX ?? 0) !== 0 || (def.imageOffsetY ?? 0) !== 0) return def;
+    const oldFootprint = oldTopViewFootprints[def.id] ?? canonical;
+    if (JSON.stringify(def.pins) !== JSON.stringify(oldFootprint.pins)
+      || JSON.stringify(def.occupied) !== JSON.stringify(oldFootprint.occupied)) return def;
+    if (oldTopViewFootprints[def.id] && placedDefIds.has(def.id)) return def;
+    changed = true;
+    return {
+      ...def,
+      pins: canonical.pins.map((pin) => ({ name: pin.name, pos: { ...pin.pos } })),
+      occupied: canonical.occupied.map((cell) => ({ ...cell })),
+      imageDataUrl: canonical.imageDataUrl,
+      imagePixelated: true
+    };
+  });
+  return changed ? updated : existing;
+}
 
 const oldRadialCapacitorArt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAYAAADwdn+XAAAAe0lEQVR42mNkwAKK7Qz+YxPvPXSBEV2MBZvmnil+KGIvd5+GMf+jG8KCrrnUXxKb5QyCOnIMpVgMYcGmGMlGgoDlxoPncP/OjvMkShOyHpb1Ow9hKLh0+ROmrstXGPR0+RgYGBgYkPUwYgtEdyVurDbvvPcVIyYYKY1GANN1MojLEkX8AAAAAElFTkSuQmCC";
 

@@ -3,6 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import { legacyTopViewArt } from "../src/legacyTopViewArt";
 
 test("部品サイズのドット絵を描いて登録し、再読込とZIPへ保存できる", async ({ page }) => {
   await page.goto("./");
@@ -113,6 +114,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
   await page.reload();
   await expect(page.locator(".part-card img")).toHaveCount(27);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await expect(editor.getByText("core is not ready")).toBeHidden();
   await editor.getByRole("button", { name: "Clear Image" }).click();
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveCount(0);
   await expect.poll(() => page.evaluate(async () => {
@@ -126,9 +128,145 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([5, null]);
+  })).toEqual([6, null]);
   await page.reload();
   await expect(page.locator(".part-card img")).toHaveCount(26);
+});
+
+test("電解コンデンサの上面図は対称な2穴と4x3のOccupiedを使い、配置済み旧品は保持する", async ({ page }) => {
+  await page.goto("./");
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  const selector = editor.locator("select.net-select").first();
+  await selector.selectOption({ label: "Capacitor Electrolytic" });
+  const canvas = editor.getByRole("img", { name: /ドット絵キャンバス/ });
+  await expect(canvas).toHaveAttribute("width", "32");
+  await expect(canvas).toHaveAttribute("height", "24");
+  const capImage = page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img");
+  const currentArt = await capImage.getAttribute("src");
+  const artGeometry = await capImage.evaluate(async (element) => {
+    const image = element as HTMLImageElement;
+    await image.decode();
+    const pixels = document.createElement("canvas");
+    pixels.width = image.naturalWidth;
+    pixels.height = image.naturalHeight;
+    const context = pixels.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const rgba = context.getImageData(0, 0, pixels.width, pixels.height).data;
+    let minX = pixels.width;
+    let minY = pixels.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < pixels.height; y += 1) {
+      for (let x = 0; x < pixels.width; x += 1) {
+        if (rgba[(y * pixels.width + x) * 4 + 3] === 0) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+    return { centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
+  });
+  expect(artGeometry).toEqual({ centerX: 15.5, centerY: 11.5 });
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const directory = await mkdtemp(path.join(tmpdir(), "uniuni-top-view-"));
+  const downloaded = path.join(directory, "project.zip");
+  await download.saveAs(downloaded);
+  const zip = await JSZip.loadAsync(await readFile(downloaded));
+  const project = JSON.parse(await zip.file("project.json")!.async("string")) as {
+    part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: Array<{ x: number; y: number }> }>;
+    part_insts: unknown[];
+  };
+  const cap = project.part_defs.find((def) => def.name === "Capacitor Electrolytic")!;
+  expect(cap.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([["+", 1, 1], ["-", 2, 1]]);
+  expect(cap.occupied).toHaveLength(12);
+
+  const oldCap = {
+    ...cap,
+    pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
+    occupied: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+    imageDataUrl: legacyTopViewArt["capacitor-electrolytic"]
+  };
+  await page.evaluate(async (legacyDef) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 5, partDefs: [legacyDef] }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, oldCap);
+
+  await page.reload();
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  await selector.selectOption({ label: "Capacitor Electrolytic" });
+  await expect(canvas).toHaveAttribute("width", "32");
+  await expect(canvas).toHaveAttribute("height", "24");
+  await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", currentArt!);
+
+  await page.evaluate(async ({ legacyDef, savedProject }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const oldProject = {
+      ...savedProject,
+      part_defs: savedProject.part_defs.map((def: { id: string }) => def.id === legacyDef.id ? legacyDef : def),
+      part_insts: [{ id: crypto.randomUUID(), def_id: legacyDef.id, at: { x: 5, y: 5 }, rot: "Deg0", refdes: "C1", net_assign: {} }]
+    };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["part_library", "project_snapshots"], "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 5, partDefs: [legacyDef] }, "default_library");
+      tx.objectStore("project_snapshots").put({ schemaVersion: 1, coreStateJson: JSON.stringify(oldProject), selectedNetId: null }, "active_project");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { legacyDef: oldCap, savedProject: project });
+  await page.reload();
+  await expect(editor.getByText("core is not ready")).toBeHidden();
+  await selector.selectOption({ label: "Capacitor Electrolytic" });
+  await expect(canvas).toHaveAttribute("width", "16");
+  await expect(canvas).toHaveAttribute("height", "16");
+  await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", legacyTopViewArt["capacitor-electrolytic"]);
+
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("project_snapshots", "readwrite");
+      const store = tx.objectStore("project_snapshots");
+      const request = store.get("active_project");
+      request.onsuccess = () => {
+        const snapshot = request.result as { coreStateJson: string };
+        const state = JSON.parse(snapshot.coreStateJson);
+        state.part_insts = [];
+        store.put({ ...snapshot, coreStateJson: JSON.stringify(state) }, "active_project");
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await expect(editor.getByText("core is not ready")).toBeHidden();
+  await selector.selectOption({ label: "Capacitor Electrolytic" });
+  await expect(canvas).toHaveAttribute("width", "32");
+  await expect(canvas).toHaveAttribute("height", "24");
 });
 
 test("画像付きのv2カタログには不足する部品を追加し、後の削除を維持する", async ({ page }) => {

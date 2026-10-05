@@ -2,6 +2,16 @@
 
 ※このファイルの今後の追記は日本語で行う。
 
+## 2026-10-05 (電解コンデンサの寸法と部品画像の真上図を補正)
+実装内容:
+- 提示された寸法図のφ6.3 mm品を基準に、電解コンデンサのリードを中央の2穴へ点対称に配置。最大外径φ6.8 mmを収める4×3穴のOccupiedと32×24ドットの真上図へ変更。
+- LED 5mm、Photoresistor Radial、RGB LED 4-pinのOccupiedを上面の円形外形に合わせて拡大し、Transistor TO-92、TO-220 3-pin、Capacitor Ceramic Discと合わせて7種類の画像を真上図に更新。
+- カタログv6では未編集の標準画像だけ更新。配置済み部品の形状は保存済み基板を守るため維持し、配置がなくなった後の起動時に再判定する。
+- [全部品の真上図一覧](./built-in-part-art.png)を更新。
+
+検証:
+- Dev ContainerのWeb本番ビルド、Webユニットテスト5件、Chromium E2E全20件が成功。寸法・旧ライブラリ移行・配置済み形状の維持と、配置を除いた後の更新を確認。
+
 ## 2026-10-04 (初期部品を27種類へ拡充し、カテゴリ表示を追加)
 実装内容:
 - Capacitor Ceramic Disc、Fuse Axial、Photoresistor Radial、RGB LED 4-pin、DIP-16 IC、Pin Header 2x5、Buzzer 2P、Terminal Block 4Pを追加。穴中心にリード・端子を合わせたドット絵を制作した。

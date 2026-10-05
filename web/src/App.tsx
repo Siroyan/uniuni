@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews } from "./defaultParts";
 import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
@@ -494,6 +494,23 @@ export function App(): JSX.Element {
           snapshot = await loadSnapshot();
         } catch (err) {
           warnings.push(`保存スナップショット読込に失敗: ${asMessage(err)}`);
+        }
+
+        const placedDefIds = new Set<string>();
+        if (snapshot?.coreStateJson) {
+          try {
+            const saved = JSON.parse(snapshot.coreStateJson) as { part_insts?: Array<{ def_id?: unknown }> };
+            for (const part of saved.part_insts ?? []) {
+              if (typeof part.def_id === "string") placedDefIds.add(part.def_id);
+            }
+          } catch {
+            // Invalid saved states are handled by the existing restore fallback below.
+          }
+        }
+        const topViewDefs = updateBuiltInTopViews(effectivePartDefs, placedDefIds);
+        if (topViewDefs !== effectivePartDefs) {
+          effectivePartDefs = topViewDefs;
+          saveUpdatedCatalog = true;
         }
 
         let nextState: string;

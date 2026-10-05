@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews } from "../src/defaultParts";
 import { categorizeParts, partCategory } from "../src/partCategories";
+import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
 test("all 27 built-in drawings match their footprints and source PNGs", () => {
@@ -17,6 +18,45 @@ test("all 27 built-in drawings match their footprints and source PNGs", () => {
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("6.3 mm electrolytic can centers 2.5 mm leads in a 4x3 hole envelope", () => {
+  const cap = nextPartDefs[0];
+  assert.deepEqual(cap.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["+", 1, 1], ["-", 2, 1]]);
+  assert.equal(cap.occupied.length, 12);
+  assert.equal((cap.pins[0].pos.x + cap.pins[1].pos.x) / 2, 1.5);
+  assert.equal((Math.min(...cap.occupied.map((pt) => pt.x)) + Math.max(...cap.occupied.map((pt) => pt.x))) / 2, 1.5);
+  assert.equal(cap.pins[0].pos.y, 1);
+  assert.equal((Math.min(...cap.occupied.map((pt) => pt.y)) + Math.max(...cap.occupied.map((pt) => pt.y))) / 2, 1);
+  assert.deepEqual(additionalPartDefs[1].occupied.map((pt) => pt.y).sort(), [0, 0, 1, 1, 2, 2]);
+  assert.equal(newestPartDefs[2].occupied.length, 6);
+  assert.equal(newestPartDefs[3].occupied.length, 12);
+});
+
+test("top-view migration updates untouched art while preserving placed or edited footprints", () => {
+  const cap = nextPartDefs[0];
+  const oldCap: PartDef = {
+    ...cap,
+    pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
+    occupied: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+    imageDataUrl: legacyTopViewArt["capacitor-electrolytic"]
+  };
+  const led = additionalPartDefs[1];
+  const oldLed = { ...led, occupied: oldCap.occupied, imageDataUrl: legacyTopViewArt["led-5mm"] };
+  const transistor = additionalPartDefs[2];
+  const oldTransistor = { ...transistor, imageDataUrl: legacyTopViewArt["transistor-to-92"] };
+  const customCap = { ...oldCap, imageDataUrl: "data:image/png;base64,Y3VzdG9t" };
+  const placed = updateBuiltInTopViews([oldCap, oldLed, oldTransistor, customCap], new Set([cap.id, led.id, transistor.id]));
+  assert.equal(placed[0], oldCap);
+  assert.equal(placed[1], oldLed);
+  assert.equal(placed[2].imageDataUrl, transistor.imageDataUrl);
+  assert.equal(placed[3], customCap);
+  const upgraded = updateBuiltInTopViews([oldCap, oldLed], new Set());
+  assert.deepEqual(upgraded[0].pins, cap.pins);
+  assert.deepEqual(upgraded[0].occupied, cap.occupied);
+  assert.equal(upgraded[0].imageDataUrl, cap.imageDataUrl);
+  assert.deepEqual(upgraded[1].occupied, led.occupied);
+  assert.equal(updateBuiltInTopViews(upgraded, new Set()), upgraded);
 });
 
 test("eight newest parts have 2.54 mm hole patterns and categories", () => {
@@ -56,7 +96,7 @@ test("six new footprints follow the hole grid and pin order", () => {
     ["Capacitor Electrolytic", 2], ["TO-220 3-pin", 3], ["DIP-14 IC", 14],
     ["Slide Switch SPDT", 3], ["Terminal Block 3P", 3], ["Trimmer 3P Inline", 3]
   ]);
-  assert.deepEqual(nextPartDefs[0].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["+", 0, 1], ["-", 1, 1]]);
+  assert.deepEqual(nextPartDefs[0].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [["+", 1, 1], ["-", 2, 1]]);
   assert.deepEqual(nextPartDefs[1].pins.map((pin) => [pin.pos.x, pin.pos.y]), [[1, 2], [2, 2], [3, 2]]);
   assert.deepEqual(nextPartDefs[2].pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
     ...Array.from({ length: 7 }, (_, y) => [String(y + 1), 0, y]),
