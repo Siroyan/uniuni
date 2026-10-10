@@ -9,7 +9,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4173",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure"
+    video: process.env.UNIUNI_CHROMIUM_PATH ? "off" : "retain-on-failure"
   },
   webServer: {
     command: "npm run dev -- --host 127.0.0.1 --port 4173 --strictPort",
@@ -20,7 +20,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] }
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.UNIUNI_CHROMIUM_PATH
+          ? { launchOptions: { executablePath: process.env.UNIUNI_CHROMIUM_PATH } }
+          : {})
+      }
     }
   ]
 });

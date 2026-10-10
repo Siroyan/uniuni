@@ -18,7 +18,7 @@ MVP Step1〜Step7 は完了している。
 - 基板サイズの任意設定と秋月A/B/Cプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
-- Net 追加/改名、Pin への Net 割当
+- Net 追加/改名/削除、Pin への Net 割当。削除時は関連する配線とPin割当も同じCoreコマンドで削除
 - Net ごとの配線色カスタマイズ（未設定時は既定パレット）
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）

@@ -104,6 +104,9 @@ pub enum Command {
     DeleteWire {
         wire_id: Uuid,
     },
+    DeleteNet {
+        net_id: Uuid,
+    },
     ResizeBoard {
         width: i32,
         height: i32,
@@ -318,6 +321,17 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             state.wires.retain(|wire| wire.id != wire_id);
             if state.wires.len() == before {
                 return Err("wire not found".to_owned());
+            }
+            Ok(())
+        }
+        Command::DeleteNet { net_id } => {
+            if !state.nets.iter().any(|net| net.id == net_id) {
+                return Err("net not found".to_owned());
+            }
+            state.nets.retain(|net| net.id != net_id);
+            state.wires.retain(|wire| wire.net_id != net_id);
+            for part in &mut state.part_insts {
+                part.net_assign.retain(|_, assigned_net_id| *assigned_net_id != net_id);
             }
             Ok(())
         }
@@ -775,6 +789,65 @@ mod tests {
             }],
             wires: Vec::new(),
         }
+    }
+
+    #[test]
+    fn delete_net_removes_its_wires_and_pin_assignments_only() {
+        let mut state = test_state();
+        let deleted_net = state.nets[0].id;
+        let retained_net = uuid("44444444-4444-4444-4444-444444444444");
+        state.nets.push(Net { id: retained_net, name: "Keep".to_owned(), color: None });
+        state.wires.push(Wire {
+            id: uuid("55555555-5555-5555-5555-555555555555"),
+            net_id: deleted_net,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        });
+        state.wires.push(Wire {
+            id: uuid("66666666-6666-6666-6666-666666666666"),
+            net_id: retained_net,
+            path: vec![GridPt { x: 2, y: 0 }, GridPt { x: 3, y: 0 }],
+        });
+        state.part_defs[0].pins.push(PinDef {
+            name: "2".to_owned(),
+            pos: GridPt { x: 1, y: 0 },
+        });
+        state.part_insts[0].net_assign.insert("2".to_owned(), retained_net);
+
+        apply_command(&mut state, Command::DeleteNet { net_id: deleted_net }).unwrap();
+
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.nets[0].id, retained_net);
+        assert_eq!(state.wires.len(), 1);
+        assert_eq!(state.wires[0].net_id, retained_net);
+        assert_eq!(state.part_insts[0].net_assign.get("1"), None);
+        assert_eq!(state.part_insts[0].net_assign.get("2"), Some(&retained_net));
+    }
+
+    #[test]
+    fn auto_wire_creates_a_net_after_deleting_the_last_one() {
+        let mut state = test_state();
+        let old_net_id = state.nets[0].id;
+        apply_command(&mut state, Command::DeleteNet { net_id: old_net_id }).unwrap();
+        assert!(state.nets.is_empty());
+        apply_command(&mut state, Command::CommitWireAuto {
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        }).unwrap();
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.nets[0].name, "N-1");
+        assert_eq!(state.wires[0].net_id, state.nets[0].id);
+        assert_eq!(state.part_insts[0].net_assign.get("1"), Some(&state.nets[0].id));
+    }
+
+    #[test]
+    fn delete_missing_net_does_not_change_state() {
+        let mut state = test_state();
+        let before = as_json(&state);
+        let result = apply_command(&mut state, Command::DeleteNet {
+            net_id: uuid("44444444-4444-4444-4444-444444444444"),
+        });
+
+        assert_eq!(result.unwrap_err(), "net not found");
+        assert_eq!(as_json(&state), before);
     }
 
     #[test]

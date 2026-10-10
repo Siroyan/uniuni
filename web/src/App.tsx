@@ -11,6 +11,7 @@ import {
   commandAssignNetNameJson,
   commandAssignPinToNetJson,
   commandCommitWireAutoJson,
+  commandDeleteNetJson,
   commandDeletePartInstJson,
   commandDeleteWireJson,
   commandMoveRotatePartInstJson,
@@ -749,9 +750,11 @@ export function App(): JSX.Element {
   };
 
   const addNet = async (): Promise<void> => {
+    let netNumber = 1;
+    while (nets.some((net) => net.name === `N-${netNumber}`)) netNumber += 1;
     const newNet: Net = {
       id: newUuid(),
-      name: `N-${nets.length + 1}`,
+      name: `N-${netNumber}`,
       color: null
     };
     setNets((prev) => [...prev, newNet]);
@@ -768,6 +771,29 @@ export function App(): JSX.Element {
       setCoreError(null);
     } catch (err) {
       setCoreError(err instanceof Error ? err.message : "add net failed");
+    }
+  };
+
+  const deleteSelectedNet = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNet) return;
+    const netId = selectedNet.id;
+    const wireCount = wires.filter((wire) => wire.netId === netId).length;
+    const pinCount = parts.reduce((count, part) =>
+      count + Object.values(part.netAssign).filter((assignedId) => assignedId === netId).length, 0);
+    if ((wireCount > 0 || pinCount > 0) && !window.confirm(
+      `ネット「${selectedNet.name}」を削除します。関連する配線 ${wireCount} 本とピン割り当て ${pinCount} 件も削除します。よろしいですか？`
+    )) return;
+
+    try {
+      const nextState = await applyCoreCommandJson(state, commandDeleteNetJson(netId));
+      const view = commitStateTransition(state, nextState);
+      setSelectedNetId(view.nets[0]?.id ?? "");
+      setWireDraftPath([]);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "delete net failed");
     }
   };
 
@@ -1752,6 +1778,9 @@ export function App(): JSX.Element {
               </select>
               <button type="button" className="btn btn-with-icon" onClick={() => void addNet()}>
                 <ActionIcon name="add" />追加
+              </button>
+              <button type="button" className="btn btn-with-icon danger" onClick={() => void deleteSelectedNet()} disabled={!selectedNet}>
+                <ActionIcon name="delete" />削除
               </button>
             </div>
             <div className="toolbar-row net-field-row">

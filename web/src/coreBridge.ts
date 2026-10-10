@@ -362,6 +362,21 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     return JSON.stringify(state);
   }
 
+  if ("DeleteNet" in cmd) {
+    const payload = cmd.DeleteNet as { net_id: string };
+    if (!state.nets.some((net) => net.id === payload.net_id)) {
+      throw new Error("net not found");
+    }
+    state.nets = state.nets.filter((net) => net.id !== payload.net_id);
+    state.wires = state.wires.filter((wire) => wire.net_id !== payload.net_id);
+    for (const part of state.part_insts) {
+      for (const [pin, netId] of Object.entries(part.net_assign)) {
+        if (netId === payload.net_id) delete part.net_assign[pin];
+      }
+    }
+    return JSON.stringify(state);
+  }
+
   if ("AddPartInst" in cmd) {
     const payload = cmd.AddPartInst as {
       def_id: string;
@@ -758,6 +773,10 @@ export function commandDeleteWireJson(wireId: string): string {
       wire_id: wireId
     }
   });
+}
+
+export function commandDeleteNetJson(netId: string): string {
+  return JSON.stringify({ DeleteNet: { net_id: netId } });
 }
 
 export function commandAddPartInstJson(defId: string, at: GridPt, rot: Rot, refdes: string): string {

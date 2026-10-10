@@ -8,6 +8,7 @@ import { legacyTopViewArt } from "../src/legacyTopViewArt";
 type ExportedProject = {
   part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: unknown[] }>;
   part_insts: Array<{ def_id: string; refdes: string; at: { x: number; y: number }; net_assign: Record<string, string> }>;
+  nets: Array<{ id: string; name: string }>;
   wires: Array<{ net_id: string; path: unknown[] }>;
 };
 
@@ -93,7 +94,7 @@ test("ネット欄は必要な操作だけを表示し、名前と色を編集�
     has: page.getByRole("heading", { name: "ネット", exact: true })
   });
 
-  await expect(netCard.getByRole("button")).toHaveCount(2);
+  await expect(netCard.getByRole("button")).toHaveCount(3);
   await netCard.getByRole("button", { name: "追加" }).click();
   await netCard.getByRole("textbox", { name: "名前" }).fill("Signal");
   await netCard.getByRole("textbox", { name: "名前" }).press("Enter");
@@ -114,6 +115,45 @@ test("ネット欄は必要な操作だけを表示し、名前と色を編集�
   await clickGrid(page, 0, 0);
   await netCard.locator("summary").filter({ hasText: "ピンを手動で割り当てる" }).click();
   await expect(netCard.getByRole("button", { name: "割り当て" })).toBeVisible();
+});
+
+test("ネット削除で関連配線とピン割り当てを消し、Undoで戻せる", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("w");
+  await clickGrid(page, 0, 0);
+  await clickGrid(page, 0, 1);
+  await page.keyboard.press("Enter");
+
+  const netCard = page.locator("section.tool-card").filter({ has: page.getByRole("heading", { name: "ネット", exact: true }) });
+  const original = await exportProject(page);
+  const deletedNetId = original.nets[0].id;
+  expect(original.wires).toHaveLength(1);
+  expect(original.part_insts[0].net_assign["1"]).toBe(deletedNetId);
+  await netCard.getByRole("button", { name: "追加" }).click();
+
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await netCard.locator("#net-select").selectOption(deletedNetId);
+  await netCard.getByRole("button", { name: "削除" }).click();
+  expect((await exportProject(page)).nets).toHaveLength(2);
+
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toContain("配線 1 本とピン割り当て 1 件");
+    void dialog.accept();
+  });
+  await netCard.getByRole("button", { name: "削除" }).click();
+  const afterDelete = await exportProject(page);
+  expect(afterDelete.nets).toHaveLength(1);
+  expect(afterDelete.nets[0].id).not.toBe(deletedNetId);
+  expect(afterDelete.wires).toHaveLength(0);
+  expect(afterDelete.part_insts[0].net_assign).toEqual({});
+
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  const restored = await exportProject(page);
+  expect(restored.nets).toHaveLength(2);
+  expect(restored.wires).toHaveLength(1);
+  expect(restored.part_insts[0].net_assign["1"]).toBe(deletedNetId);
 });
 
 test("部品を連続配置できる", async ({ page }) => {
