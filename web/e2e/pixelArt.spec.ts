@@ -128,7 +128,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([8, null]);
+  })).toEqual([9, null]);
   await page.reload();
   await expect(page.locator(".part-card img")).toHaveCount(39);
 });
@@ -213,6 +213,9 @@ test("電解コンデンサの旧配置はピンを動かさず更新し、基�
   await expect(canvas).toHaveAttribute("width", "32");
   await expect(canvas).toHaveAttribute("height", "24");
   await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", currentArt!);
+
+  // Wait for the app's debounced snapshot save before injecting the old placement.
+  await page.waitForTimeout(350);
 
   const restoreOldPlaced = async (atX: number): Promise<void> => page.evaluate(async ({ legacyDef, savedProject, atX }) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {

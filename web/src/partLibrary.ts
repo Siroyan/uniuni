@@ -5,7 +5,7 @@ const DB_NAME = "uniuni-db";
 const STORE_NAME = "part_library";
 const KEY = "default_library";
 const ASSET_PREFIX = "asset:";
-export const BUILT_IN_CATALOG_VERSION = 8;
+export const BUILT_IN_CATALOG_VERSION = 9;
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
   imageDataUrl?: string | null;

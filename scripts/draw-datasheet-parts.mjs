@@ -61,24 +61,24 @@ function canvas(width, height) {
 }
 
 function relay() {
-  const c = canvas(56, 40);
+  const c = canvas(48, 24);
   const { rect, disc } = c;
-  rect(1, 8, 49, 33, color.edge);
-  rect(2, 9, 48, 32, color.blue);
-  rect(3, 10, 47, 12, color.blueLight);
-  rect(3, 29, 47, 31, color.blueDark);
-  rect(8, 15, 42, 26, color.blueDark);
-  rect(10, 17, 40, 24, color.blue);
-  rect(19, 18, 32, 19, color.silver);
-  rect(19, 22, 32, 23, color.silver);
-  rect(5, 24, 9, 28, color.silver); // pin-1 end mark
+  rect(1, 0, 48, 24, color.edge);
+  rect(2, 1, 47, 23, color.blue);
+  rect(3, 2, 46, 4, color.blueLight);
+  rect(3, 20, 46, 22, color.blueDark);
+  rect(8, 7, 42, 18, color.blueDark);
+  rect(10, 9, 40, 16, color.blue);
+  rect(19, 10, 32, 11, color.silver);
+  rect(19, 14, 32, 15, color.silver);
+  rect(5, 16, 9, 20, color.silver); // pin-1 end mark
   for (const x of [4, 20, 28, 36]) {
-    for (const y of [12, 28]) {
+    for (const y of [4, 20]) {
       disc(x, y, 2, color.edge);
       disc(x, y, 1, color.gold);
     }
   }
-  disc(4, 28, 1, color.red);
+  disc(4, 20, 1, color.red);
   return c.png();
 }
 

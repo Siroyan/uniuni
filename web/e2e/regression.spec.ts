@@ -3,10 +3,11 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import { legacyTopViewArt } from "../src/legacyTopViewArt";
 
 type ExportedProject = {
   part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: unknown[] }>;
-  part_insts: Array<{ def_id: string; refdes: string; net_assign: Record<string, string> }>;
+  part_insts: Array<{ def_id: string; refdes: string; at: { x: number; y: number }; net_assign: Record<string, string> }>;
   wires: Array<{ net_id: string; path: unknown[] }>;
 };
 
@@ -315,7 +316,7 @@ test("XHコネクタ2P～6Pのトップ・サイド型を画像付きで配置�
 test("資料から追加した3部品を画像付きで配置できる", async ({ page }) => {
   await openApp(page);
   const parts = [
-    { name: "AZ8462-3", x: 0, refdes: "K1", pins: 8, occupied: 35 },
+    { name: "AZ8462-3", x: 0, refdes: "K1", pins: 8, occupied: 18 },
     { name: "OSG8HA3Z74A", x: 8, refdes: "D1", pins: 2, occupied: 6 },
     { name: "SOT-23-3 to DIP-4 Adapter", x: 12, refdes: "A1", pins: 4, occupied: 8 }
   ];
@@ -335,6 +336,52 @@ test("資料から追加した3部品を画像付きで配置できる", async (
     expect(definition.pins).toHaveLength(parts[index].pins);
     expect(definition.occupied).toHaveLength(parts[index].occupied);
   }
+});
+
+test("配置済みリレーの外形を縮めてもピン位置を維持する", async ({ page }) => {
+  await openApp(page);
+  const project = await exportProject(page);
+  const relay = project.part_defs.find((def) => def.name === "AZ8462-3")!;
+  const oldRelay = {
+    ...relay,
+    pins: relay.pins.map((pin) => ({ ...pin, pos: { x: pin.pos.x, y: pin.pos.y + 1 } })),
+    occupied: Array.from({ length: 35 }, (_, index) => ({ x: index % 7, y: Math.floor(index / 7) })),
+    imageDataUrl: legacyTopViewArt["az8462-3"]
+  };
+  // Let the app's 250 ms snapshot save finish before writing a legacy snapshot.
+  await page.waitForTimeout(350);
+  await page.evaluate(async ({ legacyDef, savedProject }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const oldProject = {
+      ...savedProject,
+      part_defs: savedProject.part_defs.map((def: { id: string }) => def.id === legacyDef.id ? legacyDef : def),
+      part_insts: [{ id: crypto.randomUUID(), def_id: legacyDef.id,
+        at: { x: 4, y: 4 }, rot: "Deg0", refdes: "K1", net_assign: {} }]
+    };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["part_library", "project_snapshots"], "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 8,
+        partDefs: [legacyDef] }, "default_library");
+      tx.objectStore("project_snapshots").put({ schemaVersion: 1,
+        coreStateJson: JSON.stringify(oldProject), selectedNetId: null }, "active_project");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { legacyDef: oldRelay, savedProject: project });
+  await page.reload();
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const migrated = await exportProject(page);
+  expect(migrated.part_insts).toHaveLength(1);
+  expect(migrated.part_insts[0].at).toEqual({ x: 4, y: 5 });
+  expect(migrated.part_defs.find((def) => def.id === relay.id)?.occupied).toHaveLength(18);
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: "AZ8462-3" });
+  await expect(editor.getByRole("img", { name: /ドット絵キャンバス/ })).toHaveAttribute("width", "48");
 });
 
 test("v6の部品ライブラリへXHコネクタを追加し、削除後は復活させない", async ({ page }) => {

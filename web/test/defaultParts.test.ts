@@ -24,10 +24,10 @@ test("all 40 built-in drawings match their footprints and source PNGs", () => {
 test("datasheet parts follow their top-view lead layouts and body envelopes", () => {
   const [relay, led, adapter] = datasheetPartDefs;
   assert.deepEqual(relay.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
-    ["12", 0, 1], ["10", 2, 1], ["9", 3, 1], ["8", 4, 1],
-    ["1", 0, 3], ["3", 2, 3], ["4", 3, 3], ["5", 4, 3]
+    ["12", 0, 0], ["10", 2, 0], ["9", 3, 0], ["8", 4, 0],
+    ["1", 0, 2], ["3", 2, 2], ["4", 3, 2], ["5", 4, 2]
   ]);
-  assert.equal(relay.occupied.length, 35);
+  assert.equal(relay.occupied.length, 18);
   assert.equal(relay.category, "switch");
   assert.deepEqual(led.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]),
     [["A", 0, 1], ["K", 1, 1]]);
@@ -63,13 +63,41 @@ test("datasheet artwork marks the board-hole centers used by each pin", () => {
       y * (width * 4 + 1) + 1 + x * 4 + 4));
   };
   for (const x of [4, 20, 28, 36]) {
-    for (const y of [12, 28]) assert.equal(pinPixels("az8462-3", x, y)[3], 255);
+    for (const y of [4, 20]) assert.equal(pinPixels("az8462-3", x, y)[3], 255);
   }
-  assert.deepEqual(pinPixels("az8462-3", 4, 28), [197, 83, 54, 255]);
+  assert.deepEqual(pinPixels("az8462-3", 4, 20), [197, 83, 54, 255]);
   for (const x of [4, 12]) assert.deepEqual(pinPixels("osg8ha3z74a", x, 12), [216, 150, 58, 255]);
   for (const x of [4, 28]) {
     for (const y of [4, 12]) assert.deepEqual(pinPixels("sot-23-3-to-dip-4-adapter", x, y), [39, 55, 70, 255]);
   }
+});
+
+test("relay footprint update keeps placed pin coordinates and user artwork", () => {
+  const relay = datasheetPartDefs[0];
+  const oldRelay: PartDef = {
+    ...relay,
+    pins: relay.pins.map((pin) => ({ ...pin, pos: { x: pin.pos.x, y: pin.pos.y + 1 } })),
+    occupied: Array.from({ length: 35 }, (_, index) => ({ x: index % 7, y: Math.floor(index / 7) })),
+    imageDataUrl: legacyTopViewArt["az8462-3"]
+  };
+  const snapshot = (rot: "Deg0" | "Deg90") => JSON.stringify({
+    schema_version: 1,
+    board: { width: 20, height: 20, grid_pitch_mm: 2.54 },
+    part_defs: [oldRelay],
+    part_insts: [{ id: "f1ab17a9-c2b1-4d37-862f-eb0ed93f53b5", def_id: relay.id,
+      at: { x: 4, y: 4 }, rot, refdes: "K1", net_assign: {} }],
+    nets: [], wires: []
+  });
+  for (const [rot, expectedAt] of [["Deg0", { x: 4, y: 5 }], ["Deg90", { x: 3, y: 4 }]] as const) {
+    const updated = updateBuiltInTopViews([oldRelay], snapshot(rot));
+    assert.deepEqual(updated.partDefs[0].pins, relay.pins);
+    assert.deepEqual(updated.partDefs[0].occupied, relay.occupied);
+    assert.equal(updated.partDefs[0].imageDataUrl, relay.imageDataUrl);
+    assert.deepEqual(JSON.parse(updated.coreStateJson!).part_insts[0].at, expectedAt);
+    assert.deepEqual(JSON.parse(updated.coreStateJson!).part_defs[0].pins, relay.pins);
+  }
+  const custom = { ...oldRelay, imageDataUrl: "data:image/png;base64,Y3VzdG9t" };
+  assert.equal(updateBuiltInTopViews([custom], snapshot("Deg0")).partDefs[0], custom);
 });
 
 test("XH top and side connectors cover the housing envelope around the 2.50 mm pin row", () => {

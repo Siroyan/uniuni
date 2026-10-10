@@ -310,16 +310,16 @@ export const datasheetPartDefs: PartDef[] = [
     // The datasheet's pin diagram is viewed toward the terminals. Mirror its
     // two rows for the top view used by the board editor.
     [
-      { name: "12", pos: { x: 0, y: 1 } },
-      { name: "10", pos: { x: 2, y: 1 } },
-      { name: "9", pos: { x: 3, y: 1 } },
-      { name: "8", pos: { x: 4, y: 1 } },
-      { name: "1", pos: { x: 0, y: 3 } },
-      { name: "3", pos: { x: 2, y: 3 } },
-      { name: "4", pos: { x: 3, y: 3 } },
-      { name: "5", pos: { x: 4, y: 3 } }
+      { name: "12", pos: { x: 0, y: 0 } },
+      { name: "10", pos: { x: 2, y: 0 } },
+      { name: "9", pos: { x: 3, y: 0 } },
+      { name: "8", pos: { x: 4, y: 0 } },
+      { name: "1", pos: { x: 0, y: 2 } },
+      { name: "3", pos: { x: 2, y: 2 } },
+      { name: "4", pos: { x: 3, y: 2 } },
+      { name: "5", pos: { x: 4, y: 2 } }
     ],
-    7, 5, builtInPartArt["az8462-3"]
+    6, 3, builtInPartArt["az8462-3"]
   ),
   illustratedPart(
     "3d15c257-b749-5ab3-bbc4-771033fb5027", "OSG8HA3Z74A",
@@ -390,6 +390,7 @@ export const defaultPartDefs: PartDef[] = [
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
+  "fabe901c-a809-5a44-b19f-4d99248069ab": "az8462-3",
   "77750a90-4823-4cdf-bfea-a3b36e7872a8": "capacitor-electrolytic",
   "25da8655-cbdc-4221-b7c3-6c13bde21d75": "led-5mm",
   "8acc092b-3960-46cb-b0f2-0995cc01a107": "transistor-to-92",
@@ -400,6 +401,15 @@ const topViewArtById: Record<string, string> = {
 };
 
 const oldTopViewFootprints: Record<string, Pick<PartDef, "pins" | "occupied">> = {
+  "fabe901c-a809-5a44-b19f-4d99248069ab": {
+    pins: [
+      { name: "12", pos: { x: 0, y: 1 } }, { name: "10", pos: { x: 2, y: 1 } },
+      { name: "9", pos: { x: 3, y: 1 } }, { name: "8", pos: { x: 4, y: 1 } },
+      { name: "1", pos: { x: 0, y: 3 } }, { name: "3", pos: { x: 2, y: 3 } },
+      { name: "4", pos: { x: 3, y: 3 } }, { name: "5", pos: { x: 4, y: 3 } }
+    ],
+    occupied: occupiedRectangle(7, 5)
+  },
   "77750a90-4823-4cdf-bfea-a3b36e7872a8": {
     pins: [{ name: "+", pos: { x: 0, y: 1 } }, { name: "-", pos: { x: 1, y: 1 } }],
     occupied: occupiedRectangle(2, 2)
