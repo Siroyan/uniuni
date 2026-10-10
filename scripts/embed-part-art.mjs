@@ -40,7 +40,10 @@ const names = [
   "xh-connector-5p-top",
   "xh-connector-5p-side",
   "xh-connector-6p-top",
-  "xh-connector-6p-side"
+  "xh-connector-6p-side",
+  "az8462-3",
+  "osg8ha3z74a",
+  "sot-23-3-to-dip-4-adapter"
 ];
 
 const entries = await Promise.all(names.map(async (name) => {

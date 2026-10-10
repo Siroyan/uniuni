@@ -80,7 +80,7 @@ uniuni/
 
 ### 5.1 起動フロー
 1. `detectCoreBridgeMode()` で `wasm/fallback` 判定
-2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）。組み込みカタログv0にはピンヘッダー、v0/v1には未設定の初期部品画像、v0〜v2には電子部品6種類、v0〜v3には次の6種類、v0〜v4には8種類とカテゴリを一度だけ追加
+2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）。旧カタログのバージョンに応じ、ピンヘッダー、画像、追加部品、カテゴリ、XHコネクタ、提示された寸法資料の3部品を不足分だけ追加
 3. スナップショット読込
 4. スナップショットがあれば PartDef 差し替え適用
 5. 復元失敗時は新規 state を作成して起動継続
@@ -224,6 +224,7 @@ uniuni/
 - 内蔵カタログv5への初回更新時は不足する8部品を追加し、カテゴリ未設定の部品にIDごとの既定カテゴリを設定する。利用者が設定済みのカテゴリは維持する。`partCategories.ts` が表示順・ラベルと組み込みIDの分類を定義する
 - 内蔵カタログv6では `legacyTopViewArt.ts` の旧標準画像と一致する部品だけ真上図へ更新する。形状変更を伴う4種類の配置済みインスタンスは、回転を考慮して配置原点を補正し、ピンの絶対位置を維持する。候補の保存状態を検証し、Occupiedが基板外・他部品と衝突する場合だけ更新を保留して次回起動時に再判定する
 - 内蔵カタログv7では `xhConnectorPartDefs` の2P～6P・Top/Sideを不足分だけ追加する。`scripts/draw-xh-connectors.mjs` がJST XHのKiCadフットプリント寸法を穴8ドットのPNGへ描き、`scripts/embed-part-art.mjs` がデータURLを再生成する
+- 内蔵カタログv8では `datasheetPartDefs` のリレー、LED、SOT-23変換基板を不足分だけ追加する。`scripts/draw-datasheet-parts.mjs` は提供された3つのPDFの寸法から穴8ドットの上面PNGを生成し、`scripts/embed-part-art.mjs` がデータURLへ埋め込む。変換基板の右2穴の内部導通は現行のPartDefで表現できないため、独立したピン `3A`/`3B` として登録する
 
 ### 8.3 プロジェクトZIP（`projectPackage.ts`）
 - Export:

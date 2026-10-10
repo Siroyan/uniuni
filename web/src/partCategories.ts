@@ -46,7 +46,10 @@ const builtInCategoryById: Record<string, PartCategory> = {
   "cd106528-d815-513b-ae86-759b09f9ee1a": "connector", // XH Connector 5P Top
   "ca000452-17d1-595b-91aa-d918e931c734": "connector", // XH Connector 5P Side
   "4eb85419-a82d-5e5e-8888-a98c6355b3ff": "connector", // XH Connector 6P Top
-  "21e3a7ae-2575-5e8b-b61d-f2183aa16602": "connector" // XH Connector 6P Side
+  "21e3a7ae-2575-5e8b-b61d-f2183aa16602": "connector", // XH Connector 6P Side
+  "fabe901c-a809-5a44-b19f-4d99248069ab": "switch", // AZ8462-3 relay
+  "3d15c257-b749-5ab3-bbc4-771033fb5027": "semiconductor", // OSG8HA3Z74A LED
+  "492d4cca-de3f-5ec1-bb1d-35d73d5089c3": "other" // SOT-23-3 to DIP-4 Adapter
 };
 
 export function isPartCategory(value: unknown): value is PartCategory {

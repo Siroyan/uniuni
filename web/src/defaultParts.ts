@@ -304,6 +304,40 @@ export const xhConnectorPartDefs: PartDef[] = xhConnectorIds.flatMap(([topId, si
   xhConnector(index + 2, "Side", sideId)
 ]);
 
+export const datasheetPartDefs: PartDef[] = [
+  illustratedPart(
+    "fabe901c-a809-5a44-b19f-4d99248069ab", "AZ8462-3",
+    // The datasheet's pin diagram is viewed toward the terminals. Mirror its
+    // two rows for the top view used by the board editor.
+    [
+      { name: "12", pos: { x: 0, y: 1 } },
+      { name: "10", pos: { x: 2, y: 1 } },
+      { name: "9", pos: { x: 3, y: 1 } },
+      { name: "8", pos: { x: 4, y: 1 } },
+      { name: "1", pos: { x: 0, y: 3 } },
+      { name: "3", pos: { x: 2, y: 3 } },
+      { name: "4", pos: { x: 3, y: 3 } },
+      { name: "5", pos: { x: 4, y: 3 } }
+    ],
+    7, 5, builtInPartArt["az8462-3"]
+  ),
+  illustratedPart(
+    "3d15c257-b749-5ab3-bbc4-771033fb5027", "OSG8HA3Z74A",
+    [{ name: "A", pos: { x: 0, y: 1 } }, { name: "K", pos: { x: 1, y: 1 } }],
+    2, 3, builtInPartArt["osg8ha3z74a"]
+  ),
+  illustratedPart(
+    "492d4cca-de3f-5ec1-bb1d-35d73d5089c3", "SOT-23-3 to DIP-4 Adapter",
+    [
+      { name: "1", pos: { x: 0, y: 0 } },
+      { name: "2", pos: { x: 0, y: 1 } },
+      { name: "3A", pos: { x: 3, y: 0 } },
+      { name: "3B", pos: { x: 3, y: 1 } }
+    ],
+    4, 2, builtInPartArt["sot-23-3-to-dip-4-adapter"]
+  )
+].map((def) => ({ ...def, category: partCategory(def) }));
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -351,7 +385,8 @@ export const defaultPartDefs: PartDef[] = [
   ...additionalPartDefs,
   ...nextPartDefs,
   ...newestPartDefs,
-  ...xhConnectorPartDefs
+  ...xhConnectorPartDefs,
+  ...datasheetPartDefs
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
@@ -518,6 +553,10 @@ export function addMissingNewestParts(existing: PartDef[]): PartDef[] {
 
 export function addMissingXhConnectors(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, xhConnectorPartDefs);
+}
+
+export function addMissingDatasheetParts(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, datasheetPartDefs);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

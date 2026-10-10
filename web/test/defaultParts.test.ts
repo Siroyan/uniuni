@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, additionalPartDefs, correctBuiltInArtwork, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "../src/defaultParts";
+import { inflateSync } from "node:zlib";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, additionalPartDefs, correctBuiltInArtwork, datasheetPartDefs, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "../src/defaultParts";
 import { categorizeParts, partCategory } from "../src/partCategories";
 import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
-test("all 37 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 37);
+test("all 40 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 40);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -17,6 +18,57 @@ test("all 37 built-in drawings match their footprints and source PNGs", () => {
     assert.deepEqual(bytes, readFileSync(new URL(`../src/assets/parts/${asset}.png`, import.meta.url)));
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
+  }
+});
+
+test("datasheet parts follow their top-view lead layouts and body envelopes", () => {
+  const [relay, led, adapter] = datasheetPartDefs;
+  assert.deepEqual(relay.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]), [
+    ["12", 0, 1], ["10", 2, 1], ["9", 3, 1], ["8", 4, 1],
+    ["1", 0, 3], ["3", 2, 3], ["4", 3, 3], ["5", 4, 3]
+  ]);
+  assert.equal(relay.occupied.length, 35);
+  assert.equal(relay.category, "switch");
+  assert.deepEqual(led.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]),
+    [["A", 0, 1], ["K", 1, 1]]);
+  assert.equal(led.occupied.length, 6);
+  assert.equal(led.category, "semiconductor");
+  assert.deepEqual(adapter.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]),
+    [["1", 0, 0], ["2", 0, 1], ["3A", 3, 0], ["3B", 3, 1]]);
+  assert.equal(adapter.occupied.length, 8);
+  assert.equal(adapter.category, "other");
+  const oldCatalog = defaultPartDefs.slice(0, 37);
+  const migrated = addMissingDatasheetParts(oldCatalog);
+  assert.equal(migrated.length, 40);
+  assert.equal(addMissingDatasheetParts(migrated), migrated);
+  const edited = { ...adapter, imageDataUrl: null };
+  assert.equal(addMissingDatasheetParts([...oldCatalog, edited]).find((def) => def.id === edited.id), edited);
+});
+
+test("datasheet artwork marks the board-hole centers used by each pin", () => {
+  const pinPixels = (name: string, x: number, y: number): number[] => {
+    const png = readFileSync(new URL(`../src/assets/parts/${name}.png`, import.meta.url));
+    const width = png.readUInt32BE(16);
+    let offset = 8;
+    const chunks: Buffer[] = [];
+    while (offset < png.length) {
+      const length = png.readUInt32BE(offset);
+      const type = png.toString("ascii", offset + 4, offset + 8);
+      if (type === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    const rows = inflateSync(Buffer.concat(chunks));
+    assert.equal(rows[y * (width * 4 + 1)], 0); // generated PNG uses no row filters
+    return Array.from(rows.subarray(y * (width * 4 + 1) + 1 + x * 4,
+      y * (width * 4 + 1) + 1 + x * 4 + 4));
+  };
+  for (const x of [4, 20, 28, 36]) {
+    for (const y of [12, 28]) assert.equal(pinPixels("az8462-3", x, y)[3], 255);
+  }
+  assert.deepEqual(pinPixels("az8462-3", 4, 28), [197, 83, 54, 255]);
+  for (const x of [4, 12]) assert.deepEqual(pinPixels("osg8ha3z74a", x, 12), [216, 150, 58, 255]);
+  for (const x of [4, 28]) {
+    for (const y of [4, 12]) assert.deepEqual(pinPixels("sot-23-3-to-dip-4-adapter", x, y), [39, 55, 70, 255]);
   }
 });
 
