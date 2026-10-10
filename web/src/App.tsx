@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
+import { PixelArtEditor } from "./PixelArtEditor";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
+import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
   commandAddPartInstJson,
   commandAssignNetColorJson,
   commandAssignNetNameJson,
   commandAssignPinToNetJson,
-  commandCommitWireJson,
+  commandCommitWireAutoJson,
+  commandDeleteNetJson,
   commandDeletePartInstJson,
   commandDeleteWireJson,
   commandMoveRotatePartInstJson,
@@ -26,11 +31,11 @@ import {
   nextHitCandidateIndex,
   nextRot
 } from "./parts";
-import { loadPartLibrary, savePartLibrary } from "./partLibrary";
+import { BUILT_IN_CATALOG_VERSION, loadPartLibraryWithVersion, savePartLibrary } from "./partLibrary";
 import { loadSnapshot, saveSnapshot } from "./persistence";
 import { buildProjectZip, parseProjectZip } from "./projectPackage";
 import { validateProjectStateJson } from "./projectStateValidation";
-import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
+import type { Board, DrcIssue, GridPt, Net, PartCategory, PartDef, PartInst, Rot, ToolMode, Wire } from "./types";
 import type { HitCandidate } from "./parts";
 
 const DEFAULT_BOARD: Board = {
@@ -66,61 +71,35 @@ const AKIZUKI_BOARD_PRESETS = [
 ] as const;
 type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
 
-const defaultPartDefs: PartDef[] = [
-  {
-    id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
-    name: "Resistor Axial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 2, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  },
-  {
-    id: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
-    name: "Capacitor Radial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 1, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  },
-  {
-    id: "01d260e9-ea3a-488f-9e8a-031ca0d679ce",
-    name: "Inductor Axial",
-    pins: [
-      { name: "1", pos: { x: 0, y: 0 } },
-      { name: "2", pos: { x: 3, y: 0 } }
-    ],
-    occupied: [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 },
-      { x: 3, y: 0 }
-    ],
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0
-  }
-];
-
 const defPrefixById: Record<string, string> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "C",
-  "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L"
+  "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L",
+  "a9bf042c-20cf-429a-97e3-14aaac011571": "D",
+  "25da8655-cbdc-4221-b7c3-6c13bde21d75": "D",
+  "8acc092b-3960-46cb-b0f2-0995cc01a107": "Q",
+  "ac18d4fc-a392-4a23-9783-787704df3e09": "U",
+  "53000741-8a21-48a3-92c3-22fdb3769ff5": "J",
+  "fb6a0559-572f-4f65-a3e9-3f6f8029aa26": "SW",
+  "77750a90-4823-4cdf-bfea-a3b36e7872a8": "C",
+  "5ed6e5ed-ba33-45d5-aa04-4fe27f9f9ff1": "U",
+  "9429852c-4b26-483b-b302-844d11d3b6e8": "U",
+  "4bb91cd4-5cee-4cc1-97b4-e75305b5f101": "SW",
+  "cf3f301b-1aef-407a-8335-dbd07b0a833c": "J",
+  "28adb8b0-79cf-4e9f-8ad5-6b71855fefc1": "RV",
+  "799559c3-a49b-4905-9b85-777aa4a982c8": "C",
+  "3ef2adda-02f1-4d21-b0ad-f817993c004e": "F",
+  "97c4076e-3a81-4a7a-8db7-f187e0157358": "R",
+  "008e51b2-6271-4c03-9dac-dc235fe15175": "D",
+  "6a69eb4c-d4a1-4121-b5fd-44a0a34ea986": "U",
+  "3b359d03-cea0-4e3c-a187-fe737dd8d800": "J",
+  "78bdfa3c-df5d-4247-bbc9-9feeb9f0a96b": "BZ",
+  "1b69aec3-cc03-4b3a-9b78-d6f72fdb3adb": "J",
+  "fabe901c-a809-5a44-b19f-4d99248069ab": "K",
+  "3d15c257-b749-5ab3-bbc4-771033fb5027": "D",
+  "492d4cca-de3f-5ec1-bb1d-35d73d5089c3": "A",
+  ...Object.fromEntries(pinHeaderPartDefs.map((def) => [def.id, "J"])),
+  ...Object.fromEntries(xhConnectorPartDefs.map((def) => [def.id, "J"]))
 };
 
 const builtInPartIds = {
@@ -128,7 +107,7 @@ const builtInPartIds = {
   capacitor: "f222f718-6ff6-42a6-b2ba-4c62090d8ca5",
   inductor: "01d260e9-ea3a-488f-9e8a-031ca0d679ce"
 };
-const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLORS = ["#2563eb", "#a16207", "#be185d", "#15803d", "#c2410c", "#7c3aed"];
 const NET_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 function nextRefdes(parts: PartInst[], defId: string): string {
@@ -209,6 +188,7 @@ function partDefsFromCoreStateJson(stateJson: string): PartDef[] {
         name: def.name,
         pins,
         occupied,
+        category: partCategory({ id: def.id }),
         imageDataUrl: null,
         imageScale: 1,
         imageOffsetX: 0,
@@ -224,14 +204,16 @@ export function App(): JSX.Element {
   const [boardHeightDraft, setBoardHeightDraft] = useState<string>(String(DEFAULT_BOARD.height));
   const [boardPresetId, setBoardPresetId] = useState<BoardPresetId>("custom");
   const [tool, setTool] = useState<ToolMode>("select");
+  const [showSettings, setShowSettings] = useState(false);
   const [activeRot, setActiveRot] = useState<Rot>("Deg0");
   const [partDefs, setPartDefs] = useState<PartDef[]>(defaultPartDefs);
+  const [libraryCategory, setLibraryCategory] = useState<PartCategory | "all">("all");
   const [parts, setParts] = useState<PartInst[]>([]);
   const [wires, setWires] = useState<Wire[]>([]);
   const [nets, setNets] = useState<Net[]>(() => [{ id: newUuid(), name: "N-1" }]);
   const [selectedNetId, setSelectedNetId] = useState<string>(() => nets[0]?.id ?? "");
   const [netNameDraft, setNetNameDraft] = useState<string>("");
-  const [netColorDraft, setNetColorDraft] = useState<string>("#51c4ff");
+  const [netColorDraft, setNetColorDraft] = useState<string>("#2563eb");
   const [pinNameDraft, setPinNameDraft] = useState<string>("");
   const [editorDefId, setEditorDefId] = useState<string>(defaultPartDefs[0].id);
   const [editorDefName, setEditorDefName] = useState<string>(defaultPartDefs[0].name);
@@ -271,6 +253,16 @@ export function App(): JSX.Element {
   const partLibraryInputRef = useRef<HTMLInputElement | null>(null);
 
   const defsById = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
+  const partGroups = useMemo(() => PART_CATEGORIES
+    .map((category) => ({ ...category, parts: partDefs.filter((def) => partCategory(def) === category.id) }))
+    .filter((category) => category.parts.length > 0), [partDefs]);
+  const libraryGroups = partGroups.filter((category) => libraryCategory === "all" || libraryCategory === category.id);
+
+  useEffect(() => {
+    if (libraryCategory !== "all" && !partDefs.some((def) => partCategory(def) === libraryCategory)) {
+      setLibraryCategory("all");
+    }
+  }, [libraryCategory, partDefs]);
   const editorDef = partDefs.find((def) => def.id === editorDefId) ?? null;
   const imageScaleSlider = Math.min(4, Math.max(0.1, Number(editorImageScale) || 1));
   const imageOffsetXSlider = Math.min(10, Math.max(-10, Number(editorImageOffsetX) || 0));
@@ -283,6 +275,10 @@ export function App(): JSX.Element {
     if (!hoverGrid) return null;
     return findPartAtGrid(hoverGrid, parts, defsById);
   }, [defsById, hoverGrid, parts]);
+
+  useEffect(() => {
+    if (selectedPart) setEditorDefId(selectedPart.defId);
+  }, [selectedPart?.id, selectedPart?.defId]);
 
   useEffect(() => {
     selectedPartIdRef.current = selectedPartId;
@@ -305,7 +301,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!selectedNetId) {
       setNetNameDraft("");
-      setNetColorDraft("#51c4ff");
+      setNetColorDraft("#2563eb");
       return;
     }
     const selected = nets.find((net) => net.id === selectedNetId);
@@ -452,6 +448,7 @@ export function App(): JSX.Element {
         err instanceof Error && err.message ? err.message : String(err);
 
       let effectivePartDefs: PartDef[] = defaultPartDefs;
+      let saveUpdatedCatalog = false;
       let bridgeMode: "wasm" | "fallback" = "fallback";
 
       try {
@@ -465,8 +462,25 @@ export function App(): JSX.Element {
         }
 
         try {
-          const library = await loadPartLibrary();
-          effectivePartDefs = library && library.length > 0 ? library : defaultPartDefs;
+          const library = await loadPartLibraryWithVersion();
+          if (library && library.partDefs.length > 0) {
+            const catalogVersion = library.builtInCatalogVersion;
+            saveUpdatedCatalog = catalogVersion < BUILT_IN_CATALOG_VERSION;
+            effectivePartDefs = library.partDefs;
+            if (catalogVersion < 1) effectivePartDefs = addMissingPinHeaders(effectivePartDefs);
+            if (catalogVersion < 2) effectivePartDefs = addBuiltInArtwork(effectivePartDefs);
+            if (catalogVersion < 3) effectivePartDefs = addMissingAdditionalParts(effectivePartDefs);
+            if (catalogVersion < 4) {
+              effectivePartDefs = correctBuiltInArtwork(effectivePartDefs);
+              effectivePartDefs = addMissingNextParts(effectivePartDefs);
+            }
+            if (catalogVersion < 5) {
+              effectivePartDefs = addMissingNewestParts(effectivePartDefs);
+              effectivePartDefs = categorizeParts(effectivePartDefs);
+            }
+            if (catalogVersion < 7) effectivePartDefs = addMissingXhConnectors(effectivePartDefs);
+            if (catalogVersion < 8) effectivePartDefs = addMissingDatasheetParts(effectivePartDefs);
+          }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);
         }
@@ -489,6 +503,18 @@ export function App(): JSX.Element {
           warnings.push(`保存スナップショット読込に失敗: ${asMessage(err)}`);
         }
 
+        const topViewUpdate = updateBuiltInTopViews(effectivePartDefs, snapshot?.coreStateJson ?? null);
+        if (topViewUpdate.partDefs !== effectivePartDefs) {
+          effectivePartDefs = topViewUpdate.partDefs;
+          saveUpdatedCatalog = true;
+        }
+        if (snapshot && topViewUpdate.coreStateJson && topViewUpdate.coreStateJson !== snapshot.coreStateJson) {
+          snapshot = { ...snapshot, coreStateJson: topViewUpdate.coreStateJson };
+        }
+        if (topViewUpdate.blockedNames.length > 0) {
+          warnings.push(`旧部品の図を更新できません: ${topViewUpdate.blockedNames.join("、")}。保存済みの配置と新しい外形が整合しません。`);
+        }
+
         let nextState: string;
         let nextSelectedNetId = selectedNetId;
         if (snapshot?.coreStateJson) {
@@ -505,6 +531,14 @@ export function App(): JSX.Element {
           }
         } else {
           nextState = await createFreshState();
+        }
+        if (cancelled) return;
+        if (saveUpdatedCatalog) {
+          try {
+            await savePartLibrary(effectivePartDefs);
+          } catch (err) {
+            warnings.push(`追加部品の保存に失敗: ${asMessage(err)}`);
+          }
         }
         if (cancelled) return;
         partDefsRef.current = effectivePartDefs;
@@ -566,6 +600,7 @@ export function App(): JSX.Element {
   const armPlacement = (defId: string): void => {
     if (!defId) return;
     setPlaceDefId(defId);
+    setEditorDefId(defId);
     setPlaceArmedDefId(defId);
     setPlaceArmedRot(activeRot);
     setMoveArmedPartId(null);
@@ -586,6 +621,8 @@ export function App(): JSX.Element {
     }
     if (candidate.kind === "part") {
       setSelectedPartId(candidate.partId);
+      const part = parts.find((item) => item.id === candidate.partId);
+      if (part) setEditorDefId(part.defId);
       setSelectedWireId(null);
       return;
     }
@@ -661,19 +698,24 @@ export function App(): JSX.Element {
   };
 
   const commitWireDraft = async (): Promise<void> => {
-    if (wireDraftPath.length < 2 || !selectedNetId) return;
+    if (wireDraftPath.length < 2) return;
     const state = coreStateJsonRef.current;
     if (!state) return;
 
     try {
-      const cmd = commandCommitWireJson(selectedNetId, wireDraftPath);
+      const cmd = commandCommitWireAutoJson(wireDraftPath);
       const nextState = await applyCoreCommandJson(state, cmd);
-      commitStateTransition(state, nextState);
+      const view = commitStateTransition(state, nextState);
+      const committedWire = view.wires[view.wires.length - 1];
+      if (committedWire) setSelectedNetId(committedWire.netId);
       setWireDraftPath([]);
       await refreshDrcForState(nextState);
       setCoreError(null);
     } catch (err) {
-      setCoreError(err instanceof Error ? err.message : "commit wire failed");
+      const message = err instanceof Error ? err.message : "commit wire failed";
+      setCoreError(message === "wire connects different nets"
+        ? "異なるネットが接続されるため、配線を確定できません。"
+        : message);
     }
   };
 
@@ -708,9 +750,11 @@ export function App(): JSX.Element {
   };
 
   const addNet = async (): Promise<void> => {
+    let netNumber = 1;
+    while (nets.some((net) => net.name === `N-${netNumber}`)) netNumber += 1;
     const newNet: Net = {
       id: newUuid(),
-      name: `N-${nets.length + 1}`,
+      name: `N-${netNumber}`,
       color: null
     };
     setNets((prev) => [...prev, newNet]);
@@ -730,11 +774,34 @@ export function App(): JSX.Element {
     }
   };
 
+  const deleteSelectedNet = async (): Promise<void> => {
+    const state = coreStateJsonRef.current;
+    if (!state || !selectedNet) return;
+    const netId = selectedNet.id;
+    const wireCount = wires.filter((wire) => wire.netId === netId).length;
+    const pinCount = parts.reduce((count, part) =>
+      count + Object.values(part.netAssign).filter((assignedId) => assignedId === netId).length, 0);
+    if ((wireCount > 0 || pinCount > 0) && !window.confirm(
+      `ネット「${selectedNet.name}」を削除します。関連する配線 ${wireCount} 本とピン割り当て ${pinCount} 件も削除します。よろしいですか？`
+    )) return;
+
+    try {
+      const nextState = await applyCoreCommandJson(state, commandDeleteNetJson(netId));
+      const view = commitStateTransition(state, nextState);
+      setSelectedNetId(view.nets[0]?.id ?? "");
+      setWireDraftPath([]);
+      await refreshDrcForState(nextState);
+      setCoreError(null);
+    } catch (err) {
+      setCoreError(err instanceof Error ? err.message : "delete net failed");
+    }
+  };
+
   const renameSelectedNet = async (): Promise<void> => {
     const state = coreStateJsonRef.current;
     if (!state || !selectedNetId) return;
     const name = netNameDraft.trim();
-    if (!name) return;
+    if (!name || name === selectedNet?.name) return;
     try {
       const nextState = await applyCoreCommandJson(
         state,
@@ -912,14 +979,24 @@ export function App(): JSX.Element {
   const setEditorPartImage = (dataUrl: string): void => {
     if (!editorDefId) return;
     void applyPartDefsChange((prev) =>
-      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl } : def))
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: dataUrl, imagePixelated: false } : def))
+    );
+  };
+
+  const registerEditorPixelArt = (dataUrl: string): Promise<boolean> => {
+    const defId = editorDefId;
+    if (!defId) return Promise.resolve(false);
+    return applyPartDefsChange((prev) =>
+      prev.map((def) => def.id === defId
+        ? { ...def, imageDataUrl: dataUrl, imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 }
+        : def), "ドット絵を部品画像に登録しました。"
     );
   };
 
   const clearEditorPartImage = (): void => {
     if (!editorDefId) return;
     void applyPartDefsChange((prev) =>
-      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null } : def))
+      prev.map((def) => (def.id === editorDefId ? { ...def, imageDataUrl: null, imagePixelated: false } : def))
     );
   };
 
@@ -965,6 +1042,7 @@ export function App(): JSX.Element {
     const nextDef: PartDef = {
       id: nextId,
       name: baseName,
+      category: "other",
       pins: [{ name: "1", pos: { x: 0, y: 0 } }],
       occupied: [{ x: 0, y: 0 }],
       imageDataUrl: null,
@@ -1035,9 +1113,11 @@ export function App(): JSX.Element {
           return {
             id: def.id,
             name: def.name,
+            category: isPartCategory(def.category) ? def.category : partCategory({ id: def.id }),
             pins,
             occupied,
             imageDataUrl: typeof def.imageDataUrl === "string" ? def.imageDataUrl : null,
+            imagePixelated: def.imagePixelated === true,
             imageScale: typeof def.imageScale === "number" && def.imageScale > 0 ? def.imageScale : 1,
             imageOffsetX: typeof def.imageOffsetX === "number" ? def.imageOffsetX : 0,
             imageOffsetY: typeof def.imageOffsetY === "number" ? def.imageOffsetY : 0
@@ -1075,17 +1155,6 @@ export function App(): JSX.Element {
     if (placeDefId === editorDefId) {
       const next = partDefs.find((def) => def.id !== editorDefId);
       if (next) setPlaceDefId(next.id);
-    }
-  };
-
-  const runDrc = async (): Promise<void> => {
-    const state = coreStateJsonRef.current;
-    if (!state) return;
-    try {
-      await refreshDrcForState(state);
-      setCoreError(null);
-    } catch (err) {
-      setCoreError(err instanceof Error ? err.message : "drc failed");
     }
   };
 
@@ -1256,7 +1325,6 @@ export function App(): JSX.Element {
 
   const handleGridClick = (grid: GridPt): void => {
     if (tool === "wire") {
-      if (!selectedNetId) return;
       const last = wireDraftPath[wireDraftPath.length - 1];
       if (!last) {
         setWireDraftPath([grid]);
@@ -1562,8 +1630,7 @@ export function App(): JSX.Element {
     tool,
     undo,
     wires,
-    wireDraftPath,
-    selectedNetId
+    wireDraftPath
   ]);
 
   const coreBridgeLabel =
@@ -1579,16 +1646,44 @@ export function App(): JSX.Element {
         ? "bridge-badge wasm"
         : "bridge-badge";
   const isCustomBoardPreset = boardPresetId === "custom";
+  const selectedPlaceDef = partDefs.find((def) => def.id === placeDefId);
+  const toolHint = tool === "wire"
+    ? "基板の穴を順に選んで確定します。接続先のネットとピンは自動で割り当てます。"
+    : tool === "place"
+      ? `${selectedPlaceDef?.name ?? "部品"}を基板に配置します。回転は R キーでも操作できます。`
+      : "部品や配線を選択できます。移動は M キー、回転は R キーです。";
+
+  const activateTool = (nextTool: ToolMode): void => {
+    setTool(nextTool);
+    setMoveArmedPartId(null);
+    setMoveArmedRot(null);
+    if (nextTool === "place" && placeDefId) {
+      setPlaceArmedDefId(placeDefId);
+      setPlaceArmedRot(activeRot);
+    } else {
+      setPlaceArmedDefId(null);
+    }
+    if (nextTool !== "wire") setWireDraftPath([]);
+  };
 
   return (
     <main className="app-root">
-      <aside className="sidebar">
+      <aside className="sidebar" data-expanded={showSettings}>
         <header className="toolbar">
-        <h1>uniuni</h1>
-        <p>
-          Part: R/M/C/L | Wire: Wで開始, クリックで1ステップ追加, Enterで確定, Escで取消 | Tab: 候補選択
-        </p>
-        <div className="toolbar-grid">
+        <div className="app-brand-row">
+          <h1>uniuni</h1>
+          <button
+            type="button"
+            className="btn panel-toggle"
+            aria-expanded={showSettings}
+            aria-controls="settings-panel"
+            onClick={() => setShowSettings((value) => !value)}
+          >
+            {showSettings ? "設定を閉じる" : "設定を開く"}
+          </button>
+        </div>
+        <p>ユニバーサル基板 CAD · 編集内容はこのブラウザーに保存</p>
+        <div id="settings-panel" className="toolbar-grid">
           <section className="tool-card">
             <h2 className="card-title">基板設定</h2>
             <div className="toolbar-row">
@@ -1661,126 +1756,11 @@ export function App(): JSX.Element {
           </section>
 
           <section className="tool-card">
-            <h2 className="card-title">編集操作</h2>
-            <div className="toolbar-row">
-              <button
-                type="button"
-                className={tool === "place" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("place");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setWireDraftPath([]);
-              if (placeDefId) {
-                setPlaceArmedDefId(placeDefId);
-                setPlaceArmedRot(activeRot);
-              }
-            }}
-          >
-            Place
-              </button>
-              <button
-                type="button"
-                className={tool === "select" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("select");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setPlaceArmedDefId(null);
-              setWireDraftPath([]);
-            }}
-              >
-                Select
-              </button>
-              <button
-                type="button"
-                className={tool === "wire" ? "btn active" : "btn"}
-                onClick={() => {
-              setTool("wire");
-              setMoveArmedPartId(null);
-              setMoveArmedRot(null);
-              setPlaceArmedDefId(null);
-            }}
-              >
-                Wire
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const next = nextRot(activeRot);
-                  setActiveRot(next);
-                  if (placeArmedDefId) {
-                    setPlaceArmedRot(next);
-                  }
-                }}
-              >
-                Rotate Place: {placeArmedDefId ? placeArmedRot : activeRot}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.resistor) ?? partDefs[0];
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm R
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.capacitor);
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm C
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const target = partDefs.find((def) => def.id === builtInPartIds.inductor);
-                  if (target) armPlacement(target.id);
-                }}
-              >
-                Arm L
-              </button>
-              <select
-                className="net-select"
-                value={placeDefId}
-                onChange={(event) => {
-                  const id = event.target.value;
-                  setPlaceDefId(id);
-                  if (tool === "place") {
-                    setPlaceArmedDefId(id);
-                  }
-                }}
-              >
-                {partDefs.map((def) => (
-                  <option key={def.id} value={def.id}>
-                    Place: {def.name}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="btn danger" onClick={handleDeleteSelected}>
-                Delete Selected
-              </button>
-              <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
-                Undo
-              </button>
-              <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
-                Redo
-              </button>
-            </div>
-          </section>
-
-          <section className="tool-card">
-            <h2 className="card-title">配線とネット</h2>
-            <div className="toolbar-row">
+            <h2 className="card-title">ネット</h2>
+            <p className="local-data-note">配線を確定すると、ネットと接触したピンは自動で割り当てられます。</p>
+            <div className="toolbar-row net-field-row">
               <label className="net-label" htmlFor="net-select">
-                Net
+                ネット
               </label>
               <select
                 id="net-select"
@@ -1796,96 +1776,127 @@ export function App(): JSX.Element {
                   </option>
                 ))}
               </select>
+              <button type="button" className="btn btn-with-icon" onClick={() => void addNet()}>
+                <ActionIcon name="add" />追加
+              </button>
+              <button type="button" className="btn btn-with-icon danger" onClick={() => void deleteSelectedNet()} disabled={!selectedNet}>
+                <ActionIcon name="delete" />削除
+              </button>
+            </div>
+            <div className="toolbar-row net-field-row">
+              <label className="net-label" htmlFor="net-name-input">
+                名前
+              </label>
               <input
+                id="net-name-input"
                 type="text"
                 className="net-input"
                 value={netNameDraft}
                 placeholder="Net name"
                 onChange={(event) => setNetNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void renameSelectedNet();
+                  }
+                }}
               />
-              <button type="button" className="btn" onClick={() => void addNet()}>
-                Add Net
-              </button>
               <button
                 type="button"
-                className="btn"
+                className="btn btn-with-icon"
                 onClick={() => void renameSelectedNet()}
-                disabled={!selectedNetId || netNameDraft.trim().length === 0}
+                disabled={!selectedNetId || !netNameDraft.trim() || netNameDraft.trim() === selectedNet?.name}
               >
-                Rename Net
-              </button>
-              <label className="net-label" htmlFor="net-color-input">
-                Color
-              </label>
-              <input
-                id="net-color-input"
-                type="color"
-                className="net-color-input"
-                value={netColorDraft}
-                onChange={(event) => setNetColorDraft(event.target.value)}
-                disabled={!selectedNetId}
-              />
-              <span
-                className="net-color-chip"
-                style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void applySelectedNetColor()}
-                disabled={!selectedNetId}
-              >
-                Apply Color
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void resetSelectedNetColor()}
-                disabled={!selectedNetId || !selectedNet?.color}
-              >
-                Reset Color
+                <ActionIcon name="save" />保存
               </button>
             </div>
+            {selectedPart ? (
+              <details className="net-details">
+                <summary>ピンを手動で割り当てる（任意）</summary>
+                <div className="toolbar-row net-field-row">
+                  <label className="net-label" htmlFor="net-pin-select">
+                    {selectedPart.refdes} のピン
+                  </label>
+                  <select
+                    id="net-pin-select"
+                    className="net-select"
+                    value={pinNameDraft}
+                    onChange={(event) => setPinNameDraft(event.target.value)}
+                    disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
+                  >
+                    {(selectedPartDef?.pins ?? []).map((pin) => (
+                      <option key={pin.name} value={pin.name}>
+                        Pin {pin.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-with-icon"
+                    onClick={() => void assignSelectedPinToNet()}
+                    disabled={!selectedNetId || !pinNameDraft}
+                  >
+                    <ActionIcon name="connect" />割り当て
+                  </button>
+                </div>
+              </details>
+            ) : null}
+            <details className="net-details">
+              <summary><ActionIcon name="palette" />ネットの色</summary>
+              <div className="toolbar-row net-field-row">
+                <label className="net-label" htmlFor="net-color-input">変更色</label>
+                <input
+                  id="net-color-input"
+                  type="color"
+                  className="net-color-input"
+                  value={netColorDraft}
+                  onChange={(event) => setNetColorDraft(event.target.value)}
+                  disabled={!selectedNetId}
+                />
+                <span className="net-label">現在</span>
+                <span
+                  className="net-color-chip"
+                  title="現在の色"
+                  role="img"
+                  aria-label="現在のネット色"
+                  style={{ backgroundColor: selectedNet?.color ?? fallbackNetColor(selectedNetId) }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-with-icon"
+                  onClick={() => void applySelectedNetColor()}
+                  disabled={!selectedNetId || netColorDraft === (selectedNet?.color ?? fallbackNetColor(selectedNetId))}
+                >
+                  <ActionIcon name="save" />色を適用
+                </button>
+                {selectedNet?.color ? (
+                  <button
+                    type="button"
+                    className="btn btn-with-icon"
+                    onClick={() => void resetSelectedNetColor()}
+                  >
+                    <ActionIcon name="reset" />既定色に戻す
+                  </button>
+                ) : null}
+              </div>
+            </details>
+          </section>
+
+          <section className="tool-card">
+            <h2 className="card-title">プロジェクト</h2>
             <div className="toolbar-row">
-              <select
-                className="net-select"
-                value={pinNameDraft}
-                onChange={(event) => setPinNameDraft(event.target.value)}
-                disabled={!selectedPartDef || selectedPartDef.pins.length === 0}
-              >
-                {(selectedPartDef?.pins ?? []).map((pin) => (
-                  <option key={pin.name} value={pin.name}>
-                    Pin {pin.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void assignSelectedPinToNet()}
-                disabled={!selectedPart || !selectedNetId || !pinNameDraft}
-              >
-                Assign Pin To Net
-              </button>
-              <button type="button" className="btn" onClick={() => void commitWireDraft()}>
-                Commit Wire
-              </button>
-              <button type="button" className="btn" onClick={() => setWireDraftPath([])}>
-                Cancel Wire
-              </button>
-              <button type="button" className="btn" onClick={() => void runDrc()}>
-                Run DRC
-              </button>
-              <button type="button" className="btn" onClick={exportProjectZip}>
+              <button type="button" className="btn btn-with-icon" onClick={exportProjectZip} disabled={!coreStateJson}>
+                <ActionIcon name="export" />
                 Export ZIP
               </button>
               <button
                 type="button"
-                className="btn"
+                className="btn btn-with-icon"
                 onClick={() => {
                   importInputRef.current?.click();
                 }}
               >
+                <ActionIcon name="import" />
                 Import ZIP
               </button>
               <input
@@ -1906,432 +1917,14 @@ export function App(): JSX.Element {
               設計データはこのブラウザー内に保存されます。別のPCへ移す場合は Export ZIP を使ってください。
             </p>
           </section>
-
-          <section className="tool-card part-editor-card">
-            <h2 className="card-title">Part Editor</h2>
-            {editorDef && editorPreview ? (
-              <div className="editor-preview-wrap">
-                <div className="editor-preview-header">
-                  <div className="editor-preview-title">Preview</div>
-                  <div className="preview-zoom-tools">
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => setEditorPreviewZoom(1)}
-                    >
-                      Fit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        setEditorPreviewZoom((prev) => Math.max(0.5, Number((prev / 1.25).toFixed(2))))
-                      }
-                    >
-                      -
-                    </button>
-                    <span className="zoom-label">{editorPreviewZoom.toFixed(2)}x</span>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        setEditorPreviewZoom((prev) => Math.min(8, Number((prev * 1.25).toFixed(2))))
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                <div className="editor-preview-canvas">
-                  {(() => {
-                    const span = editorPreview.fitSpan / editorPreviewZoom;
-                    const viewMinX = editorPreview.centerX - span / 2;
-                    const viewMinY = editorPreview.centerY - span / 2;
-                    const gridStartX = Math.floor(viewMinX) - 1;
-                    const gridEndX = Math.ceil(viewMinX + span) + 1;
-                    const gridStartY = Math.floor(viewMinY) - 1;
-                    const gridEndY = Math.ceil(viewMinY + span) + 1;
-                    const gridXs = Array.from({ length: gridEndX - gridStartX + 1 }, (_, i) => gridStartX + i);
-                    const gridYs = Array.from({ length: gridEndY - gridStartY + 1 }, (_, i) => gridStartY + i);
-                    return (
-                      <svg
-                        viewBox={`${viewMinX - 0.5} ${viewMinY - 0.5} ${span} ${span}`}
-                        className="editor-preview-svg"
-                      >
-                        {gridXs.map((x) => (
-                          <line
-                            key={`gx-${x}`}
-                            x1={x}
-                            y1={gridStartY}
-                            x2={x}
-                            y2={gridEndY}
-                            className="preview-grid-line"
-                          />
-                        ))}
-                        {gridYs.map((y) => (
-                          <line
-                            key={`gy-${y}`}
-                            x1={gridStartX}
-                            y1={y}
-                            x2={gridEndX}
-                            y2={y}
-                            className="preview-grid-line"
-                          />
-                        ))}
-                        {editorDef.imageDataUrl ? (
-                          (() => {
-                            const scale = editorDef.imageScale ?? 1;
-                            const ox = editorDef.imageOffsetX ?? 0;
-                            const oy = editorDef.imageOffsetY ?? 0;
-                            const minX = editorPreview.minX - 0.5 + ox;
-                            const maxX = editorPreview.maxX + 0.5 + ox;
-                            const minY = editorPreview.minY - 0.5 + oy;
-                            const maxY = editorPreview.maxY + 0.5 + oy;
-                            const baseW = maxX - minX;
-                            const baseH = maxY - minY;
-                            const drawW = baseW * scale;
-                            const drawH = baseH * scale;
-                            const cx = minX + baseW / 2;
-                            const cy = minY + baseH / 2;
-                            return (
-                              <image
-                                href={editorDef.imageDataUrl}
-                                x={cx - drawW / 2}
-                                y={cy - drawH / 2}
-                                width={drawW}
-                                height={drawH}
-                                preserveAspectRatio="none"
-                                className="preview-part-image"
-                              />
-                            );
-                          })()
-                        ) : null}
-                        {editorDef.occupied.map((pt) => (
-                          <rect
-                            key={`occ-${pt.x}-${pt.y}`}
-                            x={pt.x - 0.5}
-                            y={pt.y - 0.5}
-                            width={1}
-                            height={1}
-                            className="preview-occ-cell"
-                          />
-                        ))}
-                        <rect
-                          x={-0.5}
-                          y={-0.5}
-                          width={1}
-                          height={1}
-                          className="preview-origin-cell"
-                        />
-                        {editorDef.pins.map((pin) => (
-                          <circle
-                            key={`pin-${pin.name}`}
-                            cx={pin.pos.x}
-                            cy={pin.pos.y}
-                            r={0.22}
-                            className="preview-pin-dot"
-                          >
-                            <title>{`Pin ${pin.name} (${pin.pos.x}, ${pin.pos.y})`}</title>
-                          </circle>
-                        ))}
-                      </svg>
-                    );
-                  })()}
-                </div>
-                <div className="editor-preview-legend">
-                  <span><i className="legend-box origin" /> Origin</span>
-                  <span><i className="legend-box occupied" /> Occupied</span>
-                  <span><i className="legend-pin" /> Pin</span>
-                </div>
-              </div>
-            ) : null}
-            <div className="toolbar-row">
-              <select
-                className="net-select"
-                value={editorDefId}
-                onChange={(event) => setEditorDefId(event.target.value)}
-              >
-                {partDefs.map((def) => (
-                  <option key={def.id} value={def.id}>
-                    {def.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                className="net-input"
-                value={editorDefName}
-                placeholder="PartDef name"
-                onChange={(event) => setEditorDefName(event.target.value)}
-              />
-              <button type="button" className="btn" onClick={renameEditorPartDef}>
-                Rename Part
-              </button>
-              <button type="button" className="btn" onClick={createEditorPartDef}>
-                New Part
-              </button>
-              <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
-                Delete Part
-              </button>
-            </div>
-            {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
-            <div className="editor-grid">
-              <div className="editor-block">
-                <h3 className="editor-title">Pin設定</h3>
-                <div className="toolbar-row">
-                  <input
-                    type="text"
-                    className="coord-input"
-                    value={editorPinName}
-                    placeholder="Pin name"
-                    onChange={(event) => setEditorPinName(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorPinX}
-                    onChange={(event) => setEditorPinX(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorPinY}
-                    onChange={(event) => setEditorPinY(event.target.value)}
-                  />
-                  <button type="button" className="btn" onClick={addEditorPin}>
-                    Add Pin
-                  </button>
-                </div>
-                <table className="editor-table">
-                  <thead>
-                    <tr>
-                      <th>Pin名</th>
-                      <th>X座標</th>
-                      <th>Y座標</th>
-                      <th className="action-col" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editorDef?.pins ?? []).map((pin) => (
-                      <tr key={pin.name}>
-                        <td>{pin.name}</td>
-                        <td>{pin.pos.x}</td>
-                        <td>{pin.pos.y}</td>
-                        <td className="action-col">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={() => removeEditorPin(pin.name)}
-                            aria-label={`remove pin ${pin.name}`}
-                            title="Delete"
-                          >
-                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
-                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="editor-block">
-                <h3 className="editor-title">Occupied設定</h3>
-                <div className="toolbar-row">
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorOccX}
-                    onChange={(event) => setEditorOccX(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="coord-input"
-                    value={editorOccY}
-                    onChange={(event) => setEditorOccY(event.target.value)}
-                  />
-                  <button type="button" className="btn" onClick={addEditorOccupied}>
-                    Add Occ
-                  </button>
-                </div>
-                <table className="editor-table">
-                  <thead>
-                    <tr>
-                      <th>X座標</th>
-                      <th>Y座標</th>
-                      <th className="action-col" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editorDef?.occupied ?? []).map((pt) => (
-                      <tr key={`${pt.x}:${pt.y}`}>
-                        <td>{pt.x}</td>
-                        <td>{pt.y}</td>
-                        <td className="action-col">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={() => removeEditorOccupied(pt.x, pt.y)}
-                            aria-label={`remove occupied ${pt.x},${pt.y}`}
-                            title="Delete"
-                          >
-                            <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
-                              <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="editor-block">
-                <h3 className="editor-title">画像設定</h3>
-                <div className="toolbar-row">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      partImageInputRef.current?.click();
-                    }}
-                  >
-                    Set Image
-                  </button>
-                  <button type="button" className="btn" onClick={clearEditorPartImage}>
-                    Clear Image
-                  </button>
-                  <span className="net-label">
-                    {editorDef?.imageDataUrl ? "画像: 設定済み" : "画像: 未設定"}
-                  </span>
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-scale">
-                    Scale
-                  </label>
-                  <input
-                    id="editor-image-scale"
-                    type="range"
-                    min="0.1"
-                    max="4"
-                    step="0.05"
-                    className="image-range"
-                    value={imageScaleSlider}
-                    onChange={(event) => setEditorImageScale(event.target.value)}
-                    title="Image scale"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageScale}
-                    onChange={(event) => setEditorImageScale(event.target.value)}
-                    title="Image scale"
-                  />
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-offset-x">
-                    Offset X
-                  </label>
-                  <input
-                    id="editor-image-offset-x"
-                    type="range"
-                    min="-10"
-                    max="10"
-                    step="0.1"
-                    className="image-range"
-                    value={imageOffsetXSlider}
-                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
-                    title="Image offset X"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageOffsetX}
-                    onChange={(event) => setEditorImageOffsetX(event.target.value)}
-                    title="Image offset X"
-                  />
-                </div>
-                <div className="image-control-row">
-                  <label className="net-label" htmlFor="editor-image-offset-y">
-                    Offset Y
-                  </label>
-                  <input
-                    id="editor-image-offset-y"
-                    type="range"
-                    min="-10"
-                    max="10"
-                    step="0.1"
-                    className="image-range"
-                    value={imageOffsetYSlider}
-                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
-                    title="Image offset Y"
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="coord-input"
-                    value={editorImageOffsetY}
-                    onChange={(event) => setEditorImageOffsetY(event.target.value)}
-                    title="Image offset Y"
-                  />
-                </div>
-                <div className="toolbar-row">
-                  <button type="button" className="btn" onClick={applyEditorImageTransform}>
-                    Apply
-                  </button>
-                </div>
-                <input
-                  ref={partImageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden-file-input"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      onPartImagePicked(file);
-                    }
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </div>
-            </div>
-            <div className="toolbar-row">
-              <button type="button" className="btn" onClick={exportPartLibraryJson}>
-                Export Library
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  partLibraryInputRef.current?.click();
-                }}
-              >
-                Import Library
-              </button>
-            </div>
-            <input
-              ref={partLibraryInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden-file-input"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void importPartLibraryJson(file);
-                }
-                event.currentTarget.value = "";
-              }}
-            />
-          </section>
         </div>
-        <div className="toolbar-row">
+        <div className="toolbar-row sidebar-status">
           <span className={coreBridgeBadgeClass}>Core: {coreBridgeLabel}</span>
           <span>DRC Issues: {drcIssues.length}</span>
           {coreError ? <span className="error-text">Error: {coreError}</span> : null}
         </div>
         {drcIssues.length > 0 ? (
-          <div className="toolbar-row">
+          <div className="toolbar-row sidebar-status">
             {drcIssues.slice(0, 3).map((issue, idx) => (
               <span key={`${issue.code}-${idx}`}>
                 [{issue.level}] {issue.code}
@@ -2344,6 +1937,86 @@ export function App(): JSX.Element {
       </aside>
       <section className="main-pane">
         <section className="workspace-pane">
+          <div className="workspace-toolbar">
+            <div className="workspace-tool-group" role="group" aria-label="編集ツール">
+              <button
+                type="button"
+                className={tool === "select" ? "btn active" : "btn"}
+                aria-pressed={tool === "select"}
+                onClick={() => activateTool("select")}
+              >
+                選択
+              </button>
+              <button
+                type="button"
+                className={tool === "place" ? "btn active" : "btn"}
+                aria-pressed={tool === "place"}
+                onClick={() => activateTool("place")}
+              >
+                配置
+              </button>
+              <button
+                type="button"
+                className={tool === "wire" ? "btn active" : "btn"}
+                aria-pressed={tool === "wire"}
+                onClick={() => activateTool("wire")}
+              >
+                配線
+              </button>
+            </div>
+            <label className="workspace-part-picker">
+              <span>部品</span>
+              <select
+                className="net-select"
+                value={placeDefId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setPlaceDefId(id);
+                  if (tool === "place") setPlaceArmedDefId(id);
+                }}
+              >
+                {partGroups.map((category) => <optgroup key={category.id} label={category.label}>
+                  {category.parts.map((def) => <option key={def.id} value={def.id}>{def.name}</option>)}
+                </optgroup>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const next = nextRot(activeRot);
+                setActiveRot(next);
+                if (placeArmedDefId) setPlaceArmedRot(next);
+              }}
+            >
+              配置を回転 · {(placeArmedDefId ? placeArmedRot : activeRot).replace("Deg", "")}°
+            </button>
+            <div className="workspace-actions">
+              {tool === "wire" ? (
+                <>
+                  <button type="button" className="btn" disabled={wireDraftPath.length < 2} onClick={() => void commitWireDraft()}>
+                    配線を確定
+                  </button>
+                  <button type="button" className="btn" disabled={wireDraftPath.length === 0} onClick={() => setWireDraftPath([])}>
+                    取消
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className="btn" onClick={() => void undo()} disabled={!canUndo}>
+                元に戻す
+              </button>
+              <button type="button" className="btn" onClick={() => void redo()} disabled={!canRedo}>
+                やり直す
+              </button>
+              <button type="button" className="btn danger" onClick={handleDeleteSelected} disabled={!selectedPartId && !selectedWireId}>
+                削除
+              </button>
+            </div>
+            <div className="workspace-hint" role="status">
+              <span>{toolHint}</span>
+              <span>{selectedPart ? `選択: ${selectedPart.refdes}` : selectedWireId ? "配線を選択中" : ""}</span>
+            </div>
+          </div>
           <BoardCanvas
             board={board}
             parts={parts}
@@ -2366,8 +2039,23 @@ export function App(): JSX.Element {
             <h2>部品ライブラリ</h2>
             <span>{partDefs.length} items</span>
           </header>
+          <div className="library-filters" role="group" aria-label="部品カテゴリ">
+            <button type="button" className="library-filter" aria-pressed={libraryCategory === "all"}
+              onClick={() => setLibraryCategory("all")}>すべて</button>
+            {partGroups.map((category) => {
+              return (
+                <button key={category.id} type="button" className="library-filter"
+                  aria-pressed={libraryCategory === category.id}
+                  onClick={() => setLibraryCategory(category.id)}>
+                  {category.label} <span>{category.parts.length}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="library-list">
-            {partDefs.map((def) => {
+            {libraryGroups.map((category) => <section className="library-category" key={category.id} aria-label={category.label}>
+              <h3>{category.label} <span>{category.parts.length}</span></h3>
+              <div className="library-category-items">{category.parts.map((def) => {
               const armed = placeArmedDefId === def.id && tool === "place";
               return (
                 <button
@@ -2376,9 +2064,9 @@ export function App(): JSX.Element {
                   className={armed ? "part-card armed" : "part-card"}
                   onClick={() => armPlacement(def.id)}
                 >
-                  <div className="part-thumb">
+                  <div className={def.imageDataUrl ? "part-thumb with-image" : "part-thumb"}>
                     {def.imageDataUrl ? (
-                      <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" />
+                      <img src={def.imageDataUrl} alt={def.name} className="part-thumb-image" style={def.imagePixelated ? { imageRendering: "pixelated" } : undefined} />
                     ) : (
                       partLabel(def.name)
                     )}
@@ -2390,10 +2078,445 @@ export function App(): JSX.Element {
                   </div>
                 </button>
               );
-            })}
+              })}</div>
+            </section>)}
           </div>
         </section>
       </section>
+      <aside className="editor-sidebar" aria-label="Part Editor">
+        <section className="tool-card part-editor-card">
+          <h2 className="card-title">Part Editor</h2>
+          {editorDef && editorPreview ? (
+            <div className="editor-preview-wrap">
+              <div className="editor-preview-header">
+                <div className="editor-preview-title">Preview</div>
+                <div className="preview-zoom-tools">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setEditorPreviewZoom(1)}
+                  >
+                    Fit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setEditorPreviewZoom((prev) => Math.max(0.5, Number((prev / 1.25).toFixed(2))))
+                    }
+                  >
+                    -
+                  </button>
+                  <span className="zoom-label">{editorPreviewZoom.toFixed(2)}x</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      setEditorPreviewZoom((prev) => Math.min(8, Number((prev * 1.25).toFixed(2))))
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="editor-preview-canvas">
+                {(() => {
+                  const span = editorPreview.fitSpan / editorPreviewZoom;
+                  const viewMinX = editorPreview.centerX - span / 2;
+                  const viewMinY = editorPreview.centerY - span / 2;
+                  const gridStartX = Math.floor(viewMinX) - 1;
+                  const gridEndX = Math.ceil(viewMinX + span) + 1;
+                  const gridStartY = Math.floor(viewMinY) - 1;
+                  const gridEndY = Math.ceil(viewMinY + span) + 1;
+                  const gridXs = Array.from({ length: gridEndX - gridStartX + 1 }, (_, i) => gridStartX + i);
+                  const gridYs = Array.from({ length: gridEndY - gridStartY + 1 }, (_, i) => gridStartY + i);
+                  return (
+                    <svg
+                      viewBox={`${viewMinX - 0.5} ${viewMinY - 0.5} ${span} ${span}`}
+                      className="editor-preview-svg"
+                    >
+                      {gridXs.map((x) => (
+                        <line
+                          key={`gx-${x}`}
+                          x1={x}
+                          y1={gridStartY}
+                          x2={x}
+                          y2={gridEndY}
+                          className="preview-grid-line"
+                        />
+                      ))}
+                      {gridYs.map((y) => (
+                        <line
+                          key={`gy-${y}`}
+                          x1={gridStartX}
+                          y1={y}
+                          x2={gridEndX}
+                          y2={y}
+                          className="preview-grid-line"
+                        />
+                      ))}
+                      {editorDef.imageDataUrl ? (
+                        (() => {
+                          const scale = editorDef.imageScale ?? 1;
+                          const ox = editorDef.imageOffsetX ?? 0;
+                          const oy = editorDef.imageOffsetY ?? 0;
+                          const minX = editorPreview.minX - 0.5 + ox;
+                          const maxX = editorPreview.maxX + 0.5 + ox;
+                          const minY = editorPreview.minY - 0.5 + oy;
+                          const maxY = editorPreview.maxY + 0.5 + oy;
+                          const baseW = maxX - minX;
+                          const baseH = maxY - minY;
+                          const drawW = baseW * scale;
+                          const drawH = baseH * scale;
+                          const cx = minX + baseW / 2;
+                          const cy = minY + baseH / 2;
+                          return (
+                            <image
+                              href={editorDef.imageDataUrl}
+                              imageRendering={editorDef.imagePixelated ? "pixelated" : undefined}
+                              x={cx - drawW / 2}
+                              y={cy - drawH / 2}
+                              width={drawW}
+                              height={drawH}
+                              preserveAspectRatio="none"
+                              className="preview-part-image"
+                            />
+                          );
+                        })()
+                      ) : null}
+                      {editorDef.occupied.map((pt) => (
+                        <rect
+                          key={`occ-${pt.x}-${pt.y}`}
+                          x={pt.x - 0.5}
+                          y={pt.y - 0.5}
+                          width={1}
+                          height={1}
+                          className="preview-occ-cell"
+                        />
+                      ))}
+                      <rect
+                        x={-0.5}
+                        y={-0.5}
+                        width={1}
+                        height={1}
+                        className="preview-origin-cell"
+                      />
+                      {editorDef.pins.map((pin) => (
+                        <circle
+                          key={`pin-${pin.name}`}
+                          cx={pin.pos.x}
+                          cy={pin.pos.y}
+                          r={0.22}
+                          className="preview-pin-dot"
+                        >
+                          <title>{`Pin ${pin.name} (${pin.pos.x}, ${pin.pos.y})`}</title>
+                        </circle>
+                      ))}
+                    </svg>
+                  );
+                })()}
+              </div>
+              <div className="editor-preview-legend">
+                <span><i className="legend-box origin" /> Origin</span>
+                <span><i className="legend-box occupied" /> Occupied</span>
+                <span><i className="legend-pin" /> Pin</span>
+              </div>
+            </div>
+          ) : null}
+          <div className="toolbar-row">
+            <select
+              className="net-select"
+              value={editorDefId}
+              onChange={(event) => setEditorDefId(event.target.value)}
+            >
+              {partGroups.map((category) => <optgroup key={category.id} label={category.label}>
+                {category.parts.map((def) => <option key={def.id} value={def.id}>{def.name}</option>)}
+              </optgroup>)}
+            </select>
+            <input
+              type="text"
+              className="net-input"
+              value={editorDefName}
+              placeholder="PartDef name"
+              onChange={(event) => setEditorDefName(event.target.value)}
+            />
+            <button type="button" className="btn" onClick={renameEditorPartDef}>
+              Rename Part
+            </button>
+            <button type="button" className="btn" onClick={createEditorPartDef}>
+              New Part
+            </button>
+            <button type="button" className="btn danger" onClick={deleteEditorPartDef}>
+              Delete Part
+            </button>
+          </div>
+          {editorDef ? (
+            <label className="part-category-editor">カテゴリ
+              <select className="net-select" value={partCategory(editorDef)}
+                onChange={(event) => {
+                  const category = event.target.value;
+                  if (!isPartCategory(category)) return;
+                  void applyPartDefsChange(
+                    (prev) => prev.map((def) => def.id === editorDefId ? { ...def, category } : def),
+                    "部品カテゴリを更新しました。"
+                  );
+                }}>
+                {PART_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {editorNotice ? <div className="editor-notice">{editorNotice}</div> : null}
+          <div className="editor-grid">
+            <div className="editor-block">
+              <h3 className="editor-title">Pin設定</h3>
+              <div className="toolbar-row">
+                <input
+                  type="text"
+                  className="coord-input"
+                  value={editorPinName}
+                  placeholder="Pin name"
+                  onChange={(event) => setEditorPinName(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorPinX}
+                  onChange={(event) => setEditorPinX(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorPinY}
+                  onChange={(event) => setEditorPinY(event.target.value)}
+                />
+                <button type="button" className="btn" onClick={addEditorPin}>
+                  Add Pin
+                </button>
+              </div>
+              <table className="editor-table">
+                <thead>
+                  <tr>
+                    <th>Pin名</th>
+                    <th>X座標</th>
+                    <th>Y座標</th>
+                    <th className="action-col" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(editorDef?.pins ?? []).map((pin) => (
+                    <tr key={pin.name}>
+                      <td>{pin.name}</td>
+                      <td>{pin.pos.x}</td>
+                      <td>{pin.pos.y}</td>
+                      <td className="action-col">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => removeEditorPin(pin.name)}
+                          aria-label={`remove pin ${pin.name}`}
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="editor-block">
+              <h3 className="editor-title">Occupied設定</h3>
+              <div className="toolbar-row">
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorOccX}
+                  onChange={(event) => setEditorOccX(event.target.value)}
+                />
+                <input
+                  type="number"
+                  className="coord-input"
+                  value={editorOccY}
+                  onChange={(event) => setEditorOccY(event.target.value)}
+                />
+                <button type="button" className="btn" onClick={addEditorOccupied}>
+                  Add Occ
+                </button>
+              </div>
+              <table className="editor-table">
+                <thead>
+                  <tr>
+                    <th>X座標</th>
+                    <th>Y座標</th>
+                    <th className="action-col" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(editorDef?.occupied ?? []).map((pt) => (
+                    <tr key={`${pt.x}:${pt.y}`}>
+                      <td>{pt.x}</td>
+                      <td>{pt.y}</td>
+                      <td className="action-col">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => removeEditorOccupied(pt.x, pt.y)}
+                          aria-label={`remove occupied ${pt.x},${pt.y}`}
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" className="trash-icon" aria-hidden="true">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="editor-block">
+              <h3 className="editor-title">画像設定</h3>
+              <div className="toolbar-row">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    partImageInputRef.current?.click();
+                  }}
+                >
+                  Set Image
+                </button>
+                <button type="button" className="btn" onClick={clearEditorPartImage}>
+                  Clear Image
+                </button>
+                <span className="net-label">
+                  {editorDef?.imageDataUrl ? "画像: 設定済み" : "画像: 未設定"}
+                </span>
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-scale">
+                  Scale
+                </label>
+                <input
+                  id="editor-image-scale"
+                  type="range"
+                  min="0.1"
+                  max="4"
+                  step="0.05"
+                  className="image-range"
+                  value={imageScaleSlider}
+                  onChange={(event) => setEditorImageScale(event.target.value)}
+                  title="Image scale"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageScale}
+                  onChange={(event) => setEditorImageScale(event.target.value)}
+                  title="Image scale"
+                />
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-offset-x">
+                  Offset X
+                </label>
+                <input
+                  id="editor-image-offset-x"
+                  type="range"
+                  min="-10"
+                  max="10"
+                  step="0.1"
+                  className="image-range"
+                  value={imageOffsetXSlider}
+                  onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                  title="Image offset X"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageOffsetX}
+                  onChange={(event) => setEditorImageOffsetX(event.target.value)}
+                  title="Image offset X"
+                />
+              </div>
+              <div className="image-control-row">
+                <label className="net-label" htmlFor="editor-image-offset-y">
+                  Offset Y
+                </label>
+                <input
+                  id="editor-image-offset-y"
+                  type="range"
+                  min="-10"
+                  max="10"
+                  step="0.1"
+                  className="image-range"
+                  value={imageOffsetYSlider}
+                  onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                  title="Image offset Y"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  className="coord-input"
+                  value={editorImageOffsetY}
+                  onChange={(event) => setEditorImageOffsetY(event.target.value)}
+                  title="Image offset Y"
+                />
+              </div>
+              <div className="toolbar-row">
+                <button type="button" className="btn" onClick={applyEditorImageTransform}>
+                  Apply
+                </button>
+              </div>
+              <input
+                ref={partImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    onPartImagePicked(file);
+                  }
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+            {editorDef && <PixelArtEditor key={editorDef.id} partDef={editorDef} onRegister={registerEditorPixelArt} />}
+          </div>
+          <div className="toolbar-row">
+            <button type="button" className="btn" onClick={exportPartLibraryJson}>
+              Export Library
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                partLibraryInputRef.current?.click();
+              }}
+            >
+              Import Library
+            </button>
+          </div>
+          <input
+            ref={partLibraryInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden-file-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void importPartLibraryJson(file);
+              }
+              event.currentTarget.value = "";
+            }}
+          />
+        </section>
+      </aside>
     </main>
   );
 }

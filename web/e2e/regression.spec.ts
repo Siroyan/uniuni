@@ -3,11 +3,13 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import { legacyTopViewArt } from "../src/legacyTopViewArt";
 
 type ExportedProject = {
-  part_defs: Array<{ occupied: unknown[] }>;
-  part_insts: unknown[];
-  wires: Array<{ path: unknown[] }>;
+  part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: unknown[] }>;
+  part_insts: Array<{ def_id: string; refdes: string; at: { x: number; y: number }; net_assign: Record<string, string> }>;
+  nets: Array<{ id: string; name: string }>;
+  wires: Array<{ net_id: string; path: unknown[] }>;
 };
 
 const CELL = 24;
@@ -56,6 +58,104 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("狭い画面でも編集領域と設定を操作できる", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openApp(page);
+
+  const canvas = page.locator("canvas.board-canvas");
+  const assertCanvasSize = async (): Promise<void> => {
+    await expect.poll(() => canvas.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      return {
+        widthGap: Math.abs(element.width - Math.floor(rect.width * scale)),
+        heightGap: Math.abs(element.height - Math.floor(rect.height * scale))
+      };
+    })).toEqual({ widthGap: 0, heightGap: 0 });
+  };
+
+  expect((await canvas.boundingBox())?.height).toBeGreaterThan(350);
+  await assertCanvasSize();
+  await page.getByRole("button", { name: "設定を開く" }).click();
+  await expect(page.getByRole("heading", { name: "基板設定" })).toBeVisible();
+  await assertCanvasSize();
+  await page.getByRole("button", { name: "設定を閉じる" }).click();
+  await assertCanvasSize();
+
+  await page.getByRole("group", { name: "編集ツール" }).getByRole("button", { name: "配置" }).click();
+  await expect(page.getByRole("button", { name: "配置", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await clickGrid(page, 0, 0);
+  await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
+});
+
+test("ネット欄は必要な操作だけを表示し、名前と色を編集できる", async ({ page }) => {
+  await openApp(page);
+  const netCard = page.locator("section.tool-card").filter({
+    has: page.getByRole("heading", { name: "ネット", exact: true })
+  });
+
+  await expect(netCard.getByRole("button")).toHaveCount(3);
+  await netCard.getByRole("button", { name: "追加" }).click();
+  await netCard.getByRole("textbox", { name: "名前" }).fill("Signal");
+  await netCard.getByRole("textbox", { name: "名前" }).press("Enter");
+  await expect(netCard.locator("#net-select option:checked")).toHaveText("Signal");
+
+  await netCard.locator("summary").click();
+  const applyColor = netCard.getByRole("button", { name: "色を適用" });
+  await expect(applyColor).toBeDisabled();
+  await netCard.locator("#net-color-input").fill("#2357a8");
+  await applyColor.click();
+  await expect(netCard.locator(".net-color-chip")).toHaveCSS("background-color", "rgb(35, 87, 168)");
+  await netCard.getByRole("button", { name: "既定色に戻す" }).click();
+  await expect(netCard.getByRole("button", { name: "既定色に戻す" })).toHaveCount(0);
+
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("Escape");
+  await clickGrid(page, 0, 0);
+  await netCard.locator("summary").filter({ hasText: "ピンを手動で割り当てる" }).click();
+  await expect(netCard.getByRole("button", { name: "割り当て" })).toBeVisible();
+});
+
+test("ネット削除で関連配線とピン割り当てを消し、Undoで戻せる", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("w");
+  await clickGrid(page, 0, 0);
+  await clickGrid(page, 0, 1);
+  await page.keyboard.press("Enter");
+
+  const netCard = page.locator("section.tool-card").filter({ has: page.getByRole("heading", { name: "ネット", exact: true }) });
+  const original = await exportProject(page);
+  const deletedNetId = original.nets[0].id;
+  expect(original.wires).toHaveLength(1);
+  expect(original.part_insts[0].net_assign["1"]).toBe(deletedNetId);
+  await netCard.getByRole("button", { name: "追加" }).click();
+
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await netCard.locator("#net-select").selectOption(deletedNetId);
+  await netCard.getByRole("button", { name: "削除" }).click();
+  expect((await exportProject(page)).nets).toHaveLength(2);
+
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toContain("配線 1 本とピン割り当て 1 件");
+    void dialog.accept();
+  });
+  await netCard.getByRole("button", { name: "削除" }).click();
+  const afterDelete = await exportProject(page);
+  expect(afterDelete.nets).toHaveLength(1);
+  expect(afterDelete.nets[0].id).not.toBe(deletedNetId);
+  expect(afterDelete.wires).toHaveLength(0);
+  expect(afterDelete.part_insts[0].net_assign).toEqual({});
+
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  const restored = await exportProject(page);
+  expect(restored.nets).toHaveLength(2);
+  expect(restored.wires).toHaveLength(1);
+  expect(restored.part_insts[0].net_assign["1"]).toBe(deletedNetId);
+});
+
 test("部品を連続配置できる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");
@@ -65,6 +165,325 @@ test("部品を連続配置できる", async ({ page }) => {
 
   const project = await exportProject(page);
   expect(project.part_insts.length).toBe(2);
+});
+
+test("ピンヘッダーを選んで配置できる", async ({ page }) => {
+  await openApp(page);
+  const library = await exportProject(page);
+  expect(library.part_defs).toHaveLength(40);
+  const header = library.part_defs.find((def) => def.name === "Pin Header 2x3");
+  expect(header?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
+    ["1", 0, 0], ["2", 1, 0],
+    ["3", 0, 1], ["4", 1, 1],
+    ["5", 0, 2], ["6", 1, 2]
+  ]);
+
+  await page.locator(".part-card").filter({ hasText: "Pin Header 2x3" }).click();
+  await clickGrid(page, 0, 0);
+  const project = await exportProject(page);
+  expect(project.part_insts[0]?.def_id).toBe(header?.id);
+  expect(project.part_insts[0]?.refdes).toBe("J1");
+});
+
+test("追加した6種類を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const newParts = [
+    { name: "Diode Axial", refdes: "D1", at: [0, 5] },
+    { name: "LED 5mm", refdes: "D2", at: [6, 5] },
+    { name: "Transistor TO-92", refdes: "Q1", at: [12, 5] },
+    { name: "DIP-8 IC", refdes: "U1", at: [0, 12] },
+    { name: "Terminal Block 2P", refdes: "J1", at: [6, 12] },
+    { name: "Push Button 2P", refdes: "SW1", at: [12, 12] }
+  ] as const;
+  for (const part of newParts) {
+    const card = page.locator(".part-card").filter({ hasText: part.name });
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await card.click();
+    await clickGrid(page, part.at[0], part.at[1]);
+    await expect(page.locator(".workspace-hint span").last()).toHaveText(`選択: ${part.refdes}`);
+  }
+
+  const project = await exportProject(page);
+  expect(project.part_insts).toHaveLength(6);
+  const defsById = new Map(project.part_defs.map((def) => [def.id, def]));
+  expect(project.part_insts.map((inst) => [defsById.get(inst.def_id)?.name, inst.refdes])).toEqual(
+    newParts.map((part) => [part.name, part.refdes])
+  );
+  const dip = project.part_defs.find((def) => def.name === "DIP-8 IC");
+  expect(dip?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
+    ["1", 0, 0], ["2", 0, 1], ["3", 0, 2], ["4", 0, 3],
+    ["5", 3, 3], ["6", 3, 2], ["7", 3, 1], ["8", 3, 0]
+  ]);
+});
+
+test("新しい6種類を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const newParts = [
+    { name: "Capacitor Electrolytic", refdes: "C1", at: [0, 5] },
+    { name: "TO-220 3-pin", refdes: "U1", at: [7, 5] },
+    { name: "DIP-14 IC", refdes: "U2", at: [15, 5] },
+    { name: "Slide Switch SPDT", refdes: "SW1", at: [0, 14] },
+    { name: "Terminal Block 3P", refdes: "J1", at: [7, 14] },
+    { name: "Trimmer 3P Inline", refdes: "RV1", at: [15, 14] }
+  ] as const;
+  for (const part of newParts) {
+    const card = page.locator(".part-card").filter({ hasText: part.name });
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await card.click();
+    await clickGrid(page, part.at[0], part.at[1]);
+    await expect(page.locator(".workspace-hint span").last()).toHaveText(`選択: ${part.refdes}`);
+  }
+
+  const project = await exportProject(page);
+  expect(project.part_insts).toHaveLength(6);
+  const defsById = new Map(project.part_defs.map((def) => [def.id, def]));
+  expect(project.part_insts.map((inst) => [defsById.get(inst.def_id)?.name, inst.refdes])).toEqual(
+    newParts.map((part) => [part.name, part.refdes])
+  );
+  const dip = project.part_defs.find((def) => def.name === "DIP-14 IC");
+  expect(dip?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
+    ...Array.from({ length: 7 }, (_, y) => [String(y + 1), 0, y]),
+    ...Array.from({ length: 7 }, (_, index) => [String(index + 8), 3, 6 - index])
+  ]);
+});
+
+test("カテゴリで部品を絞り込み、Part Editorの変更をZIPと再読込へ保存できる", async ({ page }) => {
+  await openApp(page);
+  const filters = page.getByRole("group", { name: "部品カテゴリ" });
+  await expect(page.locator(".library-category")).toHaveCount(6);
+  await expect(page.locator(".part-card")).toHaveCount(40);
+  await filters.getByRole("button", { name: /IC 3/ }).click();
+  await expect(page.locator(".part-card")).toHaveCount(3);
+  await expect(page.locator(".part-card").filter({ hasText: "DIP-16 IC" })).toBeVisible();
+
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: "DIP-16 IC" });
+  await editor.getByLabel("カテゴリ").selectOption("passive");
+  await expect(page.locator(".part-card")).toHaveCount(2);
+  await filters.getByRole("button", { name: /受動部品 8/ }).click();
+  await expect(page.locator(".part-card").filter({ hasText: "DIP-16 IC" })).toBeVisible();
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export ZIP" }).click()
+  ]);
+  const tempDir = await mkdtemp(path.join(tmpdir(), "uniuni-category-"));
+  const filePath = path.join(tempDir, "project.zip");
+  await download.saveAs(filePath);
+  const zip = await JSZip.loadAsync(await readFile(filePath));
+  const library = JSON.parse(await zip.file("part-library.json")!.async("string")) as {
+    partDefs: Array<{ name: string; category?: string }>;
+  };
+  expect(library.partDefs.find((def) => def.name === "DIP-16 IC")?.category).toBe("passive");
+  await page.reload();
+  await expect(editor.getByLabel("カテゴリ")).toHaveValue("passive");
+});
+
+test("さらに追加した8種類を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const newParts = [
+    { name: "Capacitor Ceramic Disc", refdes: "C1", at: [0, 5] },
+    { name: "Fuse Axial", refdes: "F1", at: [5, 5] },
+    { name: "Photoresistor Radial", refdes: "R1", at: [12, 5] },
+    { name: "RGB LED 4-pin", refdes: "D1", at: [18, 5] },
+    { name: "DIP-16 IC", refdes: "U1", at: [0, 13] },
+    { name: "Pin Header 2x5", refdes: "J1", at: [6, 13] },
+    { name: "Buzzer 2P", refdes: "BZ1", at: [11, 13] },
+    { name: "Terminal Block 4P", refdes: "J2", at: [16, 13] }
+  ] as const;
+  for (const part of newParts) {
+    const card = page.locator(".part-card").filter({ hasText: part.name });
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await card.click();
+    await clickGrid(page, part.at[0], part.at[1]);
+    await expect(page.locator(".workspace-hint span").last()).toHaveText(`選択: ${part.refdes}`);
+  }
+  const project = await exportProject(page);
+  expect(project.part_insts).toHaveLength(8);
+  const defsById = new Map(project.part_defs.map((def) => [def.id, def]));
+  expect(project.part_insts.map((inst) => [defsById.get(inst.def_id)?.name, inst.refdes])).toEqual(
+    newParts.map((part) => [part.name, part.refdes])
+  );
+});
+
+test("XHコネクタ2P～6Pのトップ・サイド型を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const project = await exportProject(page);
+  for (const pins of [2, 3, 4, 5, 6]) {
+    for (const orientation of ["Top", "Side"] as const) {
+      const name = `XH Connector ${pins}P ${orientation}`;
+      const def = project.part_defs.find((candidate) => candidate.name === name)!;
+      const rows = orientation === "Top" ? 3 : 6;
+      expect(def.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual(
+        Array.from({ length: pins }, (_, index) => [String(index + 1), index + 1, 1])
+      );
+      expect(def.occupied).toHaveLength((pins + 2) * rows);
+      const image = page.locator(".part-card").filter({ hasText: name }).locator("img");
+      await expect(image).toHaveAttribute("src", /^data:image\/png;base64,/);
+      const contactPixels = await image.evaluate(async (element, count) => {
+        const source = element as HTMLImageElement;
+        await source.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = source.naturalWidth;
+        canvas.height = source.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(source, 0, 0);
+        return Array.from({ length: count }, (_, index) =>
+          Array.from(context.getImageData(12 + index * 8, 12, 1, 1).data));
+      }, pins);
+      expect(contactPixels).toEqual(Array.from({ length: pins }, () => [213, 159, 68, 255]));
+    }
+  }
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  const selector = editor.locator("select.net-select").first();
+  const canvas = editor.getByRole("img", { name: /ドット絵キャンバス/ });
+  await selector.selectOption({ label: "XH Connector 6P Side" });
+  await expect(canvas).toHaveAttribute("width", "64");
+  await expect(canvas).toHaveAttribute("height", "48");
+
+  await page.locator(".part-card").filter({ hasText: "XH Connector 2P Top" }).click();
+  await clickGrid(page, 0, 5);
+  await expect(page.locator(".workspace-hint span").last()).toHaveText("選択: J1");
+  await page.locator(".part-card").filter({ hasText: "XH Connector 6P Side" }).click();
+  await clickGrid(page, 2, 5);
+  expect((await exportProject(page)).part_insts).toHaveLength(1);
+  await clickGrid(page, 10, 5);
+  await expect(page.locator(".workspace-hint span").last()).toHaveText("選択: J2");
+  const placed = await exportProject(page);
+  expect(placed.part_insts.map((inst) => inst.refdes)).toEqual(["J1", "J2"]);
+});
+
+test("資料から追加した3部品を画像付きで配置できる", async ({ page }) => {
+  await openApp(page);
+  const parts = [
+    { name: "AZ8462-3", x: 0, refdes: "K1", pins: 8, occupied: 18 },
+    { name: "OSG8HA3Z74A", x: 8, refdes: "D1", pins: 2, occupied: 6 },
+    { name: "SOT-23-3 to DIP-4 Adapter", x: 12, refdes: "A1", pins: 4, occupied: 8 }
+  ];
+  for (const part of parts) {
+    const card = page.locator(".part-card").filter({ hasText: part.name });
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await card.click();
+    await clickGrid(page, part.x, 0);
+    await expect(page.locator(".workspace-hint span").last()).toHaveText(`選択: ${part.refdes}`);
+  }
+  const project = await exportProject(page);
+  const definitions = new Map(project.part_defs.map((def) => [def.id, def]));
+  expect(project.part_insts.map((inst) => inst.refdes)).toEqual(parts.map((part) => part.refdes));
+  for (const [index, instance] of project.part_insts.entries()) {
+    const definition = definitions.get(instance.def_id)!;
+    expect(definition.name).toBe(parts[index].name);
+    expect(definition.pins).toHaveLength(parts[index].pins);
+    expect(definition.occupied).toHaveLength(parts[index].occupied);
+  }
+});
+
+test("配置済みリレーの外形を縮めてもピン位置を維持する", async ({ page }) => {
+  await openApp(page);
+  const project = await exportProject(page);
+  const relay = project.part_defs.find((def) => def.name === "AZ8462-3")!;
+  const oldRelay = {
+    ...relay,
+    pins: relay.pins.map((pin) => ({ ...pin, pos: { x: pin.pos.x, y: pin.pos.y + 1 } })),
+    occupied: Array.from({ length: 35 }, (_, index) => ({ x: index % 7, y: Math.floor(index / 7) })),
+    imageDataUrl: legacyTopViewArt["az8462-3"]
+  };
+  // Let the app's 250 ms snapshot save finish before writing a legacy snapshot.
+  await page.waitForTimeout(350);
+  await page.evaluate(async ({ legacyDef, savedProject }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const oldProject = {
+      ...savedProject,
+      part_defs: savedProject.part_defs.map((def: { id: string }) => def.id === legacyDef.id ? legacyDef : def),
+      part_insts: [{ id: crypto.randomUUID(), def_id: legacyDef.id,
+        at: { x: 4, y: 4 }, rot: "Deg0", refdes: "K1", net_assign: {} }]
+    };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["part_library", "project_snapshots"], "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 8,
+        partDefs: [legacyDef] }, "default_library");
+      tx.objectStore("project_snapshots").put({ schemaVersion: 1,
+        coreStateJson: JSON.stringify(oldProject), selectedNetId: null }, "active_project");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { legacyDef: oldRelay, savedProject: project });
+  await page.reload();
+  await expect(page.getByText(/Core: WASM/)).toBeVisible();
+  const migrated = await exportProject(page);
+  expect(migrated.part_insts).toHaveLength(1);
+  expect(migrated.part_insts[0].at).toEqual({ x: 4, y: 5 });
+  expect(migrated.part_defs.find((def) => def.id === relay.id)?.occupied).toHaveLength(18);
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: "AZ8462-3" });
+  await expect(editor.getByRole("img", { name: /ドット絵キャンバス/ })).toHaveAttribute("width", "48");
+});
+
+test("v6の部品ライブラリへXHコネクタを追加し、削除後は復活させない", async ({ page }) => {
+  await openApp(page);
+  const oldDefs = (await exportProject(page)).part_defs.slice(0, 27);
+  await page.evaluate(async (defs) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 6, partDefs: defs }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, oldDefs);
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".part-card").filter({ hasText: "XH Connector 6P Side" }).locator("img"))
+    .toHaveAttribute("src", /^data:image\/png;base64,/);
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await expect(editor.getByText("core is not ready")).toBeHidden();
+  await editor.locator("select.net-select").first().selectOption({ label: "XH Connector 6P Side" });
+  await editor.getByRole("button", { name: "Delete Part" }).click();
+  await expect(page.locator(".library-header span")).toHaveText("39 items");
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("39 items");
+});
+
+test("古い部品ライブラリへ一度だけ追加し、後の削除を維持する", async ({ page }) => {
+  await openApp(page);
+  const oldDefs = (await exportProject(page)).part_defs.slice(0, 3);
+  await page.evaluate(async (defs) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, partDefs: defs }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, oldDefs);
+
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  const migrated = await exportProject(page);
+  expect(migrated.part_defs.slice(0, 3).map((def) => def.id)).toEqual(oldDefs.map((def) => def.id));
+
+  await page.locator(".editor-sidebar select.net-select").first()
+    .selectOption({ label: "Pin Header 1x2" });
+  await page.locator(".editor-sidebar").getByRole("button", { name: "Delete Part" }).click();
+  await expect(page.locator(".library-header span")).toHaveText("39 items");
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("39 items");
+  expect((await exportProject(page)).part_defs.some((def) => def.name === "Pin Header 1x2")).toBe(false);
 });
 
 test("手動配線を確定できる", async ({ page }) => {
@@ -80,6 +499,24 @@ test("手動配線を確定できる", async ({ page }) => {
   const project = await exportProject(page);
   expect(project.wires.length).toBe(1);
   expect(project.wires[0]?.path.length).toBe(3);
+});
+
+test("線を引いて確定するだけで両端のピンが同じネットになる", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await clickGrid(page, 5, 0);
+  await page.keyboard.press("w");
+  for (const x of [2, 3, 4, 5]) await clickGrid(page, x, 0);
+  await page.getByRole("button", { name: "配線を確定" }).click();
+  await expect(page.getByRole("button", { name: "配線を確定" })).toBeDisabled();
+
+  const project = await exportProject(page);
+  const netId = project.wires[0]?.net_id;
+  expect(project.wires).toHaveLength(1);
+  expect(project.part_insts).toHaveLength(2);
+  expect(project.part_insts[0]?.net_assign["2"]).toBe(netId);
+  expect(project.part_insts[1]?.net_assign["1"]).toBe(netId);
 });
 
 test("Pin優先選択後にTabで候補を切替えて配線を削除できる", async ({ page }) => {
@@ -126,7 +563,7 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
-  expect(project.part_defs).toHaveLength(3);
+  expect(project.part_defs).toHaveLength(40);
 });
 
 test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {

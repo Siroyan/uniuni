@@ -18,12 +18,12 @@ MVP Step1〜Step7 は完了している。
 - 基板サイズの任意設定と秋月A/B/Cプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
-- Net 追加/改名、Pin への Net 割当
+- Net 追加/改名/削除、Pin への Net 割当。削除時は関連する配線とPin割当も同じCoreコマンドで削除
 - Net ごとの配線色カスタマイズ（未設定時は既定パレット）
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 自動保存/復元
-- Part Editor（Pin / Occupied / 画像 / プレビュー）
+- Part Editor（Pin / Occupied / 画像 / ドット絵 / プレビュー）
 - Part ライブラリ永続化（画像アセット分離保存）
 - ZIP Import/Export（`project.json` + `part-library.json` + `assets/*`）
 - WASM/Fallback 接続モード表示
@@ -38,6 +38,7 @@ uniuni/
 │  └─ src/
 │     ├─ App.tsx        # 画面状態・操作ハンドリング・UI
 │     ├─ BoardCanvas.tsx# Canvas描画とポインタイベント
+│     ├─ PixelArtEditor.tsx # 部品サイズに合わせたドット絵編集
 │     ├─ coreBridge.ts  # Web ↔ Core(JSON API) 接続
 │     ├─ partLibrary.ts # Partライブラリ IndexedDB
 │     ├─ persistence.ts # プロジェクトスナップショット IndexedDB
@@ -79,7 +80,7 @@ uniuni/
 
 ### 5.1 起動フロー
 1. `detectCoreBridgeMode()` で `wasm/fallback` 判定
-2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）
+2. Partライブラリ読込（失敗時は既定PartDefへフォールバック）。旧カタログのバージョンに応じ、ピンヘッダー、画像、追加部品、カテゴリ、XHコネクタ、提示された寸法資料の3部品を不足分だけ追加
 3. スナップショット読込
 4. スナップショットがあれば PartDef 差し替え適用
 5. 復元失敗時は新規 state を作成して起動継続
@@ -130,6 +131,7 @@ uniuni/
 - `RotatePartInst`
 - `DeletePartInst`
 - `CommitWire`
+- `CommitWireAuto`（経路からNetを判定・生成し、接触するPinを割り当てる）
 - `DeleteWire`
 - `AssignNetName`
 - `AssignNetColor`
@@ -147,6 +149,7 @@ uniuni/
   - 最短長（2点以上）
   - 1ステップ Manhattan
   - ボード内
+  - 自動確定時に異なる既存Netを接続しない
 - Board整合:
   - 正のサイズのみ許可
   - 既存部品/配線が盤外になるサイズ変更を拒否
@@ -172,6 +175,17 @@ uniuni/
 - ポインタイベント処理
 - Pan/Zoom/Hover座標
 - 部品画像キャッシュ（PartDef ID単位）
+- 部品画像の読み込み完了後に再描画し、ドット絵は最近傍補間で描く
+
+### 7.2.1 `PixelArtEditor.tsx`
+- Occupiedの外接範囲から、1穴あたり8×8ドットの描画領域を生成
+- 描画中はローカルなピクセル配列を更新し、登録時だけ透明PNGのdata URLを生成
+- 登録は既存のPartDef更新フローを使い、IndexedDBとZIP画像アセットへ保存
+
+### 7.2.2 初期部品の画像
+- 原画は `web/src/assets/parts/*.png`、表示用のdata URLは `web/src/builtInPartArt.ts` に置く
+- 原画を更新したら `node scripts/embed-part-art.mjs` でdata URLを再生成する
+- `defaultParts.ts` が初期画像と旧ライブラリへの一度限りの追加を管理する
 
 ### 7.3 `parts.ts`
 - 幾何計算:
@@ -206,6 +220,12 @@ uniuni/
 - 同一画像はハッシュIDで重複排除
 - 未参照アセットはクリーンアップ
 - 旧スキーマ（v1）読込時は v2 へ移行
+- 内蔵カタログv4への初回更新時は不足する6部品を追加し、変更のないCapacitor Radialの旧標準画像とPin Header 1x2の画像を差し替える。後者は利用者の絵も描き直し指定に従って差し替える
+- 内蔵カタログv5への初回更新時は不足する8部品を追加し、カテゴリ未設定の部品にIDごとの既定カテゴリを設定する。利用者が設定済みのカテゴリは維持する。`partCategories.ts` が表示順・ラベルと組み込みIDの分類を定義する
+- 内蔵カタログv6では `legacyTopViewArt.ts` の旧標準画像と一致する部品だけ真上図へ更新する。形状変更を伴う4種類の配置済みインスタンスは、回転を考慮して配置原点を補正し、ピンの絶対位置を維持する。候補の保存状態を検証し、Occupiedが基板外・他部品と衝突する場合だけ更新を保留して次回起動時に再判定する
+- 内蔵カタログv7では `xhConnectorPartDefs` の2P～6P・Top/Sideを不足分だけ追加する。`scripts/draw-xh-connectors.mjs` がJST XHのKiCadフットプリント寸法を穴8ドットのPNGへ描き、`scripts/embed-part-art.mjs` がデータURLを再生成する
+- 内蔵カタログv8では `datasheetPartDefs` のリレー、LED、SOT-23変換基板を不足分だけ追加する。`scripts/draw-datasheet-parts.mjs` は提供された3つのPDFの寸法から穴8ドットの上面PNGを生成し、`scripts/embed-part-art.mjs` がデータURLへ埋め込む。変換基板の右2穴の内部導通は現行のPartDefで表現できないため、独立したピン `3A`/`3B` として登録する
+- 内蔵カタログv9ではAZ8462-3の画像とOccupiedを6×3穴に縮める。`updateBuiltInTopViews` が旧標準画像・ピン・Occupiedに一致する保存済み部品を更新し、配置済みの場合は回転した原点補正でピンの絶対座標を維持する。変更済みの画像や形状は維持する
 
 ### 8.3 プロジェクトZIP（`projectPackage.ts`）
 - Export:
@@ -256,6 +276,7 @@ uniuni/
 - `web/test/coreBridge.test.ts`
   - bridgeのコマンド適用
   - fallback判定
+  - 自動配線時のNet再利用・Pin割当・異なるNet間の接続拒否
   - `AssignNetColor` の設定/解除と形式エラー
   - `ResizeBoard` の設定反映と拒否ケース
 - `web/test/partLibrary.test.ts`

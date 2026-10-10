@@ -4,7 +4,9 @@ import {
   __resetCoreRuntimeForTest,
   applyCoreCommandJson,
   commandAssignNetColorJson,
+  commandCommitWireAutoJson,
   commandCommitWireJson,
+  commandDeleteNetJson,
   commandMoveRotatePartInstJson,
   commandResizeBoardJson,
   commandReplacePartDefsJson,
@@ -79,6 +81,68 @@ test("fallback rejects a wire outside the board", async () => {
     applyCoreCommandJson(JSON.stringify(baseState()), commandCommitWireJson(NET_ID, [{ x: -1, y: 0 }, { x: 0, y: 0 }])),
     /outside board/
   );
+});
+
+test("fallback auto wire assigns touched pins and reuses connected net", async () => {
+  const state = baseState();
+  state.part_insts[0].net_assign = {};
+  state.part_insts.push({
+    ...state.part_insts[0],
+    id: "44444444-4444-4444-4444-444444444444",
+    at: { x: 2, y: 0 },
+    refdes: "U2",
+    net_assign: {}
+  });
+  const firstJson = await applyCoreCommandJson(
+    JSON.stringify(state),
+    commandCommitWireAutoJson([{ x: 0, y: 0 }, { x: 1, y: 0 }])
+  );
+  const next = JSON.parse(await applyCoreCommandJson(
+    firstJson,
+    commandCommitWireAutoJson([{ x: 1, y: 0 }, { x: 2, y: 0 }])
+  )) as CoreState;
+
+  assert.equal(next.nets.length, 1);
+  assert.equal(next.wires[0].net_id, NET_ID);
+  assert.equal(next.wires[1].net_id, NET_ID);
+  assert.equal(next.part_insts[0].net_assign["1"], NET_ID);
+  assert.equal(next.part_insts[1].net_assign["1"], NET_ID);
+});
+
+test("fallback auto wire rejects different assigned nets", async () => {
+  const state = baseState();
+  state.part_insts.push({
+    ...state.part_insts[0],
+    id: "44444444-4444-4444-4444-444444444444",
+    at: { x: 2, y: 0 },
+    refdes: "U2",
+    net_assign: { "1": "55555555-5555-5555-5555-555555555555" }
+  });
+  await assert.rejects(
+    applyCoreCommandJson(
+      JSON.stringify(state),
+      commandCommitWireAutoJson([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }])
+    ),
+    /wire connects different nets/
+  );
+});
+
+test("fallback DeleteNet removes related wires and pin assignments", async () => {
+  const state = baseState();
+  const retainedNet = "44444444-4444-4444-4444-444444444444";
+  state.nets.push({ id: retainedNet, name: "Keep" });
+  state.wires.push(
+    { id: "55555555-5555-5555-5555-555555555555", net_id: NET_ID, path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] },
+    { id: "66666666-6666-6666-6666-666666666666", net_id: retainedNet, path: [{ x: 2, y: 0 }, { x: 3, y: 0 }] }
+  );
+  state.part_defs[0].pins.push({ name: "2", pos: { x: 1, y: 0 } });
+  state.part_insts[0].net_assign["2"] = retainedNet;
+
+  const next = JSON.parse(await applyCoreCommandJson(JSON.stringify(state), commandDeleteNetJson(NET_ID))) as CoreState;
+  assert.deepEqual(next.nets.map((net) => net.id), [retainedNet]);
+  assert.deepEqual(next.wires.map((wire) => wire.net_id), [retainedNet]);
+  assert.deepEqual(next.part_insts[0].net_assign, { "2": retainedNet });
+  await assert.rejects(applyCoreCommandJson(JSON.stringify(next), commandDeleteNetJson(NET_ID)), /net not found/);
 });
 
 test("fallback DRC reports occupied wire points and unconnected pins", async () => {

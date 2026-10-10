@@ -16,12 +16,16 @@ export type PinDef = {
   pos: GridPt;
 };
 
+export type PartCategory = "passive" | "semiconductor" | "ic" | "connector" | "switch" | "other";
+
 export type PartDef = {
   id: string;
   name: string;
+  category?: PartCategory;
   pins: PinDef[];
   occupied: GridPt[];
   imageDataUrl?: string | null;
+  imagePixelated?: boolean;
   imageScale?: number;
   imageOffsetX?: number;
   imageOffsetY?: number;
