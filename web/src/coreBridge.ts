@@ -281,9 +281,10 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     return JSON.stringify(state);
   }
 
-  if ("CommitWire" in cmd || "CommitWireAuto" in cmd) {
-    const auto = "CommitWireAuto" in cmd;
-    const payload = (auto ? cmd.CommitWireAuto : cmd.CommitWire) as { net_id?: string; path: GridPt[] };
+  if ("CommitWire" in cmd || "CommitWireAuto" in cmd || "CommitWireAutoMerge" in cmd) {
+    const merge = "CommitWireAutoMerge" in cmd;
+    const auto = "CommitWireAuto" in cmd || merge;
+    const payload = (merge ? cmd.CommitWireAutoMerge : auto ? cmd.CommitWireAuto : cmd.CommitWire) as { net_id?: string; path: GridPt[] };
     if (payload.path.length < 2) {
       throw new Error("wire path must have >=2 points");
     }
@@ -324,8 +325,23 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
         }
       }
 
-      if (connectedNets.size > 1) throw new Error("wire connects different nets");
-      netId = connectedNets.values().next().value;
+      const firstNet = state.nets.find((net) => connectedNets.has(net.id));
+      if (connectedNets.size > 1 && !merge &&
+        (!firstNet || ![...connectedNets].every((id) => state.nets.some((net) => net.id === id && net.name === firstNet.name)))) {
+        throw new Error("wire connects different nets");
+      }
+      netId = firstNet?.id ?? [...connectedNets].sort()[0];
+      if (netId && connectedNets.size > 1) {
+        for (const wire of state.wires) {
+          if (connectedNets.has(wire.net_id)) wire.net_id = netId;
+        }
+        for (const part of state.part_insts) {
+          for (const pin of Object.keys(part.net_assign)) {
+            if (connectedNets.has(part.net_assign[pin])) part.net_assign[pin] = netId;
+          }
+        }
+        state.nets = state.nets.filter((net) => net.id === netId || !connectedNets.has(net.id));
+      }
       if (!netId) {
         const starterNet = state.nets.length === 1 && state.nets[0].name === "N-1"
           && state.wires.length === 0
@@ -763,8 +779,8 @@ export function commandCommitWireJson(netId: string, path: GridPt[]): string {
   });
 }
 
-export function commandCommitWireAutoJson(path: GridPt[]): string {
-  return JSON.stringify({ CommitWireAuto: { path } });
+export function commandCommitWireAutoJson(path: GridPt[], mergeNets = false): string {
+  return JSON.stringify(mergeNets ? { CommitWireAutoMerge: { path } } : { CommitWireAuto: { path } });
 }
 
 export function commandDeleteWireJson(wireId: string): string {

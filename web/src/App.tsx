@@ -25,6 +25,7 @@ import {
   runCoreDrcJson
 } from "./coreBridge";
 import {
+  absolutePins,
   buildHitCandidates,
   canPlacePart,
   findPartAtGrid,
@@ -43,6 +44,7 @@ const DEFAULT_BOARD: Board = {
   height: 40,
   gridPitchMm: 2.54
 };
+const DRC_ENABLED_STORAGE_KEY = "uniuni.drc.enabled";
 const AKIZUKI_BOARD_PRESETS = [
   {
     id: "akizuki-a",
@@ -240,10 +242,18 @@ export function App(): JSX.Element {
   const [coreStateJson, setCoreStateJson] = useState<string | null>(null);
   const [coreBridgeMode, setCoreBridgeMode] = useState<"wasm" | "fallback" | "unknown">("unknown");
   const [drcIssues, setDrcIssues] = useState<DrcIssue[]>([]);
+  const [drcEnabled, setDrcEnabled] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(DRC_ENABLED_STORAGE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [coreError, setCoreError] = useState<string | null>(null);
   const [historyPast, setHistoryPast] = useState<HistoryEntry[]>([]);
   const [historyFuture, setHistoryFuture] = useState<HistoryEntry[]>([]);
   const coreStateJsonRef = useRef<string | null>(null);
+  const drcEnabledRef = useRef(drcEnabled);
   const partDefsRef = useRef<PartDef[]>(defaultPartDefs);
   const partDefsUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
   const selectedPartIdRef = useRef<string | null>(null);
@@ -297,6 +307,14 @@ export function App(): JSX.Element {
       setSelectedNetId(nets[0].id);
     }
   }, [nets, selectedNetId]);
+
+  useEffect(() => {
+    if (!selectedWireId) return;
+    const wire = wires.find((item) => item.id === selectedWireId);
+    if (wire && nets.some((net) => net.id === wire.netId)) {
+      setSelectedNetId(wire.netId);
+    }
+  }, [selectedWireId, wires, nets]);
 
   useEffect(() => {
     if (!selectedNetId) {
@@ -406,9 +424,29 @@ export function App(): JSX.Element {
   };
 
   const refreshDrcForState = async (stateJson: string): Promise<void> => {
+    if (!drcEnabledRef.current) {
+      setDrcIssues([]);
+      return;
+    }
     const drcJson = await runCoreDrcJson(stateJson);
-    setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
+    if (drcEnabledRef.current && coreStateJsonRef.current === stateJson) {
+      setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
+    }
   };
+
+  useEffect(() => {
+    drcEnabledRef.current = drcEnabled;
+    try {
+      window.localStorage.setItem(DRC_ENABLED_STORAGE_KEY, String(drcEnabled));
+    } catch {
+      // The switch still works when browser storage is unavailable.
+    }
+    if (drcEnabled && coreStateJsonRef.current) {
+      void refreshDrcForState(coreStateJsonRef.current);
+    } else if (!drcEnabled) {
+      setDrcIssues([]);
+    }
+  }, [drcEnabled]);
 
   const applyPartDefsChange = (change: (defs: PartDef[]) => PartDef[], notice?: string): Promise<boolean> => {
     const operation = partDefsUpdateQueueRef.current.then(async () => {
@@ -551,9 +589,8 @@ export function App(): JSX.Element {
         }
         setHistoryPast([]);
         setHistoryFuture([]);
-        const drcJson = await runCoreDrcJson(nextState);
+        await refreshDrcForState(nextState);
         if (!cancelled) {
-          setDrcIssues(JSON.parse(drcJson) as DrcIssue[]);
           if (warnings.length > 0) {
             setCoreError(warnings.join(" | "));
           } else {
@@ -703,8 +740,32 @@ export function App(): JSX.Element {
     if (!state) return;
 
     try {
-      const cmd = commandCommitWireAutoJson(wireDraftPath);
-      const nextState = await applyCoreCommandJson(state, cmd);
+      let nextState: string;
+      try {
+        nextState = await applyCoreCommandJson(state, commandCommitWireAutoJson(wireDraftPath));
+      } catch (err) {
+        if (String(err instanceof Error ? err.message : err) !== "wire connects different nets") throw err;
+        const points = new Set(wireDraftPath.map((point) => `${point.x}:${point.y}`));
+        const touched = new Set<string>();
+        for (const wire of wires) {
+          if (wire.path.some((point) => points.has(`${point.x}:${point.y}`))) touched.add(wire.netId);
+        }
+        for (const part of parts) {
+          const def = defsById.get(part.defId);
+          if (!def) continue;
+          absolutePins(def, part).forEach((point, index) => {
+            if (points.has(`${point.x}:${point.y}`)) {
+              const id = part.netAssign[def.pins[index].name];
+              if (id) touched.add(id);
+            }
+          });
+        }
+        const names = nets.filter((net) => touched.has(net.id)).map((net) => net.name);
+        const retainedName = names[0] ?? "先に登録されたネット";
+        const message = `異なるネット（${names.join("、") || "複数"}）を接続します。ネットを「${retainedName}」に統合して配線を確定しますか？`;
+        if (!window.confirm(message)) return;
+        nextState = await applyCoreCommandJson(state, commandCommitWireAutoJson(wireDraftPath, true));
+      }
       const view = commitStateTransition(state, nextState);
       const committedWire = view.wires[view.wires.length - 1];
       if (committedWire) setSelectedNetId(committedWire.netId);
@@ -712,7 +773,7 @@ export function App(): JSX.Element {
       await refreshDrcForState(nextState);
       setCoreError(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "commit wire failed";
+      const message = err instanceof Error ? err.message : String(err);
       setCoreError(message === "wire connects different nets"
         ? "異なるネットが接続されるため、配線を確定できません。"
         : message);
@@ -1920,7 +1981,15 @@ export function App(): JSX.Element {
         </div>
         <div className="toolbar-row sidebar-status">
           <span className={coreBridgeBadgeClass}>Core: {coreBridgeLabel}</span>
-          <span>DRC Issues: {drcIssues.length}</span>
+          <label className="drc-toggle">
+            <input type="checkbox" checked={drcEnabled} onChange={(event) => {
+              drcEnabledRef.current = event.target.checked;
+              setDrcEnabled(event.target.checked);
+              if (!event.target.checked) setDrcIssues([]);
+            }} />
+            DRC
+          </label>
+          <span>{drcEnabled ? `DRC Issues: ${drcIssues.length}` : "DRC: OFF"}</span>
           {coreError ? <span className="error-text">Error: {coreError}</span> : null}
         </div>
         {drcIssues.length > 0 ? (

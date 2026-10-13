@@ -127,6 +127,41 @@ test("fallback auto wire rejects different assigned nets", async () => {
   );
 });
 
+test("fallback auto wire joins same-name nets and rewrites existing references", async () => {
+  const state = baseState();
+  const secondId = "55555555-5555-5555-5555-555555555555";
+  state.nets[0].name = "GND";
+  state.nets.push({ id: secondId, name: "GND" });
+  state.wires.push(
+    { id: "66666666-6666-6666-6666-666666666666", net_id: NET_ID, path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] },
+    { id: "77777777-7777-7777-7777-777777777777", net_id: secondId, path: [{ x: 3, y: 0 }, { x: 4, y: 0 }] }
+  );
+  state.part_insts.push({ ...state.part_insts[0], id: "44444444-4444-4444-4444-444444444444", at: { x: 4, y: 0 }, net_assign: { "1": secondId } });
+
+  const nextJson = await applyCoreCommandJson(JSON.stringify(state), commandCommitWireAutoJson([{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }]));
+  const next = JSON.parse(nextJson) as CoreState;
+  assert.deepEqual(next.nets.map((net) => net.id), [NET_ID]);
+  assert.ok(next.wires.every((wire) => wire.net_id === NET_ID));
+  assert.equal(next.part_insts[1].net_assign["1"], NET_ID);
+  const issues = JSON.parse(await runCoreDrcJson(nextJson)) as Array<{ code: string }>;
+  assert.ok(!issues.some((issue) => issue.code === "SHORT"));
+});
+
+test("fallback requires explicit merge for different net names", async () => {
+  const state = baseState();
+  const secondId = "55555555-5555-5555-5555-555555555555";
+  state.nets.push({ id: secondId, name: "SIGNAL" });
+  state.wires.push(
+    { id: "66666666-6666-6666-6666-666666666666", net_id: NET_ID, path: [{ x: 0, y: 0 }, { x: 1, y: 0 }] },
+    { id: "77777777-7777-7777-7777-777777777777", net_id: secondId, path: [{ x: 3, y: 0 }, { x: 4, y: 0 }] }
+  );
+  const path = [{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }];
+  await assert.rejects(applyCoreCommandJson(JSON.stringify(state), commandCommitWireAutoJson(path)), /wire connects different nets/);
+  const next = JSON.parse(await applyCoreCommandJson(JSON.stringify(state), commandCommitWireAutoJson(path, true))) as CoreState;
+  assert.deepEqual(next.nets.map((net) => net.id), [NET_ID]);
+  assert.ok(next.wires.every((wire) => wire.net_id === NET_ID));
+});
+
 test("fallback DeleteNet removes related wires and pin assignments", async () => {
   const state = baseState();
   const retainedNet = "44444444-4444-4444-4444-444444444444";

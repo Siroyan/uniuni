@@ -581,6 +581,46 @@ test("線を引いて確定するだけで両端のピンが同じネットに�
   expect(project.part_insts[1]?.net_assign["1"]).toBe(netId);
 });
 
+test("配線選択でネット欄が切り替わり、別ネットの接続を確認して統合できる", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.press("w");
+  for (const [start, end] of [[2, 3], [5, 6]]) {
+    await clickGrid(page, start, 2);
+    await clickGrid(page, end, 2);
+    await page.getByRole("button", { name: "配線を確定" }).click();
+  }
+  await expect(page.locator("#net-select option")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await clickGrid(page, 2, 2);
+  await expect(page.locator("#net-select")).toHaveValue((await exportProject(page)).wires[0].net_id);
+
+  await page.keyboard.press("w");
+  for (const x of [3, 4, 5]) await clickGrid(page, x, 2);
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("統合");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "配線を確定" }).click();
+  await expect(page.getByRole("button", { name: "配線を確定" })).toBeDisabled();
+  const project = await exportProject(page);
+  expect(project.nets).toHaveLength(1);
+  expect(project.wires).toHaveLength(3);
+  expect(project.wires.every((wire) => wire.net_id === project.nets[0].id)).toBe(true);
+  await expect(page.getByText("DRC Issues: 0")).toBeVisible();
+});
+
+test("DRCのOFF設定は再読み込み後も保持される", async ({ page }) => {
+  await openApp(page);
+  const toggle = page.getByRole("checkbox", { name: "DRC" });
+  await toggle.uncheck();
+  await expect(page.getByText("DRC: OFF")).toBeVisible();
+  await page.reload();
+  await expect(toggle).not.toBeChecked();
+  await expect(page.getByText("DRC: OFF")).toBeVisible();
+  await toggle.check();
+  await expect(page.getByText(/DRC Issues:/)).toBeVisible();
+});
+
 test("Pin優先選択後にTabで候補を切替えて配線を削除できる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");

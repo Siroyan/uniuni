@@ -86,7 +86,7 @@ uniuni/
 3. スナップショット読込
 4. スナップショットがあれば PartDef 差し替え適用
 5. 復元失敗時は新規 state を作成して起動継続
-6. DRC実行
+6. DRCがONなら実行
 
 ### 5.2 編集フロー
 1. UI操作を `App.tsx` で解釈
@@ -94,7 +94,7 @@ uniuni/
 3. `applyCoreCommandJson()` で適用
 4. Core state JSON を再同期
 5. 履歴更新（Undo/Redo）
-6. DRC再評価
+6. DRCがONなら再評価
 7. 遅延自動保存
 
 ### 5.3 PartDef更新フロー
@@ -107,7 +107,7 @@ uniuni/
 1. ZIPを展開して `project.json` を取得
 2. `part-library.json` と `assets/*` から PartDef 復元
 3. `replacePartDefsInStateJson()` で state と PartDef を整合
-4. state置換、選択/履歴リセット、DRC再評価
+4. state置換、選択/履歴リセット、DRCがONなら再評価
 
 ## 6. Coreドメイン実装
 

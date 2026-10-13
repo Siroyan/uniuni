@@ -331,6 +331,13 @@ body,
   gap: 8px;
 }
 
+.drc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .net-field-row {
   align-items: center;
 }
