@@ -20,6 +20,7 @@ MVP Step1〜Step7 は完了している。
 - 手動配線（1ステップ Manhattan）と配線削除
 - Net 追加/改名/削除、Pin への Net 割当。削除時は関連する配線とPin割当も同じCoreコマンドで削除
 - Net ごとの配線色カスタマイズ（未設定時は既定パレット）
+- 同期したTopView・BottomView表示と部品の透過率調整
 - DRC（`PART_COLLISION`, `WIRE_PART_COLLISION`, `SHORT`, `UNCONNECTED_PIN`）
 - Undo/Redo（履歴スナップショット）
 - IndexedDB 自動保存/復元
@@ -61,6 +62,7 @@ uniuni/
 ### 4.1 `web` レイヤ
 - ユーザー入力の解釈（クリック、キー、ドラッグ、ホイール）
 - 描画（Canvas）
+- `BoardCanvas.tsx` で裏面Canvasを表示幅に合わせて左右反転し、両Canvasのポインター座標を同じ基板座標へ戻す。部品の透過率はローカルの表示設定として保存する
 - UI状態管理（選択、ツールモード、編集中フォーム）
 - Coreへ渡すコマンド生成
 - 永続化/入出力（IndexedDB, ZIP）

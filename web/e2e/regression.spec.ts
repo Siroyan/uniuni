@@ -24,9 +24,24 @@ function gridPosition(x: number, y: number): { x: number; y: number } {
 }
 
 async function clickGrid(page: Page, x: number, y: number): Promise<void> {
-  await page.locator("canvas.board-canvas").click({
-    position: gridPosition(x, y)
-  });
+  const canvas = page.locator("canvas.board-canvas");
+  const position = gridPosition(x, y);
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error("board canvas is not visible");
+  if (position.x < bounds.width && position.y < bounds.height) {
+    await canvas.click({ position });
+    return;
+  }
+  // Placement regression cases also cover cells outside the smaller split viewport.
+  await canvas.evaluate((element, point) => {
+    const rect = element.getBoundingClientRect();
+    element.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      clientX: rect.left + point.x,
+      clientY: rect.top + point.y
+    }));
+  }, position);
 }
 
 async function openApp(page: Page): Promise<void> {
@@ -86,6 +101,53 @@ test("狭い画面でも編集領域と設定を操作できる", async ({ page 
   await expect(page.getByRole("button", { name: "配置", exact: true })).toHaveAttribute("aria-pressed", "true");
   await clickGrid(page, 0, 0);
   await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
+});
+
+test("表裏の座標が対応し、裏面から配線でき、部品の透過率が保存される", async ({ page }) => {
+  await openApp(page);
+  const top = page.locator("canvas.board-canvas");
+  const bottom = page.locator("canvas.board-canvas-bottom");
+  await expect(top).toBeVisible();
+  await expect(bottom).toBeVisible();
+  await expect(page.getByText("TopView · 表面")).toBeVisible();
+  await expect(page.getByText("BottomView · 裏面（左右反転）")).toBeVisible();
+
+  await page.keyboard.press("r");
+  await clickGrid(page, 0, 0);
+  await page.keyboard.press("Escape");
+  const mirroredX = (await bottom.boundingBox())!.width - PAN_X;
+  await bottom.click({ position: { x: mirroredX, y: PAN_Y } });
+  await expect(page.locator(".workspace-hint span").last()).toHaveText("選択: R1");
+
+  await page.keyboard.press("w");
+  await bottom.click({ position: { x: mirroredX, y: PAN_Y } });
+  await bottom.click({ position: { x: mirroredX, y: PAN_Y + CELL } });
+  await page.keyboard.press("Enter");
+  expect((await exportProject(page)).wires[0].path).toEqual([{ x: 0, y: 0 }, { x: 0, y: 1 }]);
+
+  const partPixel = () => top.evaluate((canvas: HTMLCanvasElement, position) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor(position.x * canvas.width / rect.width);
+    const y = Math.floor(position.y * canvas.height / rect.height);
+    return Array.from(canvas.getContext("2d")!.getImageData(x, y, 1, 1).data);
+  }, { x: PAN_X + CELL, y: PAN_Y });
+  const visiblePartPixel = await partPixel();
+  const slider = page.getByRole("slider", { name: "部品の透過率" });
+  await slider.fill("100");
+  await expect(page.locator("output[for='part-transparency']")).toHaveText("100%");
+  expect(await partPixel()).not.toEqual(visiblePartPixel);
+  await page.reload();
+  await expect(slider).toHaveValue("100");
+
+  const bottomBounds = (await bottom.boundingBox())!;
+  const dragX = bottomBounds.x + bottomBounds.width / 2;
+  const dragY = bottomBounds.y + bottomBounds.height / 2;
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(dragX + 40, dragY);
+  await page.mouse.up({ button: "middle" });
+  await top.click({ position: { x: PAN_X - 40, y: PAN_Y } });
+  await expect(page.locator(".workspace-hint span").last()).toHaveText("選択: R1");
 });
 
 test("ネット欄は必要な操作だけを表示し、名前と色を編集できる", async ({ page }) => {
