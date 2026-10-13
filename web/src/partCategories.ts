@@ -11,6 +11,7 @@ export const PART_CATEGORIES: ReadonlyArray<{ id: PartCategory; label: string }>
 
 const builtInCategoryById: Record<string, PartCategory> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "passive", // Resistor Axial
+  "5c0eae40-4fa5-44e8-b542-25776b21cb09": "passive", // Resistor Vertical 2-pin
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "passive", // Capacitor Radial
   "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "passive", // Inductor Axial
   "f12e08b7-3b0d-4c07-b9d4-c2cc5b5821fc": "connector",

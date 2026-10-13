@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { inflateSync } from "node:zlib";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, additionalPartDefs, correctBuiltInArtwork, datasheetPartDefs, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "../src/defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingVerticalResistor, addMissingXhConnectors, additionalPartDefs, correctBuiltInArtwork, datasheetPartDefs, defaultPartDefs, newestPartDefs, nextPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, verticalResistorPartDef, xhConnectorPartDefs } from "../src/defaultParts";
 import { categorizeParts, partCategory } from "../src/partCategories";
 import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
-test("all 40 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 40);
+test("all 41 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 41);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -19,6 +19,20 @@ test("all 40 built-in drawings match their footprints and source PNGs", () => {
     assert.equal(bytes.readUInt32BE(16), (Math.max(...def.occupied.map((pt) => pt.x)) - Math.min(...def.occupied.map((pt) => pt.x)) + 1) * 8);
     assert.equal(bytes.readUInt32BE(20), (Math.max(...def.occupied.map((pt) => pt.y)) - Math.min(...def.occupied.map((pt) => pt.y)) + 1) * 8);
   }
+});
+
+test("standing resistor uses only two adjacent board holes and migrates once", () => {
+  assert.deepEqual(verticalResistorPartDef.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y]),
+    [["1", 0, 0], ["2", 1, 0]]);
+  assert.deepEqual(verticalResistorPartDef.occupied, [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
+  assert.equal(partCategory(verticalResistorPartDef), "passive");
+  const oldCatalog = defaultPartDefs.filter((def) => def.id !== verticalResistorPartDef.id);
+  const migrated = addMissingVerticalResistor(oldCatalog);
+  assert.equal(migrated.length, 41);
+  assert.equal(migrated[40], verticalResistorPartDef);
+  assert.equal(addMissingVerticalResistor(migrated), migrated);
+  const custom = { ...verticalResistorPartDef, imageDataUrl: null };
+  assert.equal(addMissingVerticalResistor([...oldCatalog, custom]).find((def) => def.id === custom.id), custom);
 });
 
 test("datasheet parts follow their top-view lead layouts and body envelopes", () => {

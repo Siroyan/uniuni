@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingVerticalResistor, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
 import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
@@ -75,6 +75,7 @@ type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
 
 const defPrefixById: Record<string, string> = {
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
+  "5c0eae40-4fa5-44e8-b542-25776b21cb09": "R",
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "C",
   "01d260e9-ea3a-488f-9e8a-031ca0d679ce": "L",
   "a9bf042c-20cf-429a-97e3-14aaac011571": "D",
@@ -518,6 +519,7 @@ export function App(): JSX.Element {
             }
             if (catalogVersion < 7) effectivePartDefs = addMissingXhConnectors(effectivePartDefs);
             if (catalogVersion < 8) effectivePartDefs = addMissingDatasheetParts(effectivePartDefs);
+            if (catalogVersion < 10) effectivePartDefs = addMissingVerticalResistor(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);

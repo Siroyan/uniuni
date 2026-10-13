@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const names = [
   "resistor-axial",
+  "resistor-vertical-2-pin",
   "capacitor-radial",
   "inductor-axial",
   "pin-header-1x2",

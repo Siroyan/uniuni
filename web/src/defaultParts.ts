@@ -338,6 +338,22 @@ export const datasheetPartDefs: PartDef[] = [
   )
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
+export const verticalResistorPartDef: PartDef = {
+  id: "5c0eae40-4fa5-44e8-b542-25776b21cb09",
+  name: "Resistor Vertical 2-pin",
+  pins: [
+    { name: "1", pos: { x: 0, y: 0 } },
+    { name: "2", pos: { x: 1, y: 0 } }
+  ],
+  occupied: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+  imageDataUrl: builtInPartArt["resistor-vertical-2-pin"],
+  imagePixelated: true,
+  imageScale: 1,
+  imageOffsetX: 0,
+  imageOffsetY: 0,
+  category: "passive"
+};
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -386,7 +402,8 @@ export const defaultPartDefs: PartDef[] = [
   ...nextPartDefs,
   ...newestPartDefs,
   ...xhConnectorPartDefs,
-  ...datasheetPartDefs
+  ...datasheetPartDefs,
+  verticalResistorPartDef
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
@@ -567,6 +584,10 @@ export function addMissingXhConnectors(existing: PartDef[]): PartDef[] {
 
 export function addMissingDatasheetParts(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, datasheetPartDefs);
+}
+
+export function addMissingVerticalResistor(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, [verticalResistorPartDef]);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

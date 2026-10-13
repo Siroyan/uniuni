@@ -228,6 +228,7 @@ uniuni/
 - 内蔵カタログv7では `xhConnectorPartDefs` の2P～6P・Top/Sideを不足分だけ追加する。`scripts/draw-xh-connectors.mjs` がJST XHのKiCadフットプリント寸法を穴8ドットのPNGへ描き、`scripts/embed-part-art.mjs` がデータURLを再生成する
 - 内蔵カタログv8では `datasheetPartDefs` のリレー、LED、SOT-23変換基板を不足分だけ追加する。`scripts/draw-datasheet-parts.mjs` は提供された3つのPDFの寸法から穴8ドットの上面PNGを生成し、`scripts/embed-part-art.mjs` がデータURLへ埋め込む。変換基板の右2穴の内部導通は現行のPartDefで表現できないため、独立したピン `3A`/`3B` として登録する
 - 内蔵カタログv9ではAZ8462-3の画像とOccupiedを6×3穴に縮める。`updateBuiltInTopViews` が旧標準画像・ピン・Occupiedに一致する保存済み部品を更新し、配置済みの場合は回転した原点補正でピンの絶対座標を維持する。変更済みの画像や形状は維持する
+- 内蔵カタログv10では `Resistor Vertical 2-pin` を追加する。旧ライブラリには不足分だけ追加し、保存済みの編集や削除を維持する
 
 ### 8.3 プロジェクトZIP（`projectPackage.ts`）
 - Export:
