@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import type { PartDef } from "./types";
+import { isPartCategory } from "./partCategories";
 import { validateProjectStateJson } from "./projectStateValidation";
 
 type PersistedPartDef = Omit<PartDef, "imageDataUrl"> & {
@@ -143,11 +144,13 @@ async function decodePartLibraryFromZip(zip: JSZip): Promise<PartDef[] | null> {
     restored.push({
       id: def.id,
       name: def.name,
+      ...(isPartCategory(def.category) ? { category: def.category } : {}),
       pins: def.pins,
       occupied: def.occupied,
       imageScale: def.imageScale,
       imageOffsetX: def.imageOffsetX,
       imageOffsetY: def.imageOffsetY,
+      ...(def.imagePixelated === true ? { imagePixelated: true } : {}),
       imageDataUrl
     });
   }
