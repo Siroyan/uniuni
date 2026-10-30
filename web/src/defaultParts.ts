@@ -354,6 +354,45 @@ export const verticalResistorPartDef: PartDef = {
   category: "passive"
 };
 
+// Geometry, pin numbering, and projection assumptions: doc/parts/power-can-modules.md.
+export const modulePartDefs: PartDef[] = [
+  {
+    id: "85e0e1ec-a1e8-5bb0-aefe-a6963c6d0735",
+    name: "AE-MYMGK00506ERSR-5V0",
+    category: "other",
+    pins: [
+      ...["PG", "CTRL", "GND", "GND", "VIN", "VIN"].map((signal, y) => ({
+        name: `CN1.${y + 1} ${signal}`, pos: { x: 0, y }
+      })),
+      ...["VOUT", "VOUT", "VOUT", "GND", "GND", "GND"].map((signal, index) => ({
+        name: `CN2.${index + 1} ${signal}`, pos: { x: 10, y: 5 - index }
+      }))
+    ],
+    // Include cells touched by the 28.5 x 16 mm body beyond the pin rows.
+    occupied: occupiedRectangle(13, 8).map(({ x, y }) => ({ x: x - 1, y: y - 1 })),
+    imageDataUrl: builtInPartArt["ae-mymgk00506ersr-5v0"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  },
+  {
+    id: "82c5d49c-2a02-5524-981d-74e4c50e26b6",
+    name: "MCP25625-breakout Vertical",
+    category: "other",
+    pins: ["SCK", "SO", "SI", "CS", "INT", "RESET", "V_IO", "V_DDA", "GND", "CANH", "CANL"]
+      .map((name, x) => ({ name, pos: { x, y: 0 } })),
+    // Standing PCB: one 11-pin row, plus one row of component-side clearance.
+    // The 13.98 mm PCB height rises out of the perfboard plane.
+    occupied: occupiedRectangle(11, 2),
+    imageDataUrl: builtInPartArt["mcp25625-breakout-vertical"],
+    imagePixelated: true,
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0
+  }
+];
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -403,7 +442,8 @@ export const defaultPartDefs: PartDef[] = [
   ...newestPartDefs,
   ...xhConnectorPartDefs,
   ...datasheetPartDefs,
-  verticalResistorPartDef
+  verticalResistorPartDef,
+  ...modulePartDefs
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
@@ -588,6 +628,10 @@ export function addMissingDatasheetParts(existing: PartDef[]): PartDef[] {
 
 export function addMissingVerticalResistor(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, [verticalResistorPartDef]);
+}
+
+export function addMissingModules(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, modulePartDefs);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

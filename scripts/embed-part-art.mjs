@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const names = [
+  "ae-mymgk00506ersr-5v0",
+  "mcp25625-breakout-vertical",
   "resistor-axial",
   "resistor-vertical-2-pin",
   "capacitor-radial",

@@ -348,3 +348,10 @@ cd core && cargo test
 Coreは専用寸法・ピッチと利用可能な穴位置を検証し、FallbackとImport検証も同じ制約を適用する。
 Webの形状・穴データは `web/src/boardPresets.ts` にまとめ、Canvasは外形と369穴を描画する。
 寸法一致によるArduinoプロファイルの自動判定は行わない。
+
+## 16. DC-DC / 垂直CANモジュール（カタログv11）
+
+`defaultParts.ts` の `modulePartDefs` に2部品を定義。`addMissingModules` を起動時のv11移行で一度だけ適用する。
+`draw-module-parts.mjs` は既存と同じ8px/ピッチのPNGを生成し、`embed-part-art.mjs` で埋め込む。
+DC-DCはCN2の逆順を維持し、負のoccupiedで本体の張り出しを含める。MCP25625は11ピン一列で垂直基板を上から見た11×2セルの投影とし、平置き寸法を占有面積に使わない。
+出典、採用リビジョン、クリアランスの近似は `doc/parts/power-can-modules.md` を参照。
