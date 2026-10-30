@@ -1,3 +1,4 @@
+import { ARDUINO_PROFILE, isBoardPoint } from "./boardPresets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BoardCanvas } from "./BoardCanvas";
 import {
@@ -38,7 +39,7 @@ const DEFAULT_BOARD: Board = {
   height: 40,
   gridPitchMm: 2.54
 };
-const AKIZUKI_BOARD_PRESETS = [
+const BOARD_PRESETS = [
   {
     id: "akizuki-a",
     label: "秋月 Aタイプ (155x114mm)",
@@ -62,9 +63,17 @@ const AKIZUKI_BOARD_PRESETS = [
     heightMm: 47.5,
     gridWidth: 25,
     gridHeight: 15
+  },
+  {
+    id: ARDUINO_PROFILE,
+    label: "Arduino U.PROTO SHIELD I (68x52mm)",
+    widthMm: 68,
+    heightMm: 52,
+    gridWidth: 21,
+    gridHeight: 20
   }
 ] as const;
-type BoardPresetId = "custom" | (typeof AKIZUKI_BOARD_PRESETS)[number]["id"];
+type BoardPresetId = "custom" | (typeof BOARD_PRESETS)[number]["id"];
 
 const defaultPartDefs: PartDef[] = [
   {
@@ -316,11 +325,11 @@ export function App(): JSX.Element {
   useEffect(() => {
     setBoardWidthDraft(String(board.width));
     setBoardHeightDraft(String(board.height));
-    const matched = AKIZUKI_BOARD_PRESETS.find((preset) => {
-      return preset.gridWidth === board.width && preset.gridHeight === board.height;
+    const matched = BOARD_PRESETS.find((preset) => {
+      return board.profile ? preset.id === board.profile : preset.id !== ARDUINO_PROFILE && preset.gridWidth === board.width && preset.gridHeight === board.height;
     });
     setBoardPresetId(matched?.id ?? "custom");
-  }, [board.height, board.width]);
+  }, [board.height, board.width, board.profile]);
 
   useEffect(() => {
     if (!editorDefId || !partDefs.some((def) => def.id === editorDefId)) {
@@ -677,7 +686,7 @@ export function App(): JSX.Element {
     }
   };
 
-  const applyBoardSize = async (width: number, height: number): Promise<void> => {
+  const applyBoardSize = async (width: number, height: number, profile?: Board["profile"]): Promise<void> => {
     const state = coreStateJsonRef.current;
     if (!state) return;
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
@@ -685,7 +694,7 @@ export function App(): JSX.Element {
       return;
     }
     try {
-      const nextState = await applyCoreCommandJson(state, commandResizeBoardJson(width, height));
+      const nextState = await applyCoreCommandJson(state, commandResizeBoardJson(width, height, profile));
       commitStateTransition(state, nextState);
       await refreshDrcForState(nextState);
       setCoreError(null);
@@ -702,9 +711,9 @@ export function App(): JSX.Element {
 
   const applyBoardPreset = async (): Promise<void> => {
     if (boardPresetId === "custom") return;
-    const preset = AKIZUKI_BOARD_PRESETS.find((item) => item.id === boardPresetId);
+    const preset = BOARD_PRESETS.find((item) => item.id === boardPresetId);
     if (!preset) return;
-    await applyBoardSize(preset.gridWidth, preset.gridHeight);
+    await applyBoardSize(preset.gridWidth, preset.gridHeight, preset.id === ARDUINO_PROFILE ? ARDUINO_PROFILE : undefined);
   };
 
   const addNet = async (): Promise<void> => {
@@ -1256,6 +1265,7 @@ export function App(): JSX.Element {
 
   const handleGridClick = (grid: GridPt): void => {
     if (tool === "wire") {
+      if (!isBoardPoint(board, grid)) return;
       if (!selectedNetId) return;
       const last = wireDraftPath[wireDraftPath.length - 1];
       if (!last) {
@@ -1602,7 +1612,7 @@ export function App(): JSX.Element {
                 onChange={(event) => setBoardPresetId(event.target.value as BoardPresetId)}
               >
                 <option value="custom">Custom</option>
-                {AKIZUKI_BOARD_PRESETS.map((preset) => (
+                {BOARD_PRESETS.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.label}
                   </option>
@@ -1618,10 +1628,14 @@ export function App(): JSX.Element {
               </button>
               <span className="net-label">
                 現在: {board.width}x{board.height} grid (
-                {(board.width * board.gridPitchMm).toFixed(1)}x
-                {(board.height * board.gridPitchMm).toFixed(1)}mm)
+                {(board.profile === ARDUINO_PROFILE ? 68 : board.width * board.gridPitchMm).toFixed(1)}x
+                {(board.profile === ARDUINO_PROFILE ? 52 : board.height * board.gridPitchMm).toFixed(1)}mm)
               </span>
             </div>
+            {board.profile === ARDUINO_PROFILE && (
+              <p className="net-label">φ0.90mm・369穴。半ピッチずれの上段DIGITAL 10穴は表示のみ。
+                左側SMDランド・既設銅箔の接続は編集・DRC対象外。外形の細部と穴原点はPDF図面からの概算です。</p>
+            )}
             <div className="toolbar-row">
               <label className="net-label" htmlFor="board-width-input">
                 Width
