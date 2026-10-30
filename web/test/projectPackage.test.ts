@@ -10,6 +10,7 @@ const PART_DEFS: PartDef[] = [
   {
     id: "11111111-1111-1111-1111-111111111111",
     name: "A",
+    category: "passive",
     pins: [{ name: "1", pos: { x: 0, y: 0 } }],
     occupied: [{ x: 0, y: 0 }],
     imageDataUrl: DATA_URL,
@@ -58,6 +59,7 @@ test("buildProjectZip packages project.json + deduplicated assets", async () => 
   assert.ok(parsed.partDefs);
   assert.equal(parsed.partDefs?.length, 2);
   assert.equal(parsed.partDefs?.[0].imageDataUrl, DATA_URL);
+  assert.equal(parsed.partDefs?.[0].category, "passive");
   assert.equal(parsed.partDefs?.[1].imageDataUrl, DATA_URL);
 });
 

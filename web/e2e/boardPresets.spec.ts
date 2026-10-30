@@ -16,32 +16,35 @@ test("Arduino preset persists, preserves custom dimensions, and validates holes 
   const zoom = Number(zoomText.match(/zoom: ([\d.]+)x/)![1]);
   const position = (x: number, y: number) => ({ x: (170 + x * 24) * zoom, y: (80 + y * 24) * zoom });
   await canvas.click({ position: position(5, 2) });
-  await page.getByRole("button", { name: "Commit Wire" }).click();
+  const commit = page.getByRole("button", { name: "配線を確定" });
+  await expect(commit).toBeDisabled();
+  const bottom = page.locator("canvas.board-canvas-bottom");
+  const bottomWidth = (await bottom.boundingBox())!.width;
+  const mirroredPosition = (x: number, y: number) => ({ x: bottomWidth - position(x, y).x, y: position(x, y).y });
+  await bottom.click({ position: mirroredPosition(5, 2) });
+  await expect(commit).toBeDisabled();
   // Valid main-array row; commit through the WASM core.
   await canvas.click({ position: position(5, 5) });
-  await canvas.click({ position: position(6, 5) });
-  await page.getByRole("button", { name: "Commit Wire" }).click();
+  await bottom.click({ position: mirroredPosition(6, 5) });
+  await commit.click();
   await page.keyboard.press("Escape");
-  // Allow the existing delayed IndexedDB save to finish.
+  // Wait for the wire itself, not matching coordinates in the built-in part library.
   await expect.poll(async () => page.evaluate(async () => {
-    return new Promise<string | null>((resolve) => {
+    return new Promise<unknown>((resolve, reject) => {
       const request = indexedDB.open("uniuni-db");
+      request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const db = request.result;
         const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
-        read.onsuccess = () => { db.close(); resolve(read.result?.coreStateJson ?? null); };
+        read.onerror = () => { db.close(); reject(read.error); };
+        read.onsuccess = () => {
+          db.close();
+          const state = read.result ? JSON.parse(read.result.coreStateJson) : null;
+          resolve(state ? { profile: state.board.profile, paths: state.wires.map((wire: { path: unknown }) => wire.path) } : null);
+        };
       };
     });
-  })).toContain('"x":6,"y":5');
-  const savedWireCount = await page.evaluate(async () => new Promise<number>((resolve) => {
-    const request = indexedDB.open("uniuni-db");
-    request.onsuccess = () => {
-      const db = request.result;
-      const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
-      read.onsuccess = () => { db.close(); resolve(JSON.parse(read.result.coreStateJson).wires.length); };
-    };
-  }));
-  expect(savedWireCount).toBe(1);
+  })).toEqual({ profile: "arduino-uprotoshield-i", paths: [[{ x: 5, y: 5 }, { x: 6, y: 5 }]] });
   await page.reload();
   await expect(preset).toHaveValue("arduino-uprotoshield-i");
   await expect(page.getByText(/現在: 21x20 grid \(68.0x52.0mm\)/)).toBeVisible();

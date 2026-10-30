@@ -23,7 +23,7 @@ type Props = {
 
 const CELL_SIZE = 24;
 const BOARD_MARGIN_CELLS = 2.3;
-const NET_COLORS = ["#51c4ff", "#e5ff66", "#ff8aa8", "#7cff8f", "#ffa94d", "#d8a1ff"];
+const NET_COLORS = ["#2563eb", "#a16207", "#be185d", "#15803d", "#c2410c", "#7c3aed"];
 const AKIZUKI_B_LEGACY_GRID_WIDTH = 37;
 const AKIZUKI_B_LEGACY_GRID_HEIGHT = 28;
 const AKIZUKI_B_GRID_WIDTH = 36;
@@ -80,8 +80,11 @@ function drawPart(
   viewport: Viewport,
   fillColor: string,
   pinColor: string,
-  partImage: HTMLImageElement | null
+  partImage: HTMLImageElement | null,
+  opacity: number
 ): void {
+  ctx.save();
+  ctx.globalAlpha *= opacity;
   const occupied = absoluteOccupied(def, part);
 
   ctx.fillStyle = fillColor;
@@ -134,7 +137,8 @@ function drawPart(
             ? (Math.PI * 3) / 2
             : 0;
     ctx.save();
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha *= 0.9;
+    ctx.imageSmoothingEnabled = !def.imagePixelated;
     ctx.translate(center.x, center.y);
     ctx.rotate(rotationRad);
     ctx.drawImage(partImage, -drawW / 2, -drawH / 2, drawW, drawH);
@@ -148,6 +152,7 @@ function drawPart(
     ctx.arc(p.x, p.y, Math.max(3, viewport.zoom * 2.5), 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
 }
 
 function isAkizukiBBoard(board: Board): boolean {
@@ -230,7 +235,18 @@ export function BoardCanvas({
   placePreviewValid
 }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bottomCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const panRef = useRef<{ canvas: HTMLCanvasElement; lastX: number; lastY: number } | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const [imageRevision, setImageRevision] = useState(0);
+  const [partTransparency, setPartTransparency] = useState(() => {
+    try {
+      const stored = Number(window.localStorage.getItem("uniuni-part-transparency"));
+      return Number.isFinite(stored) && stored >= 0 && stored <= 100 ? stored : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [viewport, setViewport] = useState<Viewport>({
     panX: 120,
     panY: 80,
@@ -244,6 +260,15 @@ export function BoardCanvas({
     setViewport({ panX: 170 * zoom, panY: 80 * zoom, zoom });
   }, [board.profile]);
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("uniuni-part-transparency", String(partTransparency));
+    } catch {
+      // The display preference remains usable when browser storage is unavailable.
+    }
+  }, [partTransparency]);
 
   const partDefMap = useMemo(() => new Map(partDefs.map((def) => [def.id, def])), [partDefs]);
   const netColorMap = useMemo(
@@ -259,6 +284,21 @@ export function BoardCanvas({
   );
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setCanvasSize((current) =>
+        current.width === width && current.height === height ? current : { width, height }
+      );
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const cache = imageCacheRef.current;
     const defIds = new Set(partDefs.map((def) => def.id));
 
@@ -271,6 +311,9 @@ export function BoardCanvas({
       const cached = cache.get(def.id);
       if (cached && cached.src === src) continue;
       const img = new Image();
+      img.onload = () => {
+        if (cache.get(def.id) === img) setImageRevision((revision) => revision + 1);
+      };
       img.src = src;
       cache.set(def.id, img);
     }
@@ -282,355 +325,408 @@ export function BoardCanvas({
     }
   }, [partDefs]);
 
+  const loadedPartImage = (defId: string): HTMLImageElement | null => {
+    const image = imageCacheRef.current.get(defId);
+    return image?.complete && image.naturalWidth > 0 ? image : null;
+  };
+
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const drawCanvas = (canvas: HTMLCanvasElement, isBottom: boolean): void => {
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const width = Math.floor(rect.width * dpr);
-    const height = Math.floor(rect.height * dpr);
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.floor(rect.width * dpr);
+      const height = Math.floor(rect.height * dpr);
 
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
 
-    ctx.fillStyle = "#0d131b";
-    ctx.fillRect(0, 0, rect.width, rect.height);
+      ctx.fillStyle = "#f1f5f9";
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      ctx.save();
+      if (isBottom) {
+        ctx.translate(rect.width, 0);
+        ctx.scale(-1, 1);
+      }
 
-    const isArduino = board.profile === ARDUINO_PROFILE;
-    const isBBoard = isAkizukiBBoard(board);
-    const outlineScreen = ARDUINO_OUTLINE.map((pt) => worldToScreen(gridToWorld(pt, CELL_SIZE), viewport));
-    const traceOutline = (): void => {
-      ctx.beginPath();
-      outlineScreen.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
-      ctx.closePath();
-    };
-    const boardWorldBounds = isArduino ? {
-      left: Math.min(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
-      top: Math.min(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE,
-      right: Math.max(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
-      bottom: Math.max(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE
-    } : isBBoard
-      ? (() => {
-          const mountXs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.x * CELL_SIZE);
-          const mountYs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.y * CELL_SIZE);
-          const edgeMarginWorld = (3 / board.gridPitchMm) * CELL_SIZE;
-          return {
-            left: Math.min(...mountXs) - edgeMarginWorld,
-            top: Math.min(...mountYs) - edgeMarginWorld,
-            right: Math.max(...mountXs) + edgeMarginWorld,
-            bottom: Math.max(...mountYs) + edgeMarginWorld
-          };
-        })()
-      : {
-          left: -CELL_SIZE * BOARD_MARGIN_CELLS,
-          top: -CELL_SIZE * BOARD_MARGIN_CELLS,
-          right: gridMaxWorld.x + CELL_SIZE * BOARD_MARGIN_CELLS,
-          bottom: gridMaxWorld.y + CELL_SIZE * BOARD_MARGIN_CELLS
-        };
-    // Draw board edge with an outer margin around the wiring grid.
-    const topLeft = worldToScreen({ x: boardWorldBounds.left, y: boardWorldBounds.top }, viewport);
-    const bottomRight = worldToScreen(
-      { x: boardWorldBounds.right, y: boardWorldBounds.bottom },
-      viewport
-    );
-    const boardScreenWidth = bottomRight.x - topLeft.x;
-    const boardScreenHeight = bottomRight.y - topLeft.y;
-
-    if (boardScreenWidth > 0 && boardScreenHeight > 0) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
-      if (!isArduino) ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
-
-      const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
-      boardGrad.addColorStop(0, "#f2d297");
-      boardGrad.addColorStop(1, "#f2d297");
-      ctx.fillStyle = boardGrad;
-      if (isArduino) { traceOutline(); ctx.fill(); }
-      else ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
-
-      const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
-      const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
-      const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
-      const worldMaxX = Math.max(worldTopLeft.x, worldBottomRight.x);
-      const worldMinY = Math.min(worldTopLeft.y, worldBottomRight.y);
-      const worldMaxY = Math.max(worldTopLeft.y, worldBottomRight.y);
-      const startX = Math.max(0, Math.floor(worldMinX / CELL_SIZE) - 2);
-      const endX = Math.min(board.width - 1, Math.ceil(worldMaxX / CELL_SIZE) + 2);
-      const startY = Math.max(0, Math.floor(worldMinY / CELL_SIZE) - 2);
-      const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
-
-      const ringRadius = Math.max(2.4, viewport.zoom * 7.6);
-      const holeRadius = isArduino ? (0.90 / board.gridPitchMm) * CELL_SIZE * viewport.zoom / 2 : Math.max(1.6, viewport.zoom * 3.4);
-
-      const drawThroughHole = (gridX: number, gridY: number): void => {
-        const center = worldToScreen({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE }, viewport);
-        ctx.fillStyle = "#c4c9d1";
+      const isArduino = board.profile === ARDUINO_PROFILE;
+      const isBBoard = isAkizukiBBoard(board);
+      const outlineScreen = ARDUINO_OUTLINE.map((pt) => worldToScreen(gridToWorld(pt, CELL_SIZE), viewport));
+      const traceOutline = (): void => {
         ctx.beginPath();
-        ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "#a8afbb";
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
-        ctx.fill();
+        outlineScreen.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+        ctx.closePath();
       };
+      const boardWorldBounds = isArduino ? {
+        left: Math.min(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
+        top: Math.min(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE,
+        right: Math.max(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
+        bottom: Math.max(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE
+      } : isBBoard
+        ? (() => {
+            const mountXs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.x * CELL_SIZE);
+            const mountYs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.y * CELL_SIZE);
+            const edgeMarginWorld = (3 / board.gridPitchMm) * CELL_SIZE;
+            return {
+              left: Math.min(...mountXs) - edgeMarginWorld,
+              top: Math.min(...mountYs) - edgeMarginWorld,
+              right: Math.max(...mountXs) + edgeMarginWorld,
+              bottom: Math.max(...mountYs) + edgeMarginWorld
+            };
+          })()
+        : {
+            left: -CELL_SIZE * BOARD_MARGIN_CELLS,
+            top: -CELL_SIZE * BOARD_MARGIN_CELLS,
+            right: gridMaxWorld.x + CELL_SIZE * BOARD_MARGIN_CELLS,
+            bottom: gridMaxWorld.y + CELL_SIZE * BOARD_MARGIN_CELLS
+          };
+      // Draw board edge with an outer margin around the wiring grid.
+      const topLeft = worldToScreen({ x: boardWorldBounds.left, y: boardWorldBounds.top }, viewport);
+      const bottomRight = worldToScreen(
+        { x: boardWorldBounds.right, y: boardWorldBounds.bottom },
+        viewport
+      );
+      const boardScreenWidth = bottomRight.x - topLeft.x;
+      const boardScreenHeight = bottomRight.y - topLeft.y;
 
-      if (isArduino) {
-        for (const hole of ARDUINO_HOLES) drawThroughHole(hole.x, hole.y);
-        ctx.fillStyle = "#554a37";
-        ctx.font = `${Math.max(8, 11 * viewport.zoom)}px sans-serif`;
-        const label = worldToScreen(gridToWorld({ x: -5.2, y: 0.3 }, CELL_SIZE), viewport);
-        ctx.fillText("U-PROTOSHIELD I", label.x, label.y);
-        ctx.fillText("68 × 52 mm", label.x, label.y + 16 * viewport.zoom);
-        ctx.fillText("SMD area", label.x, label.y + 48 * viewport.zoom);
-      } else if (isBBoard) {
-        for (const hole of AKIZUKI_B_HOLE_LAYOUT.throughHoles) {
-          if (hole.x < startX || hole.x > endX || hole.y < startY || hole.y > endY) continue;
-          drawThroughHole(hole.x, hole.y);
-        }
-      } else {
-        for (let y = startY; y <= endY; y += 1) {
-          for (let x = startX; x <= endX; x += 1) {
-            drawThroughHole(x, y);
+      if (boardScreenWidth > 0 && boardScreenHeight > 0) {
+        ctx.fillStyle = "rgba(45, 55, 72, 0.1)";
+        if (!isArduino) ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
+
+        const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
+        boardGrad.addColorStop(0, "#fffdf8");
+        boardGrad.addColorStop(1, "#faf5e9");
+        ctx.fillStyle = boardGrad;
+        if (isArduino) { traceOutline(); ctx.fill(); }
+        else ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+
+        const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
+        const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
+        const worldMinX = Math.min(worldTopLeft.x, worldBottomRight.x);
+        const worldMaxX = Math.max(worldTopLeft.x, worldBottomRight.x);
+        const worldMinY = Math.min(worldTopLeft.y, worldBottomRight.y);
+        const worldMaxY = Math.max(worldTopLeft.y, worldBottomRight.y);
+        const startX = Math.max(0, Math.floor(worldMinX / CELL_SIZE) - 2);
+        const endX = Math.min(board.width - 1, Math.ceil(worldMaxX / CELL_SIZE) + 2);
+        const startY = Math.max(0, Math.floor(worldMinY / CELL_SIZE) - 2);
+        const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
+
+        const ringRadius = Math.max(2.4, viewport.zoom * 7.6);
+        const holeRadius = isArduino ? (0.90 / board.gridPitchMm) * CELL_SIZE * viewport.zoom / 2 : Math.max(1.6, viewport.zoom * 3.4);
+
+        const drawThroughHole = (gridX: number, gridY: number): void => {
+          const center = worldToScreen({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE }, viewport);
+          ctx.fillStyle = "#b7c1cb";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, ringRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "#778391";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, holeRadius, 0, Math.PI * 2);
+          ctx.fill();
+        };
+
+        if (isArduino) {
+          for (const hole of ARDUINO_HOLES) drawThroughHole(hole.x, hole.y);
+          // Keep text readable on the mirrored bottom view by drawing it only on top.
+          if (!isBottom) {
+            ctx.fillStyle = "#554a37";
+            ctx.font = `${Math.max(8, 11 * viewport.zoom)}px sans-serif`;
+            const label = worldToScreen(gridToWorld({ x: -5.2, y: 0.3 }, CELL_SIZE), viewport);
+            ctx.fillText("U-PROTOSHIELD I", label.x, label.y);
+            ctx.fillText("68 × 52 mm", label.x, label.y + 16 * viewport.zoom);
+            ctx.fillText("SMD area", label.x, label.y + 48 * viewport.zoom);
+          }
+        } else if (isBBoard) {
+          for (const hole of AKIZUKI_B_HOLE_LAYOUT.throughHoles) {
+            if (hole.x < startX || hole.x > endX || hole.y < startY || hole.y > endY) continue;
+            drawThroughHole(hole.x, hole.y);
+          }
+        } else {
+          for (let y = startY; y <= endY; y += 1) {
+            for (let x = startX; x <= endX; x += 1) {
+              drawThroughHole(x, y);
+            }
           }
         }
-      }
 
-      // Draw M3 mounting holes.
-      const gridTopLeft = worldToScreen({ x: 0, y: 0 }, viewport);
-      const gridBottomRight = worldToScreen({ x: gridMaxWorld.x, y: gridMaxWorld.y }, viewport);
-      const marginLeft = Math.max(0, gridTopLeft.x - topLeft.x);
-      const marginRight = Math.max(0, bottomRight.x - gridBottomRight.x);
-      const marginTop = Math.max(0, gridTopLeft.y - topLeft.y);
-      const marginBottom = Math.max(0, bottomRight.y - gridBottomRight.y);
-      const minMargin = Math.max(0, Math.min(marginLeft, marginRight, marginTop, marginBottom));
-      const mountDiameterMm = isBBoard ? AKIZUKI_B_MOUNT_HOLE_DIAMETER_MM : 3;
-      const radiusFromMm = Math.max(
-        2.5,
-        ((mountDiameterMm / board.gridPitchMm) * CELL_SIZE * viewport.zoom) / 2
-      );
-      const mountHoleRadius = isBBoard
-        ? radiusFromMm
-        : Math.min(radiusFromMm, Math.max(2.5, minMargin * 0.42));
-      const mountCenters = isArduino ? [] : isBBoard
-        ? AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) =>
-            worldToScreen({ x: hole.x * CELL_SIZE, y: hole.y * CELL_SIZE }, viewport)
-          )
-        : [
-            { x: (topLeft.x + gridTopLeft.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
-            { x: (bottomRight.x + gridBottomRight.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
-            { x: (topLeft.x + gridTopLeft.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 },
-            { x: (bottomRight.x + gridBottomRight.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 }
-          ];
-      for (const center of mountCenters) {
-        ctx.fillStyle = "#ded3bd";
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, mountHoleRadius + 0.8, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "#8d93a0";
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, mountHoleRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.strokeStyle = "#cfc5ad";
-      ctx.lineWidth = 1.2;
-      if (isArduino) { traceOutline(); ctx.stroke(); }
-      else ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
-    }
-
-    for (const wire of wires) {
-      const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
-      const isSelected = wire.id === selectedWireId;
-      drawWirePath(
-        ctx,
-        wire.path,
-        viewport,
-        isSelected ? "#ffd166" : color,
-        isSelected ? "#ffd166" : color,
-        isSelected ? 4.6 : 3.6
-      );
-    }
-
-    if (wireDraftPath.length > 0) {
-      drawWirePath(ctx, wireDraftPath, viewport, "#ffd166", "#ffd166", 3.8);
-    }
-
-    for (const part of parts) {
-      const def = partDefMap.get(part.defId);
-      if (!def) continue;
-      const isSelected = part.id === selectedPartId;
-      drawPart(
-        ctx,
-        part,
-        def,
-        viewport,
-        isSelected ? "rgba(255, 209, 102, 0.5)" : "rgba(91, 164, 255, 0.45)",
-        "#ff9f1c",
-        imageCacheRef.current.get(def.id) ?? null
-      );
-    }
-
-    if (movePreviewPart) {
-      const def = partDefMap.get(movePreviewPart.defId);
-      if (def) {
-        drawPart(
-          ctx,
-          movePreviewPart,
-          def,
-          viewport,
-          movePreviewValid ? "rgba(102, 217, 125, 0.35)" : "rgba(217, 102, 102, 0.4)",
-          movePreviewValid ? "#6fe893" : "#ff9090",
-          imageCacheRef.current.get(def.id) ?? null
+        // Draw M3 mounting holes.
+        const gridTopLeft = worldToScreen({ x: 0, y: 0 }, viewport);
+        const gridBottomRight = worldToScreen({ x: gridMaxWorld.x, y: gridMaxWorld.y }, viewport);
+        const marginLeft = Math.max(0, gridTopLeft.x - topLeft.x);
+        const marginRight = Math.max(0, bottomRight.x - gridBottomRight.x);
+        const marginTop = Math.max(0, gridTopLeft.y - topLeft.y);
+        const marginBottom = Math.max(0, bottomRight.y - gridBottomRight.y);
+        const minMargin = Math.max(0, Math.min(marginLeft, marginRight, marginTop, marginBottom));
+        const mountDiameterMm = isBBoard ? AKIZUKI_B_MOUNT_HOLE_DIAMETER_MM : 3;
+        const radiusFromMm = Math.max(
+          2.5,
+          ((mountDiameterMm / board.gridPitchMm) * CELL_SIZE * viewport.zoom) / 2
         );
-      }
-    }
+        const mountHoleRadius = isBBoard
+          ? radiusFromMm
+          : Math.min(radiusFromMm, Math.max(2.5, minMargin * 0.42));
+        const mountCenters = isArduino ? [] : isBBoard
+          ? AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) =>
+              worldToScreen({ x: hole.x * CELL_SIZE, y: hole.y * CELL_SIZE }, viewport)
+            )
+          : [
+              { x: (topLeft.x + gridTopLeft.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+              { x: (bottomRight.x + gridBottomRight.x) / 2, y: (topLeft.y + gridTopLeft.y) / 2 },
+              { x: (topLeft.x + gridTopLeft.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 },
+              { x: (bottomRight.x + gridBottomRight.x) / 2, y: (bottomRight.y + gridBottomRight.y) / 2 }
+            ];
+        for (const center of mountCenters) {
+          ctx.fillStyle = "#d2dae3";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, mountHoleRadius + 0.8, 0, Math.PI * 2);
+          ctx.fill();
 
-    if (placePreviewPart) {
-      const def = partDefMap.get(placePreviewPart.defId);
-      if (def) {
-        drawPart(
-          ctx,
-          placePreviewPart,
-          def,
-          viewport,
-          placePreviewValid ? "rgba(102, 217, 125, 0.28)" : "rgba(217, 102, 102, 0.35)",
-          placePreviewValid ? "#99f2b0" : "#ffb0b0",
-          imageCacheRef.current.get(def.id) ?? null
-        );
-      }
-    }
+          ctx.fillStyle = "#84909e";
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, mountHoleRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
-    if (hoverGrid) {
-      const snappedWorld = gridToWorld(hoverGrid, CELL_SIZE);
-      const snapped = worldToScreen(snappedWorld, viewport);
-      ctx.fillStyle = "#ffd166";
-      ctx.beginPath();
-      ctx.arc(snapped.x, snapped.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+        ctx.strokeStyle = "#c9b895";
+        ctx.lineWidth = 1.2;
+        if (isArduino) { traceOutline(); ctx.stroke(); }
+        else ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+      }
+
+      const drawWires = (): void => {
+        for (const wire of wires) {
+          const color = colorForNet(wire.netId, netColorMap.get(wire.netId) ?? null);
+          const isSelected = wire.id === selectedWireId;
+          drawWirePath(
+            ctx,
+            wire.path,
+            viewport,
+            isSelected ? "#b45309" : color,
+            isSelected ? "#b45309" : color,
+            isSelected ? 4.6 : 3.6
+          );
+        }
+        if (wireDraftPath.length > 0) {
+          drawWirePath(ctx, wireDraftPath, viewport, "#b45309", "#b45309", 3.8);
+        }
+      };
+
+      const drawParts = (): void => {
+        const opacity = (1 - partTransparency / 100) * (isBottom ? 0.55 : 1);
+        for (const part of parts) {
+          const def = partDefMap.get(part.defId);
+          if (!def) continue;
+          const isSelected = part.id === selectedPartId;
+          drawPart(
+            ctx,
+            part,
+            def,
+            viewport,
+            isSelected ? "rgba(245, 158, 11, 0.32)" : "rgba(37, 99, 235, 0.28)",
+            "#c2410c",
+            isBottom ? null : loadedPartImage(def.id),
+            opacity
+          );
+        }
+
+        if (movePreviewPart) {
+          const def = partDefMap.get(movePreviewPart.defId);
+          if (def) {
+            drawPart(
+              ctx,
+              movePreviewPart,
+              def,
+              viewport,
+              movePreviewValid ? "rgba(21, 128, 61, 0.28)" : "rgba(180, 35, 53, 0.26)",
+              movePreviewValid ? "#15803d" : "#b42335",
+              isBottom ? null : loadedPartImage(def.id),
+              opacity
+            );
+          }
+        }
+
+        if (placePreviewPart) {
+          const def = partDefMap.get(placePreviewPart.defId);
+          if (def) {
+            drawPart(
+              ctx,
+              placePreviewPart,
+              def,
+              viewport,
+              placePreviewValid ? "rgba(21, 128, 61, 0.24)" : "rgba(180, 35, 53, 0.24)",
+              placePreviewValid ? "#15803d" : "#b42335",
+              isBottom ? null : loadedPartImage(def.id),
+              opacity
+            );
+          }
+        }
+      };
+
+      if (isBottom) {
+        drawParts();
+        drawWires();
+      } else {
+        drawWires();
+        drawParts();
+      }
+
+      if (hoverGrid) {
+        const snappedWorld = gridToWorld(hoverGrid, CELL_SIZE);
+        const snapped = worldToScreen(snappedWorld, viewport);
+        ctx.fillStyle = "#b45309";
+        ctx.beginPath();
+        ctx.arc(snapped.x, snapped.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    };
+
+    if (canvasRef.current) drawCanvas(canvasRef.current, false);
+    if (bottomCanvasRef.current) drawCanvas(bottomCanvasRef.current, true);
   }, [
     board.height,
     board.width,
     board.profile,
     board.gridPitchMm,
+    canvasSize,
     gridMaxWorld.x,
     gridMaxWorld.y,
     hoverGrid,
+    imageRevision,
     movePreviewPart,
     movePreviewValid,
     netColorMap,
     partDefMap,
     parts,
+    partTransparency,
     placePreviewPart,
     placePreviewValid,
     selectedPartId,
+    selectedWireId,
     viewport,
     wireDraftPath,
     wires
   ]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    let isPanning = false;
-    let lastX = 0;
-    let lastY = 0;
-
-    const onPointerDown = (event: PointerEvent): void => {
-      if (event.button === 0) {
+    const registerCanvas = (canvas: HTMLCanvasElement, isBottom: boolean): (() => void) => {
+      const pointInTopView = (event: PointerEvent | WheelEvent): { x: number; y: number } => {
         const rect = canvas.getBoundingClientRect();
-        const world = screenToWorld(
-          { x: event.clientX - rect.left, y: event.clientY - rect.top },
-          viewport
-        );
-        onGridClick(worldToGrid(world, CELL_SIZE));
-        return;
-      }
+        const x = event.clientX - rect.left;
+        return { x: isBottom ? rect.width - x : x, y: event.clientY - rect.top };
+      };
 
-      if (event.button !== 1 && event.button !== 2) return;
-      isPanning = true;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      canvas.setPointerCapture(event.pointerId);
+      const onPointerDown = (event: PointerEvent): void => {
+        if (event.button === 0) {
+          onGridClick(worldToGrid(screenToWorld(pointInTopView(event), viewport), CELL_SIZE));
+          return;
+        }
+        if (event.button !== 1 && event.button !== 2) return;
+        panRef.current = { canvas, lastX: event.clientX, lastY: event.clientY };
+        canvas.setPointerCapture(event.pointerId);
+      };
+
+      const onPointerMove = (event: PointerEvent): void => {
+        const snapped = worldToGrid(screenToWorld(pointInTopView(event), viewport), CELL_SIZE);
+        setHoverGrid(snapped);
+        onHoverGridChange(snapped);
+
+        const pan = panRef.current;
+        if (!pan || pan.canvas !== canvas) return;
+        const dx = event.clientX - pan.lastX;
+        const dy = event.clientY - pan.lastY;
+        pan.lastX = event.clientX;
+        pan.lastY = event.clientY;
+        setViewport((prev) => ({ ...prev, panX: prev.panX + (isBottom ? -dx : dx), panY: prev.panY + dy }));
+      };
+
+      const onPointerUp = (event: PointerEvent): void => {
+        if (panRef.current?.canvas !== canvas) return;
+        panRef.current = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      };
+
+      const onPointerLeave = (): void => {
+        setHoverGrid(null);
+        onHoverGridChange(null);
+      };
+
+      const onWheel = (event: WheelEvent): void => {
+        event.preventDefault();
+        const anchor = pointInTopView(event);
+        setViewport((prev) => {
+          const nextZoom = clampZoom(prev.zoom * (event.deltaY > 0 ? 0.9 : 1.1));
+          const wx = (anchor.x - prev.panX) / prev.zoom;
+          const wy = (anchor.y - prev.panY) / prev.zoom;
+          return {
+            zoom: nextZoom,
+            panX: anchor.x - wx * nextZoom,
+            panY: anchor.y - wy * nextZoom
+          };
+        });
+      };
+
+      canvas.addEventListener("pointerdown", onPointerDown);
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", onPointerUp);
+      canvas.addEventListener("pointercancel", onPointerUp);
+      canvas.addEventListener("pointerleave", onPointerLeave);
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+      return () => {
+        canvas.removeEventListener("pointerdown", onPointerDown);
+        canvas.removeEventListener("pointermove", onPointerMove);
+        canvas.removeEventListener("pointerup", onPointerUp);
+        canvas.removeEventListener("pointercancel", onPointerUp);
+        canvas.removeEventListener("pointerleave", onPointerLeave);
+        canvas.removeEventListener("wheel", onWheel);
+      };
     };
 
-    const onPointerMove = (event: PointerEvent): void => {
-      const rect = canvas.getBoundingClientRect();
-      const world = screenToWorld(
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
-        viewport
-      );
-      const snapped = worldToGrid(world, CELL_SIZE);
-      setHoverGrid(snapped);
-      onHoverGridChange(snapped);
-
-      if (!isPanning) return;
-      const dx = event.clientX - lastX;
-      const dy = event.clientY - lastY;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      setViewport((prev) => ({ ...prev, panX: prev.panX + dx, panY: prev.panY + dy }));
-    };
-
-    const onPointerUp = (event: PointerEvent): void => {
-      if (!isPanning) return;
-      isPanning = false;
-      canvas.releasePointerCapture(event.pointerId);
-    };
-
-    const onPointerLeave = (): void => {
-      setHoverGrid(null);
-      onHoverGridChange(null);
-    };
-
-    const onWheel = (event: WheelEvent): void => {
-      event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const anchor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      setViewport((prev) => {
-        const nextZoom = clampZoom(prev.zoom * (event.deltaY > 0 ? 0.9 : 1.1));
-        const wx = (anchor.x - prev.panX) / prev.zoom;
-        const wy = (anchor.y - prev.panY) / prev.zoom;
-        return {
-          zoom: nextZoom,
-          panX: anchor.x - wx * nextZoom,
-          panY: anchor.y - wy * nextZoom
-        };
-      });
-    };
-
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointerleave", onPointerLeave);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-
-    return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointerleave", onPointerLeave);
-      canvas.removeEventListener("wheel", onWheel);
-    };
+    const cleanups = [
+      canvasRef.current && registerCanvas(canvasRef.current, false),
+      bottomCanvasRef.current && registerCanvas(bottomCanvasRef.current, true)
+    ];
+    return () => cleanups.forEach((cleanup) => cleanup?.());
   }, [onGridClick, onHoverGridChange, viewport]);
 
   return (
-    <section className="canvas-wrap">
-      <canvas ref={canvasRef} className="board-canvas" />
-      <div className="hud">
-        <div>grid: {hoverGrid ? `${hoverGrid.x}, ${hoverGrid.y}` : "-"}</div>
-        <div>zoom: {viewport.zoom.toFixed(2)}x</div>
+    <section className="board-views">
+      <div className="board-view-toolbar">
+        <label htmlFor="part-transparency">部品の透過率</label>
+        <input
+          id="part-transparency"
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value={partTransparency}
+          onChange={(event) => setPartTransparency(Number(event.target.value))}
+        />
+        <output htmlFor="part-transparency">{partTransparency}%</output>
+      </div>
+      <div className="canvas-pair">
+        <div className="canvas-wrap">
+          <canvas ref={canvasRef} className="board-canvas" aria-label="TopView" />
+          <span className="canvas-view-label">TopView · 表面</span>
+          <div className="hud">
+            <div>grid: {hoverGrid ? `${hoverGrid.x}, ${hoverGrid.y}` : "-"}</div>
+            <div>zoom: {viewport.zoom.toFixed(2)}x</div>
+          </div>
+        </div>
+        <div className="canvas-wrap canvas-wrap-bottom">
+          <canvas ref={bottomCanvasRef} className="board-canvas-bottom" aria-label="BottomView" />
+          <span className="canvas-view-label">BottomView · 裏面（左右反転）</span>
+        </div>
       </div>
     </section>
   );

@@ -107,8 +107,17 @@ pub enum Command {
         net_id: Uuid,
         path: Vec<GridPt>,
     },
+    CommitWireAuto {
+        path: Vec<GridPt>,
+    },
+    CommitWireAutoMerge {
+        path: Vec<GridPt>,
+    },
     DeleteWire {
         wire_id: Uuid,
+    },
+    DeleteNet {
+        net_id: Uuid,
     },
     ResizeBoard {
         width: i32,
@@ -259,11 +268,24 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             });
             Ok(())
         }
+        Command::CommitWireAuto { path } => commit_wire_auto(state, path, false),
+        Command::CommitWireAutoMerge { path } => commit_wire_auto(state, path, true),
         Command::DeleteWire { wire_id } => {
             let before = state.wires.len();
             state.wires.retain(|wire| wire.id != wire_id);
             if state.wires.len() == before {
                 return Err("wire not found".to_owned());
+            }
+            Ok(())
+        }
+        Command::DeleteNet { net_id } => {
+            if !state.nets.iter().any(|net| net.id == net_id) {
+                return Err("net not found".to_owned());
+            }
+            state.nets.retain(|net| net.id != net_id);
+            state.wires.retain(|wire| wire.net_id != net_id);
+            for part in &mut state.part_insts {
+                part.net_assign.retain(|_, assigned_net_id| *assigned_net_id != net_id);
             }
             Ok(())
         }
@@ -673,6 +695,87 @@ fn validate_board_profile(board: &Board) -> Result<(), String> {
     Ok(())
 }
 
+fn commit_wire_auto(
+    state: &mut ProjectState,
+    path: Vec<GridPt>,
+    allow_different_names: bool,
+) -> Result<(), String> {
+    validate_wire_path(&path)?;
+    validate_wire_inside_board(state, &path)?;
+
+    let points: HashSet<GridPt> = path.iter().copied().collect();
+    let mut connected_nets: HashSet<Uuid> = state
+        .wires
+        .iter()
+        .filter(|wire| wire.path.iter().any(|point| points.contains(point)))
+        .map(|wire| wire.net_id)
+        .collect();
+    let mut touched_pins = Vec::new();
+
+    for (part_index, part) in state.part_insts.iter().enumerate() {
+        let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
+            continue;
+        };
+        for pin in &part_def.pins {
+            if points.contains(&absolute_pin_point(part.at, part.rot, pin.pos)) {
+                if let Some(net_id) = part.net_assign.get(&pin.name) {
+                    connected_nets.insert(*net_id);
+                }
+                touched_pins.push((part_index, pin.name.clone()));
+            }
+        }
+    }
+
+    let existing_net = state.nets.iter().find(|net| connected_nets.contains(&net.id));
+    if connected_nets.len() > 1 && !allow_different_names {
+        let same_name = existing_net.is_some_and(|first| {
+            connected_nets.iter().all(|id| {
+                state.nets.iter().any(|net| net.id == *id && net.name == first.name)
+            })
+        });
+        if !same_name {
+            return Err("wire connects different nets".to_owned());
+        }
+    }
+
+    let net_id = if let Some(id) = existing_net.map(|net| net.id).or_else(|| connected_nets.iter().min().copied()) {
+        ensure_net_exists(state, id);
+        if connected_nets.len() > 1 {
+            for wire in &mut state.wires {
+                if connected_nets.contains(&wire.net_id) {
+                    wire.net_id = id;
+                }
+            }
+            for part in &mut state.part_insts {
+                for assigned in part.net_assign.values_mut() {
+                    if connected_nets.contains(assigned) {
+                        *assigned = id;
+                    }
+                }
+            }
+            state.nets.retain(|net| net.id == id || !connected_nets.contains(&net.id));
+        }
+        id
+    } else if state.nets.len() == 1
+        && state.nets[0].name == "N-1"
+        && state.wires.is_empty()
+        && state.part_insts.iter().all(|part| part.net_assign.is_empty())
+    {
+        state.nets[0].id
+    } else {
+        let id = Uuid::new_v4();
+        let name = next_auto_net_name(state);
+        state.nets.push(Net { id, name, color: None });
+        id
+    };
+
+    for (part_index, pin_name) in touched_pins {
+        state.part_insts[part_index].net_assign.insert(pin_name, net_id);
+    }
+    state.wires.push(Wire { id: Uuid::new_v4(), net_id, path });
+    Ok(())
+}
+
 fn ensure_net_exists(state: &mut ProjectState, net_id: Uuid) {
     if state.nets.iter().any(|net| net.id == net_id) {
         return;
@@ -688,6 +791,17 @@ fn default_net_name(net_id: Uuid) -> String {
     let compact = net_id.as_simple().to_string();
     let short = compact.get(..8).unwrap_or(&compact);
     format!("N-{short}")
+}
+
+fn next_auto_net_name(state: &ProjectState) -> String {
+    let mut index = 1;
+    loop {
+        let name = format!("N-{index}");
+        if state.nets.iter().all(|net| net.name != name) {
+            return name;
+        }
+        index += 1;
+    }
 }
 
 #[cfg(test)]
@@ -740,6 +854,65 @@ mod tests {
             }],
             wires: Vec::new(),
         }
+    }
+
+    #[test]
+    fn delete_net_removes_its_wires_and_pin_assignments_only() {
+        let mut state = test_state();
+        let deleted_net = state.nets[0].id;
+        let retained_net = uuid("44444444-4444-4444-4444-444444444444");
+        state.nets.push(Net { id: retained_net, name: "Keep".to_owned(), color: None });
+        state.wires.push(Wire {
+            id: uuid("55555555-5555-5555-5555-555555555555"),
+            net_id: deleted_net,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        });
+        state.wires.push(Wire {
+            id: uuid("66666666-6666-6666-6666-666666666666"),
+            net_id: retained_net,
+            path: vec![GridPt { x: 2, y: 0 }, GridPt { x: 3, y: 0 }],
+        });
+        state.part_defs[0].pins.push(PinDef {
+            name: "2".to_owned(),
+            pos: GridPt { x: 1, y: 0 },
+        });
+        state.part_insts[0].net_assign.insert("2".to_owned(), retained_net);
+
+        apply_command(&mut state, Command::DeleteNet { net_id: deleted_net }).unwrap();
+
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.nets[0].id, retained_net);
+        assert_eq!(state.wires.len(), 1);
+        assert_eq!(state.wires[0].net_id, retained_net);
+        assert_eq!(state.part_insts[0].net_assign.get("1"), None);
+        assert_eq!(state.part_insts[0].net_assign.get("2"), Some(&retained_net));
+    }
+
+    #[test]
+    fn auto_wire_creates_a_net_after_deleting_the_last_one() {
+        let mut state = test_state();
+        let old_net_id = state.nets[0].id;
+        apply_command(&mut state, Command::DeleteNet { net_id: old_net_id }).unwrap();
+        assert!(state.nets.is_empty());
+        apply_command(&mut state, Command::CommitWireAuto {
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        }).unwrap();
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.nets[0].name, "N-1");
+        assert_eq!(state.wires[0].net_id, state.nets[0].id);
+        assert_eq!(state.part_insts[0].net_assign.get("1"), Some(&state.nets[0].id));
+    }
+
+    #[test]
+    fn delete_missing_net_does_not_change_state() {
+        let mut state = test_state();
+        let before = as_json(&state);
+        let result = apply_command(&mut state, Command::DeleteNet {
+            net_id: uuid("44444444-4444-4444-4444-444444444444"),
+        });
+
+        assert_eq!(result.unwrap_err(), "net not found");
+        assert_eq!(as_json(&state), before);
     }
 
     #[test]
@@ -1093,5 +1266,159 @@ mod tests {
             .expect_err("must fail")
             .contains("wire outside board"));
         assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn auto_wire_assigns_both_rotated_and_unrotated_pins() {
+        let mut state = test_state();
+        state.part_defs[0].pins[0].pos = GridPt { x: 1, y: 0 };
+        state.part_insts[0].net_assign.clear();
+        let mut second = state.part_insts[0].clone();
+        second.id = uuid("44444444-4444-4444-4444-444444444444");
+        second.at = GridPt { x: 2, y: 0 };
+        second.rot = Rot::Deg90;
+        second.refdes = "U2".to_owned();
+        state.part_insts.push(second);
+
+        apply_command(
+            &mut state,
+            Command::CommitWireAuto {
+                path: vec![
+                    GridPt { x: 1, y: 0 },
+                    GridPt { x: 2, y: 0 },
+                    GridPt { x: 2, y: 1 },
+                ],
+            },
+        )
+        .expect("wire should be committed");
+
+        let net_id = state.nets[0].id;
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.wires[0].net_id, net_id);
+        assert_eq!(state.part_insts[0].net_assign.get("1"), Some(&net_id));
+        assert_eq!(state.part_insts[1].net_assign.get("1"), Some(&net_id));
+    }
+
+    #[test]
+    fn auto_wire_reuses_touched_wire_net_and_creates_separate_net() {
+        let mut state = test_state();
+        state.part_insts[0].net_assign.clear();
+        apply_command(
+            &mut state,
+            Command::CommitWireAuto {
+                path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+            },
+        )
+        .expect("first wire should be committed");
+        let first_net = state.wires[0].net_id;
+
+        apply_command(
+            &mut state,
+            Command::CommitWireAuto {
+                path: vec![GridPt { x: 1, y: 0 }, GridPt { x: 2, y: 0 }],
+            },
+        )
+        .expect("extension should be committed");
+        assert_eq!(state.wires[1].net_id, first_net);
+
+        apply_command(
+            &mut state,
+            Command::CommitWireAuto {
+                path: vec![GridPt { x: 10, y: 10 }, GridPt { x: 11, y: 10 }],
+            },
+        )
+        .expect("separate wire should be committed");
+        assert_eq!(state.nets.len(), 2);
+        assert_eq!(state.nets[1].name, "N-2");
+        assert_eq!(state.wires[2].net_id, state.nets[1].id);
+    }
+
+    #[test]
+    fn auto_wire_rejects_distinct_existing_nets_without_mutation() {
+        let mut state = test_state();
+        let mut second = state.part_insts[0].clone();
+        second.id = uuid("44444444-4444-4444-4444-444444444444");
+        second.at = GridPt { x: 2, y: 0 };
+        second.refdes = "U2".to_owned();
+        second.net_assign.insert(
+            "1".to_owned(),
+            uuid("55555555-5555-5555-5555-555555555555"),
+        );
+        state.part_insts.push(second);
+        let before_json = as_json(&state);
+
+        let result = apply_command(
+            &mut state,
+            Command::CommitWireAuto {
+                path: vec![
+                    GridPt { x: 0, y: 0 },
+                    GridPt { x: 1, y: 0 },
+                    GridPt { x: 2, y: 0 },
+                ],
+            },
+        );
+
+        assert_eq!(result.expect_err("must fail"), "wire connects different nets");
+        assert_eq!(as_json(&state), before_json);
+    }
+
+    #[test]
+    fn auto_wire_merges_separate_wires_with_same_name_and_updates_pins() {
+        let mut state = test_state();
+        let first_id = state.nets[0].id;
+        let second_id = uuid("55555555-5555-5555-5555-555555555555");
+        state.nets[0].name = "GND".to_owned();
+        state.nets.push(Net { id: second_id, name: "GND".to_owned(), color: None });
+        state.wires.push(Wire {
+            id: uuid("66666666-6666-6666-6666-666666666666"),
+            net_id: first_id,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        });
+        state.wires.push(Wire {
+            id: uuid("77777777-7777-7777-7777-777777777777"),
+            net_id: second_id,
+            path: vec![GridPt { x: 3, y: 0 }, GridPt { x: 4, y: 0 }],
+        });
+        let mut second = state.part_insts[0].clone();
+        second.id = uuid("44444444-4444-4444-4444-444444444444");
+        second.at = GridPt { x: 4, y: 0 };
+        second.net_assign.insert("1".to_owned(), second_id);
+        state.part_insts.push(second);
+
+        apply_command(&mut state, Command::CommitWireAuto {
+            path: vec![GridPt { x: 1, y: 0 }, GridPt { x: 2, y: 0 }, GridPt { x: 3, y: 0 }],
+        }).expect("same-name networks should join");
+
+        assert_eq!(state.nets.len(), 1);
+        assert_eq!(state.nets[0].id, first_id);
+        assert!(state.wires.iter().all(|wire| wire.net_id == first_id));
+        assert_eq!(state.part_insts[1].net_assign.get("1"), Some(&first_id));
+        assert!(!run_drc(&state).iter().any(|issue| issue.code == "SHORT"));
+    }
+
+    #[test]
+    fn auto_wire_merge_requires_explicit_command_for_different_names() {
+        let mut state = test_state();
+        let second_id = uuid("55555555-5555-5555-5555-555555555555");
+        state.nets.push(Net { id: second_id, name: "SIGNAL".to_owned(), color: None });
+        state.wires.push(Wire {
+            id: uuid("66666666-6666-6666-6666-666666666666"),
+            net_id: state.nets[0].id,
+            path: vec![GridPt { x: 0, y: 0 }, GridPt { x: 1, y: 0 }],
+        });
+        state.wires.push(Wire {
+            id: uuid("77777777-7777-7777-7777-777777777777"),
+            net_id: second_id,
+            path: vec![GridPt { x: 3, y: 0 }, GridPt { x: 4, y: 0 }],
+        });
+        let path = vec![GridPt { x: 1, y: 0 }, GridPt { x: 2, y: 0 }, GridPt { x: 3, y: 0 }];
+        let before = as_json(&state);
+        assert_eq!(apply_command(&mut state, Command::CommitWireAuto { path: path.clone() })
+            .unwrap_err(), "wire connects different nets");
+        assert_eq!(as_json(&state), before);
+
+        apply_command(&mut state, Command::CommitWireAutoMerge { path }).unwrap();
+        assert_eq!(state.nets.len(), 1);
+        assert!(state.wires.iter().all(|wire| wire.net_id == state.nets[0].id));
     }
 }

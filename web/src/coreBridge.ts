@@ -53,6 +53,12 @@ function validateNetColor(color: string): void {
   }
 }
 
+function nextAutoNetName(nets: CoreNet[]): string {
+  let index = 1;
+  while (nets.some((net) => net.name === `N-${index}`)) index += 1;
+  return `N-${index}`;
+}
+
 function rotateRelative(pt: GridPt, rot: Rot): GridPt {
   switch (rot) {
     case "Deg0":
@@ -280,8 +286,10 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     return JSON.stringify(state);
   }
 
-  if ("CommitWire" in cmd) {
-    const payload = cmd.CommitWire as { net_id: string; path: GridPt[] };
+  if ("CommitWire" in cmd || "CommitWireAuto" in cmd || "CommitWireAutoMerge" in cmd) {
+    const merge = "CommitWireAutoMerge" in cmd;
+    const auto = "CommitWireAuto" in cmd || merge;
+    const payload = (merge ? cmd.CommitWireAutoMerge : auto ? cmd.CommitWireAuto : cmd.CommitWire) as { net_id?: string; path: GridPt[] };
     if (payload.path.length < 2) {
       throw new Error("wire path must have >=2 points");
     }
@@ -300,12 +308,67 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
       throw new Error("wire path is outside board");
     }
 
-    if (!state.nets.some((net) => net.id === payload.net_id)) {
-      state.nets.push({ id: payload.net_id, name: `N-${payload.net_id.slice(0, 8)}`, color: null });
+    let netId = payload.net_id;
+    if (auto) {
+      const pointKeys = new Set(payload.path.map((pt) => `${pt.x}:${pt.y}`));
+      const connectedNets = new Set<string>();
+      const touchedPins: Array<{ part: CorePartInst; pinName: string }> = [];
+
+      for (const wire of state.wires) {
+        if (wire.path.some((pt) => pointKeys.has(`${pt.x}:${pt.y}`))) {
+          connectedNets.add(wire.net_id);
+        }
+      }
+      for (const part of state.part_insts) {
+        const def = state.part_defs.find((item) => item.id === part.def_id);
+        if (!def) continue;
+        for (const pin of def.pins) {
+          const turned = rotateRelative(pin.pos, part.rot);
+          if (!pointKeys.has(`${part.at.x + turned.x}:${part.at.y + turned.y}`)) continue;
+          const assigned = part.net_assign[pin.name];
+          if (assigned) connectedNets.add(assigned);
+          touchedPins.push({ part, pinName: pin.name });
+        }
+      }
+
+      const firstNet = state.nets.find((net) => connectedNets.has(net.id));
+      if (connectedNets.size > 1 && !merge &&
+        (!firstNet || ![...connectedNets].every((id) => state.nets.some((net) => net.id === id && net.name === firstNet.name)))) {
+        throw new Error("wire connects different nets");
+      }
+      netId = firstNet?.id ?? [...connectedNets].sort()[0];
+      if (netId && connectedNets.size > 1) {
+        for (const wire of state.wires) {
+          if (connectedNets.has(wire.net_id)) wire.net_id = netId;
+        }
+        for (const part of state.part_insts) {
+          for (const pin of Object.keys(part.net_assign)) {
+            if (connectedNets.has(part.net_assign[pin])) part.net_assign[pin] = netId;
+          }
+        }
+        state.nets = state.nets.filter((net) => net.id === netId || !connectedNets.has(net.id));
+      }
+      if (!netId) {
+        const starterNet = state.nets.length === 1 && state.nets[0].name === "N-1"
+          && state.wires.length === 0
+          && state.part_insts.every((part) => Object.keys(part.net_assign).length === 0);
+        if (starterNet) {
+          netId = state.nets[0].id;
+        } else {
+          netId = newUuid();
+          state.nets.push({ id: netId, name: nextAutoNetName(state.nets), color: null });
+        }
+      }
+      for (const { part, pinName } of touchedPins) part.net_assign[pinName] = netId;
+    }
+
+    if (!netId) throw new Error("net id is required");
+    if (!state.nets.some((net) => net.id === netId)) {
+      state.nets.push({ id: netId, name: `N-${netId.slice(0, 8)}`, color: null });
     }
     state.wires.push({
       id: newUuid(),
-      net_id: payload.net_id,
+      net_id: netId,
       path: payload.path
     });
     return JSON.stringify(state);
@@ -317,6 +380,21 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     state.wires = state.wires.filter((wire) => wire.id !== payload.wire_id);
     if (state.wires.length === before) {
       throw new Error("wire not found");
+    }
+    return JSON.stringify(state);
+  }
+
+  if ("DeleteNet" in cmd) {
+    const payload = cmd.DeleteNet as { net_id: string };
+    if (!state.nets.some((net) => net.id === payload.net_id)) {
+      throw new Error("net not found");
+    }
+    state.nets = state.nets.filter((net) => net.id !== payload.net_id);
+    state.wires = state.wires.filter((wire) => wire.net_id !== payload.net_id);
+    for (const part of state.part_insts) {
+      for (const [pin, netId] of Object.entries(part.net_assign)) {
+        if (netId === payload.net_id) delete part.net_assign[pin];
+      }
     }
     return JSON.stringify(state);
   }
@@ -715,12 +793,20 @@ export function commandCommitWireJson(netId: string, path: GridPt[]): string {
   });
 }
 
+export function commandCommitWireAutoJson(path: GridPt[], mergeNets = false): string {
+  return JSON.stringify(mergeNets ? { CommitWireAutoMerge: { path } } : { CommitWireAuto: { path } });
+}
+
 export function commandDeleteWireJson(wireId: string): string {
   return JSON.stringify({
     DeleteWire: {
       wire_id: wireId
     }
   });
+}
+
+export function commandDeleteNetJson(netId: string): string {
+  return JSON.stringify({ DeleteNet: { net_id: netId } });
 }
 
 export function commandAddPartInstJson(defId: string, at: GridPt, rot: Rot, refdes: string): string {
