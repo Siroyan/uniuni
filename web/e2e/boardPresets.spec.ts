@@ -51,5 +51,5 @@ test("Arduino preset persists, preserves custom dimensions, and validates holes 
   await expect(preset).toHaveValue("custom");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(preset).toHaveValue("arduino-uprotoshield-i");
-  await page.screenshot({ path: "/workspace/arduino-board-preview.png", fullPage: true });
+  await page.screenshot({ path: test.info().outputPath("arduino-board-preview.png"), fullPage: true });
 });

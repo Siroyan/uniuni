@@ -306,7 +306,7 @@ cd core && cargo test
   - `core check + test`
     - `cd core && cargo check`
     - `cd core && cargo test`
-  - `web e2e regression`
+  - `web e2e regression`（Ubuntu 24.04固定。Playwright 1.58.2はUbuntu 26.04非対応）
     - `npm ci`
     - `npx playwright install --with-deps chromium`
     - `npm run test:e2e -w web`

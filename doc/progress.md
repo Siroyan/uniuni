@@ -472,3 +472,10 @@
 - `npm run build -w web`、`cargo check` 成功。
 - Web単体テスト27件、Rustテスト13件成功。
 - 既存E2E 6件、新規Arduino E2E 1件成功。新規テストはWASMでの配線、穴のない行の拒否、自動保存・再読み込み、同寸法カスタムへの切替とUndoを確認。
+
+
+## 2026-10-30: PR #22 のCI修正
+
+- E2Eジョブは `ubuntu-latest` がUbuntu 26.04へ移行したことで、Playwright 1.58.2のブラウザー依存導入時に失敗していた。対応済みの `ubuntu-24.04` に固定。
+- Arduino E2Eの画像保存先をローカル専用の `/workspace` からPlaywrightのテスト出力ディレクトリへ変更し、CIのartifactにも収録されるようにした。
+- ローカルで `CI=1` のE2E 7件とPagesプレビューE2E 7件、Pages向けWebビルド、`cargo check` の成功を確認。
