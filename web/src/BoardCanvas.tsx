@@ -1,3 +1,4 @@
+import { ARDUINO_HOLES, ARDUINO_OUTLINE, ARDUINO_PROFILE } from "./boardPresets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { absoluteOccupied, absolutePins } from "./parts";
 import { clampZoom, gridToWorld, screenToWorld, worldToGrid, worldToScreen } from "./coords";
@@ -251,6 +252,13 @@ export function BoardCanvas({
     panY: 80,
     zoom: 1
   });
+  useEffect(() => {
+    if (board.profile !== ARDUINO_PROFILE) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const zoom = Math.min(1, rect.width / 700, rect.height / 580);
+    setViewport({ panX: 170 * zoom, panY: 80 * zoom, zoom });
+  }, [board.profile]);
   const [hoverGrid, setHoverGrid] = useState<GridPt | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
@@ -349,8 +357,20 @@ export function BoardCanvas({
         ctx.scale(-1, 1);
       }
 
+      const isArduino = board.profile === ARDUINO_PROFILE;
       const isBBoard = isAkizukiBBoard(board);
-      const boardWorldBounds = isBBoard
+      const outlineScreen = ARDUINO_OUTLINE.map((pt) => worldToScreen(gridToWorld(pt, CELL_SIZE), viewport));
+      const traceOutline = (): void => {
+        ctx.beginPath();
+        outlineScreen.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+        ctx.closePath();
+      };
+      const boardWorldBounds = isArduino ? {
+        left: Math.min(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
+        top: Math.min(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE,
+        right: Math.max(...ARDUINO_OUTLINE.map((p) => p.x)) * CELL_SIZE,
+        bottom: Math.max(...ARDUINO_OUTLINE.map((p) => p.y)) * CELL_SIZE
+      } : isBBoard
         ? (() => {
             const mountXs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.x * CELL_SIZE);
             const mountYs = AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) => hole.y * CELL_SIZE);
@@ -379,13 +399,14 @@ export function BoardCanvas({
 
       if (boardScreenWidth > 0 && boardScreenHeight > 0) {
         ctx.fillStyle = "rgba(45, 55, 72, 0.1)";
-        ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
+        if (!isArduino) ctx.fillRect(topLeft.x + 4, topLeft.y + 6, boardScreenWidth, boardScreenHeight);
 
         const boardGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, topLeft.x, bottomRight.y);
         boardGrad.addColorStop(0, "#fffdf8");
         boardGrad.addColorStop(1, "#faf5e9");
         ctx.fillStyle = boardGrad;
-        ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+        if (isArduino) { traceOutline(); ctx.fill(); }
+        else ctx.fillRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
 
         const worldTopLeft = screenToWorld({ x: 0, y: 0 }, viewport);
         const worldBottomRight = screenToWorld({ x: rect.width, y: rect.height }, viewport);
@@ -399,7 +420,7 @@ export function BoardCanvas({
         const endY = Math.min(board.height - 1, Math.ceil(worldMaxY / CELL_SIZE) + 2);
 
         const ringRadius = Math.max(2.4, viewport.zoom * 7.6);
-        const holeRadius = Math.max(1.6, viewport.zoom * 3.4);
+        const holeRadius = isArduino ? (0.90 / board.gridPitchMm) * CELL_SIZE * viewport.zoom / 2 : Math.max(1.6, viewport.zoom * 3.4);
 
         const drawThroughHole = (gridX: number, gridY: number): void => {
           const center = worldToScreen({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE }, viewport);
@@ -414,7 +435,18 @@ export function BoardCanvas({
           ctx.fill();
         };
 
-        if (isBBoard) {
+        if (isArduino) {
+          for (const hole of ARDUINO_HOLES) drawThroughHole(hole.x, hole.y);
+          // Keep text readable on the mirrored bottom view by drawing it only on top.
+          if (!isBottom) {
+            ctx.fillStyle = "#554a37";
+            ctx.font = `${Math.max(8, 11 * viewport.zoom)}px sans-serif`;
+            const label = worldToScreen(gridToWorld({ x: -5.2, y: 0.3 }, CELL_SIZE), viewport);
+            ctx.fillText("U-PROTOSHIELD I", label.x, label.y);
+            ctx.fillText("68 × 52 mm", label.x, label.y + 16 * viewport.zoom);
+            ctx.fillText("SMD area", label.x, label.y + 48 * viewport.zoom);
+          }
+        } else if (isBBoard) {
           for (const hole of AKIZUKI_B_HOLE_LAYOUT.throughHoles) {
             if (hole.x < startX || hole.x > endX || hole.y < startY || hole.y > endY) continue;
             drawThroughHole(hole.x, hole.y);
@@ -443,7 +475,7 @@ export function BoardCanvas({
         const mountHoleRadius = isBBoard
           ? radiusFromMm
           : Math.min(radiusFromMm, Math.max(2.5, minMargin * 0.42));
-        const mountCenters = isBBoard
+        const mountCenters = isArduino ? [] : isBBoard
           ? AKIZUKI_B_HOLE_LAYOUT.mountHoles.map((hole) =>
               worldToScreen({ x: hole.x * CELL_SIZE, y: hole.y * CELL_SIZE }, viewport)
             )
@@ -467,7 +499,8 @@ export function BoardCanvas({
 
         ctx.strokeStyle = "#c9b895";
         ctx.lineWidth = 1.2;
-        ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
+        if (isArduino) { traceOutline(); ctx.stroke(); }
+        else ctx.strokeRect(topLeft.x, topLeft.y, boardScreenWidth, boardScreenHeight);
       }
 
       const drawWires = (): void => {
@@ -563,6 +596,8 @@ export function BoardCanvas({
   }, [
     board.height,
     board.width,
+    board.profile,
+    board.gridPitchMm,
     canvasSize,
     gridMaxWorld.x,
     gridMaxWorld.y,

@@ -9,6 +9,7 @@ export type Board = {
   width: number;
   height: number;
   gridPitchMm: number;
+  profile?: "arduino-uprotoshield-i" | null;
 };
 
 export type PinDef = {

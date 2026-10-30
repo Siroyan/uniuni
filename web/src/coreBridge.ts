@@ -1,3 +1,4 @@
+import { isBoardPoint, validateBoardProfile } from "./boardPresets";
 import type { Board, DrcIssue, GridPt, Net, PartDef, PartInst, Rot, Wire } from "./types";
 
 type CoreApi = {
@@ -27,7 +28,7 @@ type CorePartInst = {
   net_assign: Record<string, string>;
 };
 type CoreProjectState = {
-  board: { grid_pitch_mm: number; width: number; height: number };
+  board: { grid_pitch_mm: number; width: number; height: number; profile?: Board["profile"] };
   part_defs: CorePartDef[];
   part_insts: CorePartInst[];
   nets: CoreNet[];
@@ -79,7 +80,7 @@ function absoluteOccupied(def: CorePartDef, inst: CorePartInst): GridPt[] {
 }
 
 function isInsideBoard(board: Board, pt: GridPt): boolean {
-  return pt.x >= 0 && pt.y >= 0 && pt.x < board.width && pt.y < board.height;
+  return isBoardPoint(board, pt);
 }
 
 function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId?: string): boolean {
@@ -88,7 +89,8 @@ function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId
   const board: Board = {
     gridPitchMm: state.board.grid_pitch_mm,
     width: state.board.width,
-    height: state.board.height
+    height: state.board.height,
+    profile: state.board.profile
   };
   const occupied = absoluteOccupied(def, candidate);
   if (!occupied.every((pt) => isInsideBoard(board, pt))) return false;
@@ -113,13 +115,15 @@ function validateBoardSize(width: number, height: number): void {
   }
 }
 
-function validateResizeTarget(state: CoreProjectState, width: number, height: number): void {
+function validateResizeTarget(state: CoreProjectState, width: number, height: number, profile?: Board["profile"]): void {
   validateBoardSize(width, height);
   const resizedBoard: Board = {
     gridPitchMm: state.board.grid_pitch_mm,
     width,
-    height
+    height,
+    profile
   };
+  validateBoardProfile(resizedBoard);
 
   for (const wire of state.wires) {
     for (const pt of wire.path) {
@@ -274,10 +278,11 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
   }
 
   if ("ResizeBoard" in cmd) {
-    const payload = cmd.ResizeBoard as { width: number; height: number };
-    validateResizeTarget(state, payload.width, payload.height);
+    const payload = cmd.ResizeBoard as { width: number; height: number; profile?: Board["profile"] };
+    validateResizeTarget(state, payload.width, payload.height, payload.profile);
     state.board.width = payload.width;
     state.board.height = payload.height;
+    state.board.profile = payload.profile;
     return JSON.stringify(state);
   }
 
@@ -296,7 +301,8 @@ function fallbackApplyCommandJson(stateJson: string, cmdJson: string): string {
     const board: Board = {
       gridPitchMm: state.board.grid_pitch_mm,
       width: state.board.width,
-      height: state.board.height
+      height: state.board.height,
+      profile: state.board.profile
     };
     if (!payload.path.every((pt) => isInsideBoard(board, pt))) {
       throw new Error("wire path is outside board");
@@ -500,7 +506,12 @@ function fallbackDrcJson(stateJson: string): string {
   const issues: DrcIssue[] = [];
   const occupied = new Set<string>();
   const pinPoints = new Set<string>();
-  const board: Board = { gridPitchMm: state.board.grid_pitch_mm, width: state.board.width, height: state.board.height };
+  const board: Board = {
+    gridPitchMm: state.board.grid_pitch_mm,
+    width: state.board.width,
+    height: state.board.height,
+    profile: state.board.profile
+  };
   let collision: string | null = null;
   for (const part of state.part_insts) {
     const def = state.part_defs.find((item) => item.id === part.def_id);
@@ -652,7 +663,8 @@ function parseViewState(stateJson: string): { board: Board; nets: Net[]; wires: 
     board: {
       gridPitchMm: state.board.grid_pitch_mm,
       width: state.board.width,
-      height: state.board.height
+      height: state.board.height,
+      profile: state.board.profile
     },
     nets: state.nets.map((net) => ({
       id: net.id,
@@ -722,7 +734,8 @@ export async function createInitialCoreStateJson(board: Board, partDefs: PartDef
   state.board = {
     grid_pitch_mm: board.gridPitchMm,
     width: board.width,
-    height: board.height
+    height: board.height,
+    profile: board.profile
   };
   let stateJson = JSON.stringify(state);
   if (partDefs.length > 0) {
@@ -761,11 +774,12 @@ export function commandAssignNetColorJson(netId: string, color: string | null): 
   });
 }
 
-export function commandResizeBoardJson(width: number, height: number): string {
+export function commandResizeBoardJson(width: number, height: number, profile?: Board["profile"]): string {
   return JSON.stringify({
     ResizeBoard: {
       width,
-      height
+      height,
+      profile
     }
   });
 }
