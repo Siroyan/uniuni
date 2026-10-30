@@ -355,3 +355,8 @@ Webの形状・穴データは `web/src/boardPresets.ts` にまとめ、Canvas�
 `draw-module-parts.mjs` は既存と同じ8px/ピッチのPNGを生成し、`embed-part-art.mjs` で埋め込む。
 DC-DCはCN2の逆順を維持し、負のoccupiedで本体の張り出しを含める。MCP25625は11ピン一列で垂直基板を上から見た11×2セルの投影とし、平置き寸法を占有面積に使わない。
 出典、採用リビジョン、クリアランスの近似は `doc/parts/power-can-modules.md` を参照。
+
+## 17. Waveshare降圧モジュール（カタログv12）
+
+`defaultParts.ts` の `waveshareBuckPartDef` と `addMissingWaveshareBuck` を起動時v12移行で適用する。上面PNGは `draw-module-parts.mjs` で生成する。
+指定品は29035のSMD／半穴版で、入力ピッチは3.5mm。整数グリッドへ直接実装可能とは扱わず、Wiredという名前と出典文書で配線接続用の近似モデルであることを示す。
