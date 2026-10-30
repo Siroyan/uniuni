@@ -112,7 +112,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
   }, project.part_defs);
 
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(41);
+  await expect(page.locator(".part-card img")).toHaveCount(43);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await expect(editor.getByText("core is not ready")).toBeHidden();
   await editor.getByRole("button", { name: "Clear Image" }).click();
@@ -128,9 +128,9 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([10, null]);
+  })).toEqual([11, null]);
   await page.reload();
-  await expect(page.locator(".part-card img")).toHaveCount(40);
+  await expect(page.locator(".part-card img")).toHaveCount(42);
 });
 
 test("電解コンデンサの旧配置はピンを動かさず更新し、基板端だけ保留する", async ({ page }) => {
@@ -214,8 +214,32 @@ test("電解コンデンサの旧配置はピンを動かさず更新し、基�
   await expect(canvas).toHaveAttribute("height", "24");
   await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", currentArt!);
 
-  // Wait for the app's debounced snapshot save before injecting the old placement.
-  await page.waitForTimeout(350);
+  // Fixture writes must follow the app's delayed save, or it can overwrite the fixture.
+  // This fixture migrates one capacitor + 10 XH + 3 datasheet + 1 resistor + 2 modules.
+  const waitForSavedCap = async (atX: number | null, occupiedCount: number): Promise<void> => {
+    await expect.poll(() => page.evaluate(async (capId) => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("uniuni-db");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        return await new Promise<unknown>((resolve, reject) => {
+          const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
+          read.onerror = () => reject(read.error);
+          read.onsuccess = () => {
+            const state = read.result ? JSON.parse(read.result.coreStateJson) : null;
+            resolve(state ? {
+              definitionCount: state.part_defs.length,
+              positions: state.part_insts.map((inst: { at: { x: number; y: number } }) => inst.at),
+              occupied: state.part_defs.find((def: { id: string }) => def.id === capId)?.occupied.length
+            } : null);
+          };
+        });
+      } finally { db.close(); }
+    }, cap.id)).toEqual({ definitionCount: 17, positions: atX === null ? [] : [{ x: atX, y: 5 }], occupied: occupiedCount });
+  };
+  await waitForSavedCap(null, 12);
 
   const restoreOldPlaced = async (atX: number): Promise<void> => page.evaluate(async ({ legacyDef, savedProject, atX }) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -256,6 +280,7 @@ test("電解コンデンサの旧配置はピンを動かさず更新し、基�
   };
   expect(migratedProject.part_insts[0].at).toEqual({ x: 4, y: 5 });
 
+  await waitForSavedCap(4, 12);
   await restoreOldPlaced(0);
   await page.reload();
   await expect(editor.getByText("core is not ready")).toBeHidden();
@@ -263,6 +288,7 @@ test("電解コンデンサの旧配置はピンを動かさず更新し、基�
   await expect(canvas).toHaveAttribute("width", "16");
   await expect(canvas).toHaveAttribute("height", "16");
   await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", legacyTopViewArt["capacitor-electrolytic"]);
+  await waitForSavedCap(0, 4);
 
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -331,7 +357,7 @@ test("画像付きのv2カタログには不足する部品を追加し、後の
   }, { defs: project.part_defs.slice(0, 7), images: sources });
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("41 items");
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Axial" }).locator("img")).toHaveAttribute("src", sources[1]!);
   for (const name of ["Diode Axial", "LED 5mm", "Transistor TO-92", "DIP-8 IC", "Terminal Block 2P", "Push Button 2P"]) {
     await expect(page.locator(".part-card").filter({ hasText: name }).locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
@@ -339,9 +365,9 @@ test("画像付きのv2カタログには不足する部品を追加し、後の
   await page.getByRole("complementary", { name: "Part Editor" }).locator("select.net-select").first()
     .selectOption({ label: "Push Button 2P" });
   await page.getByRole("complementary", { name: "Part Editor" }).getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
 });
 
 test("v3カタログの1x2ヘッダーを描き直し、ずれたコンデンサ画像を補正する", async ({ page }) => {
@@ -399,7 +425,7 @@ test("v3カタログの1x2ヘッダーを描き直し、ずれたコンデンサ
   }, { defs: project.part_defs, sketch: customSketch, capArt: legacyCapacitor });
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("41 items");
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
   await expect(headerImage).toHaveAttribute("src", expectedHeader!);
   await expect(capacitorImage).toHaveAttribute("src", expectedCapacitor!);
 });

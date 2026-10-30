@@ -232,7 +232,7 @@ test("部品を連続配置できる", async ({ page }) => {
 test("ピンヘッダーを選んで配置できる", async ({ page }) => {
   await openApp(page);
   const library = await exportProject(page);
-  expect(library.part_defs).toHaveLength(41);
+  expect(library.part_defs).toHaveLength(43);
   const header = library.part_defs.find((def) => def.name === "Pin Header 2x3");
   expect(header?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
     ["1", 0, 0], ["2", 1, 0],
@@ -280,14 +280,14 @@ test("v9ライブラリへ2穴抵抗を一度だけ追加し、削除後は復�
     db.close();
   }, oldDefs);
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("41 items");
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Vertical 2-pin" }).locator("img"))
     .toHaveAttribute("src", /^data:image\/png;base64,/);
 
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await editor.locator("select.net-select").first().selectOption({ label: "Resistor Vertical 2-pin" });
   await editor.getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
   await page.reload();
   await expect(page.locator(".part-card").filter({ hasText: "Resistor Vertical 2-pin" })).toHaveCount(0);
 });
@@ -358,7 +358,7 @@ test("カテゴリで部品を絞り込み、Part Editorの変更をZIPと再読
   await openApp(page);
   const filters = page.getByRole("group", { name: "部品カテゴリ" });
   await expect(page.locator(".library-category")).toHaveCount(6);
-  await expect(page.locator(".part-card")).toHaveCount(41);
+  await expect(page.locator(".part-card")).toHaveCount(43);
   await filters.getByRole("button", { name: /IC 3/ }).click();
   await expect(page.locator(".part-card")).toHaveCount(3);
   await expect(page.locator(".part-card").filter({ hasText: "DIP-16 IC" })).toBeVisible();
@@ -549,16 +549,16 @@ test("v6の部品ライブラリへXHコネクタを追加し、削除後は復�
     db.close();
   }, oldDefs);
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("41 items");
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
   await expect(page.locator(".part-card").filter({ hasText: "XH Connector 6P Side" }).locator("img"))
     .toHaveAttribute("src", /^data:image\/png;base64,/);
   const editor = page.getByRole("complementary", { name: "Part Editor" });
   await expect(editor.getByText("core is not ready")).toBeHidden();
   await editor.locator("select.net-select").first().selectOption({ label: "XH Connector 6P Side" });
   await editor.getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
 });
 
 test("古い部品ライブラリへ一度だけ追加し、後の削除を維持する", async ({ page }) => {
@@ -580,16 +580,16 @@ test("古い部品ライブラリへ一度だけ追加し、後の削除を維�
   }, oldDefs);
 
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("41 items");
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
   const migrated = await exportProject(page);
   expect(migrated.part_defs.slice(0, 3).map((def) => def.id)).toEqual(oldDefs.map((def) => def.id));
 
   await page.locator(".editor-sidebar select.net-select").first()
     .selectOption({ label: "Pin Header 1x2" });
   await page.locator(".editor-sidebar").getByRole("button", { name: "Delete Part" }).click();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
   await page.reload();
-  await expect(page.locator(".library-header span")).toHaveText("40 items");
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
   expect((await exportProject(page)).part_defs.some((def) => def.name === "Pin Header 1x2")).toBe(false);
 });
 
@@ -710,7 +710,7 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
-  expect(project.part_defs).toHaveLength(41);
+  expect(project.part_defs).toHaveLength(43);
 });
 
 test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {
@@ -756,4 +756,76 @@ test("設計データはブラウザーに保存され、外部へ送信され�
   const project = await exportProject(page);
   expect(project.part_insts).toHaveLength(1);
   expect(externalRequests).toEqual([]);
+});
+
+test("DC-DCと垂直CANモジュールを画像付きで配置し、保存・再読込できる", async ({ page }) => {
+  await page.setViewportSize({ width: 2000, height: 1100 });
+  await openApp(page);
+  const powerCard = page.locator(".part-card").filter({ hasText: "AE-MYMGK00506ERSR-5V0" });
+  const canCard = page.locator(".part-card").filter({ hasText: "MCP25625-breakout Vertical" });
+  await expect(powerCard.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+  await expect(canCard.locator("img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+  await powerCard.click();
+  await clickGrid(page, 3, 3);
+  await canCard.click();
+  await clickGrid(page, 4, 13);
+  await page.keyboard.press("Escape");
+  const project = await exportProject(page);
+  const power = project.part_defs.find((def) => def.name === "AE-MYMGK00506ERSR-5V0")!;
+  const can = project.part_defs.find((def) => def.name === "MCP25625-breakout Vertical")!;
+  expect(power.pins).toHaveLength(12);
+  expect(can.pins.map(({ name, pos }) => [name, pos.x, pos.y])).toEqual([
+    ["SCK", 0, 0], ["SO", 1, 0], ["SI", 2, 0], ["CS", 3, 0], ["INT", 4, 0], ["RESET", 5, 0],
+    ["V_IO", 6, 0], ["V_DDA", 7, 0], ["GND", 8, 0], ["CANH", 9, 0], ["CANL", 10, 0]
+  ]);
+  expect(project.part_insts.map((inst) => [inst.def_id, inst.at])).toEqual([
+    [power.id, { x: 3, y: 3 }], [can.id, { x: 4, y: 13 }]
+  ]);
+  await expect.poll(() => page.evaluate(async () => new Promise<number>((resolve, reject) => {
+    const request = indexedDB.open("uniuni-db");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
+      read.onsuccess = () => { db.close(); resolve(read.result ? JSON.parse(read.result.coreStateJson).part_insts.length : 0); };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  }))).toBe(2);
+  await page.reload();
+  const restored = await exportProject(page);
+  expect(restored.part_insts).toEqual(project.part_insts);
+  await page.screenshot({ path: test.info().outputPath("power-can-modules.png"), fullPage: true });
+});
+
+test("v10ライブラリに2モジュールを一度追加し、編集・削除を再読込後も維持する", async ({ page }) => {
+  await openApp(page);
+  const modules = ["AE-MYMGK00506ERSR-5V0", "MCP25625-breakout Vertical"];
+  const oldDefs = (await exportProject(page)).part_defs.filter((def) => !modules.includes(def.name));
+  expect(oldDefs).toHaveLength(41);
+  await page.evaluate(async (defs) => {
+    const request = indexedDB.open("uniuni-db");
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("part_library", "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 10, partDefs: defs }, "default_library");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, oldDefs);
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("43 items");
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: modules[0] });
+  await editor.getByRole("button", { name: "Clear Image" }).click();
+  await editor.locator("select.net-select").first().selectOption({ label: modules[1] });
+  await editor.getByRole("button", { name: "Delete Part" }).click();
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
+  await page.reload();
+  await expect(page.locator(".library-header span")).toHaveText("42 items");
+  await expect(page.locator(".part-card").filter({ hasText: modules[1] })).toHaveCount(0);
+  await expect(page.locator(".part-card").filter({ hasText: modules[0] }).locator("img")).toHaveCount(0);
 });

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
-import { addBuiltInArtwork, addMissingAdditionalParts, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingVerticalResistor, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
+import { addBuiltInArtwork, addMissingAdditionalParts, addMissingModules, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingVerticalResistor, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
 import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
@@ -529,6 +529,7 @@ export function App(): JSX.Element {
             if (catalogVersion < 7) effectivePartDefs = addMissingXhConnectors(effectivePartDefs);
             if (catalogVersion < 8) effectivePartDefs = addMissingDatasheetParts(effectivePartDefs);
             if (catalogVersion < 10) effectivePartDefs = addMissingVerticalResistor(effectivePartDefs);
+            if (catalogVersion < 11) effectivePartDefs = addMissingModules(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);

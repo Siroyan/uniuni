@@ -7,8 +7,8 @@ import { categorizeParts, partCategory } from "../src/partCategories";
 import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
-test("all 41 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 41);
+test("all 43 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 43);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);
@@ -26,7 +26,7 @@ test("standing resistor uses only two adjacent board holes and migrates once", (
     [["1", 0, 0], ["2", 1, 0]]);
   assert.deepEqual(verticalResistorPartDef.occupied, [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
   assert.equal(partCategory(verticalResistorPartDef), "passive");
-  const oldCatalog = defaultPartDefs.filter((def) => def.id !== verticalResistorPartDef.id);
+  const oldCatalog = defaultPartDefs.slice(0, 40);
   const migrated = addMissingVerticalResistor(oldCatalog);
   assert.equal(migrated.length, 41);
   assert.equal(migrated[40], verticalResistorPartDef);
