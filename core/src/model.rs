@@ -8,11 +8,19 @@ pub struct GridPt {
     pub y: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoardProfile {
+    #[serde(rename = "arduino-uprotoshield-i")]
+    ArduinoUProtoShieldI,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Board {
     pub grid_pitch_mm: f32,
     pub width: i32,
     pub height: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<BoardProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +88,7 @@ impl Default for ProjectState {
                 grid_pitch_mm: 2.54,
                 width: 64,
                 height: 40,
+                profile: None,
             },
             part_defs: Vec::new(),
             part_insts: Vec::new(),
@@ -104,6 +113,8 @@ pub enum Command {
     ResizeBoard {
         width: i32,
         height: i32,
+        #[serde(default)]
+        profile: Option<BoardProfile>,
     },
     AssignNetName {
         net_id: Uuid,
@@ -157,6 +168,7 @@ pub enum IssueLevel {
 }
 
 pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), String> {
+    validate_board_profile(&state.board)?;
     match cmd {
         Command::ReplacePartDefs { part_defs } => {
             validate_part_defs(&part_defs)?;
@@ -255,7 +267,11 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
             }
             Ok(())
         }
-        Command::ResizeBoard { width, height } => {
+        Command::ResizeBoard {
+            width,
+            height,
+            profile,
+        } => {
             if width < 1 || height < 1 {
                 return Err("board size must be positive".to_owned());
             }
@@ -263,7 +279,9 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
                 grid_pitch_mm: state.board.grid_pitch_mm,
                 width,
                 height,
+                profile,
             };
+            validate_board_profile(&resized)?;
 
             for wire in &state.wires {
                 for pt in &wire.path {
@@ -629,7 +647,30 @@ fn rotate_relative(pt: GridPt, rot: Rot) -> GridPt {
 }
 
 fn is_inside_board(board: &Board, pt: GridPt) -> bool {
-    pt.x >= 0 && pt.y >= 0 && pt.x < board.width && pt.y < board.height
+    if pt.x < 0 || pt.y < 0 || pt.x >= board.width || pt.y >= board.height {
+        return false;
+    }
+    if board.profile == Some(BoardProfile::ArduinoUProtoShieldI) {
+        return match pt.y {
+            0 => (12..=19).contains(&pt.x),
+            1 => (1..=10).contains(&pt.x) || (12..=19).contains(&pt.x),
+            3..=4 => pt.x <= 19,
+            5..=16 => pt.x <= 20,
+            17 => pt.x <= 4,
+            18..=19 => pt.x <= 3 || (5..=12).contains(&pt.x) || (14..=19).contains(&pt.x),
+            _ => false,
+        };
+    }
+    true
+}
+
+fn validate_board_profile(board: &Board) -> Result<(), String> {
+    if board.profile == Some(BoardProfile::ArduinoUProtoShieldI)
+        && (board.width != 21 || board.height != 20 || (board.grid_pitch_mm - 2.54).abs() > 0.001)
+    {
+        return Err("Arduino U.PROTO SHIELD I requires 21x20 grid at 2.54mm".to_owned());
+    }
+    Ok(())
 }
 
 fn ensure_net_exists(state: &mut ProjectState, net_id: Uuid) {
@@ -673,6 +714,7 @@ mod tests {
                 grid_pitch_mm: 2.54,
                 width: 64,
                 height: 40,
+                profile: None,
             },
             part_defs: vec![PartDef {
                 id: def_id,
@@ -698,6 +740,87 @@ mod tests {
             }],
             wires: Vec::new(),
         }
+    }
+
+    #[test]
+    fn arduino_profile_has_359_editable_holes_and_preserves_identity() {
+        let mut state = ProjectState::default();
+        apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 21,
+                height: 20,
+                profile: Some(BoardProfile::ArduinoUProtoShieldI),
+            },
+        )
+        .unwrap();
+        let count = (0..20)
+            .flat_map(|y| (0..21).map(move |x| GridPt { x, y }))
+            .filter(|pt| is_inside_board(&state.board, *pt))
+            .count();
+        assert_eq!(count, 359);
+        let restored: ProjectState = serde_json::from_str(&as_json(&state)).unwrap();
+        assert_eq!(
+            restored.board.profile,
+            Some(BoardProfile::ArduinoUProtoShieldI)
+        );
+        // Main array, cut-outs, missing row, and the extra hole at (4,17).
+        for (pt, expected) in [
+            (GridPt { x: 0, y: 3 }, true),
+            (GridPt { x: 20, y: 4 }, false),
+            (GridPt { x: 20, y: 5 }, true),
+            (GridPt { x: 4, y: 17 }, true),
+            (GridPt { x: 4, y: 18 }, false),
+            (GridPt { x: 5, y: 18 }, true),
+            (GridPt { x: 1, y: 0 }, false),
+            (GridPt { x: 12, y: 0 }, true),
+            (GridPt { x: 1, y: 2 }, false),
+        ] {
+            assert_eq!(is_inside_board(&state.board, pt), expected);
+        }
+    }
+
+    #[test]
+    fn arduino_profile_rejects_invalid_resize_and_wires_without_mutation() {
+        let mut state = ProjectState::default();
+        let before = as_json(&state);
+        assert!(apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 22,
+                height: 20,
+                profile: Some(BoardProfile::ArduinoUProtoShieldI),
+            }
+        )
+        .is_err());
+        assert_eq!(before, as_json(&state));
+        apply_command(
+            &mut state,
+            Command::ResizeBoard {
+                width: 21,
+                height: 20,
+                profile: Some(BoardProfile::ArduinoUProtoShieldI),
+            },
+        )
+        .unwrap();
+        let before = as_json(&state);
+        assert!(apply_command(
+            &mut state,
+            Command::CommitWire {
+                net_id: Uuid::new_v4(),
+                path: vec![GridPt { x: 19, y: 4 }, GridPt { x: 20, y: 4 }],
+            }
+        )
+        .is_err());
+        assert_eq!(before, as_json(&state));
+        apply_command(
+            &mut state,
+            Command::CommitWire {
+                net_id: Uuid::new_v4(),
+                path: vec![GridPt { x: 19, y: 5 }, GridPt { x: 20, y: 5 }],
+            },
+        )
+        .unwrap();
     }
 
     #[test]
@@ -915,6 +1038,7 @@ mod tests {
             Command::ResizeBoard {
                 width: 80,
                 height: 50,
+                profile: None,
             },
         );
 
@@ -934,6 +1058,7 @@ mod tests {
             Command::ResizeBoard {
                 width: 5,
                 height: 5,
+                profile: None,
             },
         );
 
@@ -959,6 +1084,7 @@ mod tests {
             Command::ResizeBoard {
                 width: 8,
                 height: 8,
+                profile: None,
             },
         );
 

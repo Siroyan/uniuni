@@ -15,7 +15,7 @@
 MVP Step1〜Step7 は完了している。
 
 実装済みの主要機能:
-- 基板サイズの任意設定と秋月A/B/Cプリセット
+- 基板サイズの任意設定と秋月A/B/C・Arduino U.PROTO SHIELD Iプリセット
 - 部品配置/移動/回転/削除
 - 手動配線（1ステップ Manhattan）と配線削除
 - Net 追加/改名、Pin への Net 割当
@@ -306,7 +306,7 @@ cd core && cargo test
   - `core check + test`
     - `cd core && cargo check`
     - `cd core && cargo test`
-  - `web e2e regression`
+  - `web e2e regression`（Ubuntu 24.04固定。Playwright 1.58.2はUbuntu 26.04非対応）
     - `npm ci`
     - `npx playwright install --with-deps chromium`
     - `npm run test:e2e -w web`
@@ -316,3 +316,11 @@ cd core && cargo test
 - 仕様: [specification_ja.md](./specification_ja.md)
 - 進捗: [progress.md](./progress.md)
 - 利用方法: [README.md](../README.md)
+
+## 15. 専用基板プロファイル
+
+`board.profile` / Core `BoardProfile` で Arduino U.PROTO SHIELD I を識別する。
+`ResizeBoard` は省略可能な `profile` を受け取り、指定がなければ通常の長方形へ戻す。
+Coreは専用寸法・ピッチと利用可能な穴位置を検証し、FallbackとImport検証も同じ制約を適用する。
+Webの形状・穴データは `web/src/boardPresets.ts` にまとめ、Canvasは外形と369穴を描画する。
+寸法一致によるArduinoプロファイルの自動判定は行わない。

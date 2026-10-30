@@ -1,3 +1,4 @@
+import { isBoardPoint } from "./boardPresets";
 import type { Board, GridPt, PartDef, PartInst, Rot, Wire } from "./types";
 
 export function rotateRelative(pt: GridPt, rot: Rot): GridPt {
@@ -28,7 +29,7 @@ export function absolutePins(def: PartDef, inst: PartInst): GridPt[] {
 }
 
 export function isInsideBoard(board: Board, pt: GridPt): boolean {
-  return pt.x >= 0 && pt.y >= 0 && pt.x < board.width && pt.y < board.height;
+  return isBoardPoint(board, pt);
 }
 
 export function canPlacePart(

@@ -1,3 +1,5 @@
+import { isBoardPoint, validateBoardProfile } from "./boardPresets";
+import type { Board } from "./types";
 type RecordValue = Record<string, unknown>;
 type Point = { x: number; y: number };
 
@@ -47,7 +49,9 @@ export function validateProjectStateJson(json: string): void {
   const height = integer(board.height, "board.height");
   if (width < 1 || height < 1) throw new Error("board size must be positive");
   if (typeof board.grid_pitch_mm !== "number" || !Number.isFinite(board.grid_pitch_mm) || board.grid_pitch_mm <= 0) throw new Error("invalid board.grid_pitch_mm");
-  const inside = (pt: Point): boolean => pt.x >= 0 && pt.y >= 0 && pt.x < width && pt.y < height;
+  const viewBoard: Board = { width, height, gridPitchMm: board.grid_pitch_mm, profile: board.profile as Board["profile"] };
+  validateBoardProfile(viewBoard);
+  const inside = (pt: Point): boolean => isBoardPoint(viewBoard, pt);
 
   const defs = new Map<string, { pins: Map<string, Point>; occupied: Point[] }>();
   const defNames = new Set<string>();
