@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const names = [
+  "waveshare-dc5-36-to-dc3v3-5-wired",
   "ae-mymgk00506ersr-5v0",
   "mcp25625-breakout-vertical",
   "resistor-axial",

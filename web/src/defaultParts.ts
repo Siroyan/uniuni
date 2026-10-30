@@ -393,6 +393,30 @@ export const modulePartDefs: PartDef[] = [
   }
 ];
 
+// 29035 is the bare/castellated version. Its 3.5 mm input pitch does not
+// fit perfboard: these are wired connection points rounded to the CAD grid.
+// Physical dimensions and terminal mapping: doc/parts/waveshare-buck-module.md.
+export const waveshareBuckPartDef: PartDef = {
+  id: "5ab3d194-02b5-5a7c-bb16-74607851dd4d",
+  name: "Waveshare DC5-36-TO-DC3V3-5 Wired",
+  category: "other",
+  pins: [
+    { name: "VIN+1", pos: { x: 0, y: 1 } },
+    { name: "VIN+2", pos: { x: 0, y: 2 } },
+    { name: "VIN-1", pos: { x: 0, y: 4 } },
+    { name: "VIN-2", pos: { x: 0, y: 5 } },
+    ...["VOUT+1", "VOUT+2", "VOUT+3", "GND1", "GND2", "GND3"].map((name, i) => ({
+      name, pos: { x: 13, y: i + 1 }
+    }))
+  ],
+  occupied: occupiedRectangle(14, 7),
+  imageDataUrl: builtInPartArt["waveshare-dc5-36-to-dc3v3-5-wired"],
+  imagePixelated: true,
+  imageScale: 1,
+  imageOffsetX: 0,
+  imageOffsetY: 0
+};
+
 export const defaultPartDefs: PartDef[] = [
   {
     id: "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1",
@@ -443,7 +467,8 @@ export const defaultPartDefs: PartDef[] = [
   ...xhConnectorPartDefs,
   ...datasheetPartDefs,
   verticalResistorPartDef,
-  ...modulePartDefs
+  ...modulePartDefs,
+  waveshareBuckPartDef
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
@@ -632,6 +657,10 @@ export function addMissingVerticalResistor(existing: PartDef[]): PartDef[] {
 
 export function addMissingModules(existing: PartDef[]): PartDef[] {
   return appendMissingParts(existing, modulePartDefs);
+}
+
+export function addMissingWaveshareBuck(existing: PartDef[]): PartDef[] {
+  return appendMissingParts(existing, [waveshareBuckPartDef]);
 }
 
 function appendMissingParts(existing: PartDef[], candidates: PartDef[]): PartDef[] {

@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Top-view pixel art at eight pixels per 2.54 mm board hole.
-// Sources and projection assumptions: doc/parts/power-can-modules.md.
+// Sources and projection assumptions: doc/parts/power-can-modules.md
+// and doc/parts/waveshare-buck-module.md.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const color = {
   edge: [39, 55, 70, 255], blue: [67, 91, 110, 255], blueLight: [105, 132, 147, 255],
@@ -115,3 +116,45 @@ function verticalCanModule() {
 
 await writeFile(path.join(root, "web/src/assets/parts/ae-mymgk00506ersr-5v0.png"), powerModule());
 await writeFile(path.join(root, "web/src/assets/parts/mcp25625-breakout-vertical.png"), verticalCanModule());
+
+// Bare Waveshare 29035: rounded wire connection locations, not a direct-fit header.
+function waveshareBuck() {
+  const c = canvas(112, 56);
+  const { rect, disc } = c;
+  const black = [30, 34, 38, 255], gray = [107, 110, 109, 255];
+  rect(4, 3, 108, 53, color.edge);
+  rect(5, 4, 107, 52, black);
+  rect(5, 4, 107, 5, color.silver);
+  rect(5, 51, 107, 52, color.silver);
+  // Protection diode, MP9447 controller, and output inductor from the top photo.
+  rect(30, 7, 52, 15, color.silver);
+  rect(33, 8, 49, 14, black);
+  rect(35, 20, 49, 33, color.edge);
+  rect(37, 21, 47, 32, color.blueDark);
+  rect(61, 11, 95, 43, color.silver);
+  rect(62, 12, 94, 42, gray);
+  // "100" inductor marking.
+  rect(70, 23, 71, 32, black);
+  for (const x of [75, 83]) {
+    rect(x, 23, x + 5, 32, black);
+    rect(x + 1, 24, x + 4, 31, gray);
+  }
+  for (const [x, y] of [[24, 20], [24, 32], [33, 40], [44, 40], [56, 45], [70, 45], [84, 45]]) {
+    rect(x, y, x + 7, y + 6, color.silver);
+    rect(x + 1, y + 1, x + 6, y + 5, [174, 155, 107, 255]);
+  }
+  // Ten through holes and adjacent castellations, with CAD-grid-rounded spacing.
+  for (const [x, rows] of [[12, [12, 20, 36, 44]], [100, [12, 20, 28, 36, 44, 52]]]) {
+    for (const y of rows) {
+      rect(x === 12 ? 4 : 105, y - 2, x === 12 ? 8 : 108, y + 3, color.gold);
+      disc(x, y, 3, color.gold);
+      disc(x, y, 1, black);
+      const edgeX = x === 12 ? 4 : 108;
+      disc(edgeX, y, 3, color.gold);
+      disc(edgeX, y, 1, black);
+    }
+  }
+  rect(3, 11, 6, 14, color.red); // Upper VIN+ castellated wire connection.
+  return c.png();
+}
+await writeFile(path.join(root, "web/src/assets/parts/waveshare-dc5-36-to-dc3v3-5-wired.png"), waveshareBuck());
