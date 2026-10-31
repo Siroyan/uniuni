@@ -353,7 +353,7 @@ Webの形状・穴データは `web/src/boardPresets.ts` にまとめ、Canvas�
 
 `defaultParts.ts` の `modulePartDefs` に2部品を定義。`addMissingModules` を起動時のv11移行で一度だけ適用する。
 `draw-module-parts.mjs` は既存と同じ8px/ピッチのPNGを生成し、`embed-part-art.mjs` で埋め込む。
-DC-DCはCN2の逆順を維持し、負のoccupiedで本体の張り出しを含める。MCP25625は11ピン一列で垂直基板を上から見た11×2セルの投影とし、平置き寸法を占有面積に使わない。
+DC-DCはCN2の逆順を維持する。Occupiedはv14で11×6へ縮小した。MCP25625は11ピン一列で垂直基板を上から見た11×2セルの投影とし、平置き寸法を占有面積に使わない。
 出典、採用リビジョン、クリアランスの近似は `doc/parts/power-can-modules.md` を参照。
 
 ## 17. Waveshare降圧モジュール（カタログv12）
@@ -370,3 +370,8 @@ Webプレビュー、Fallback、Import/復元の検証も同じPin基準へ統�
 SPDTは `updateBuiltInTopViews` で標準3×2を3×3へ更新する。旧画像は `legacyTopViewArt.ts` に保持し、
 `node scripts/draw-slide-switch.mjs` で24×24 PNGの下側へ透明な8pxを追加して、既存の絵・Pin原点を保つ。
 利用者の画像や表示変換は保持し、独自のOccupied形状は変更しない。拡張で衝突する既存配置は更新を保留する。
+
+## 19. DC-DC占有範囲の縮小（カタログv14）
+
+`modulePartDefs[0]` のOccupiedは11×6。`draw-module-parts.mjs` は元の絵を(-8,-8)px移動して88×48pxへ切り詰め、各ピンを同じ基板座標へ描く。
+旧13×8形状と画像を `oldTopViewFootprints` / `legacyTopViewArt` に保持する。`updateBuiltInTopViews` はSPDTと同様のOccupiedだけの変更として安全に更新し、Pin、配置原点、配線、独自画像・表示変換を維持する。

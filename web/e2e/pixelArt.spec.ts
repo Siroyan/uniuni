@@ -128,7 +128,7 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([13, null]);
+  })).toEqual([14, null]);
   await page.reload();
   await expect(page.locator(".part-card img")).toHaveCount(43);
 });
