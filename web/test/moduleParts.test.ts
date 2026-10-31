@@ -40,8 +40,8 @@ test("module catalog migration appends once and preserves user definitions by ID
 
 test("module placement rejects body overlap and preserves pin row under rotation", async () => {
   const initial = await createInitialCoreStateJson({ width: 30, height: 30, gridPitchMm: 2.54 }, modulePartDefs);
-  // The DC-DC body overhangs its first pin and cannot sit at board (0,0).
-  await assert.rejects(applyCoreCommandJson(initial, commandAddPartInstJson(power.id, { x: 0, y: 0 }, "Deg0", "U1")));
+  // The DC-DC body may overhang the board while every pin stays inside.
+  await applyCoreCommandJson(initial, commandAddPartInstJson(power.id, { x: 0, y: 0 }, "Deg0", "U1"));
   const placed = await applyCoreCommandJson(initial, commandAddPartInstJson(power.id, { x: 3, y: 3 }, "Deg0", "U1"));
   await assert.rejects(applyCoreCommandJson(placed, commandAddPartInstJson(can.id, { x: 4, y: 4 }, "Deg0", "U2")));
   const withCan = await applyCoreCommandJson(placed, commandAddPartInstJson(can.id, { x: 4, y: 13 }, "Deg0", "U2"));

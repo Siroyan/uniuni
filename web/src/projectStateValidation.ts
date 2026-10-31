@@ -102,10 +102,13 @@ export function validateProjectStateJson(json: string): void {
       if (!def.pins.has(pin)) throw new Error("assigned pin not found");
       if (!netIds.has(uuid(net, "assigned net id"))) throw new Error("assigned net not found");
     }
+    for (const rel of def.pins.values()) {
+      const turn = rotated(rel, inst.rot as string);
+      if (!inside({ x: at.x + turn.x, y: at.y + turn.y })) throw new Error("part pin outside board");
+    }
     for (const rel of def.occupied) {
       const turn = rotated(rel, inst.rot as string);
       const pt = { x: at.x + turn.x, y: at.y + turn.y };
-      if (!inside(pt)) throw new Error("part occupancy outside board");
       unique(occupied, `${pt.x}:${pt.y}`, "part occupancy");
     }
   }
