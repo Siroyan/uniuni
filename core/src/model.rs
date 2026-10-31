@@ -318,8 +318,8 @@ pub fn apply_command(state: &mut ProjectState, cmd: Command) -> Result<(), Strin
                 else {
                     return Err("part definition not found".to_owned());
                 };
-                for occ in absolute_occupied_points(part_def, part.at, part.rot) {
-                    if !is_inside_board(&resized, occ) {
+                for pin in &part_def.pins {
+                    if !is_inside_board(&resized, absolute_pin_point(part.at, part.rot, pin.pos)) {
                         return Err("board resize would place part outside board".to_owned());
                     }
                 }
@@ -384,10 +384,8 @@ pub fn rebuild_part_occupancy_map(state: &ProjectState) -> Result<HashMap<GridPt
         let Some(part_def) = state.part_defs.iter().find(|def| def.id == part.def_id) else {
             return Err("part definition not found".to_owned());
         };
+        validate_part_pins(&state.board, part_def, part.at, part.rot)?;
         for occ in absolute_occupied_points(part_def, part.at, part.rot) {
-            if !is_inside_board(&state.board, occ) {
-                return Err("part occupancy outside board".to_owned());
-            }
             if occ_map.insert(occ, part.id).is_some() {
                 return Err("part-part occupancy collision".to_owned());
             }
@@ -499,6 +497,15 @@ pub fn run_drc(state: &ProjectState) -> Vec<DrcIssue> {
     issues
 }
 
+fn validate_part_pins(board: &Board, def: &PartDef, at: GridPt, rot: Rot) -> Result<(), String> {
+    for pin in &def.pins {
+        if !is_inside_board(board, absolute_pin_point(at, rot, pin.pos)) {
+            return Err("part pin outside board".to_owned());
+        }
+    }
+    Ok(())
+}
+
 fn validate_part_placement(
     state: &ProjectState,
     part_def: &PartDef,
@@ -506,10 +513,8 @@ fn validate_part_placement(
     at: GridPt,
     rot: Rot,
 ) -> Result<(), String> {
+    validate_part_pins(&state.board, part_def, at, rot)?;
     for occ in absolute_occupied_points(part_def, at, rot) {
-        if !is_inside_board(&state.board, occ) {
-            return Err("part placement is outside board".to_owned());
-        }
         if part_collision_at(state, self_id, occ) {
             return Err("part placement collides with another part".to_owned());
         }
@@ -857,6 +862,51 @@ mod tests {
     }
 
     #[test]
+    fn occupied_overhang_survives_move_rotate_resize_and_definition_update() {
+        let mut state = test_state();
+        state.part_insts[0].net_assign.clear();
+        let def_id = state.part_defs[0].id;
+        let mut def = state.part_defs[0].clone();
+        def.occupied = (-1..=1).flat_map(|y| (-1..=1).map(move |x| GridPt { x, y })).collect();
+        apply_command(&mut state, Command::ReplacePartDefs { part_defs: vec![def] }).unwrap();
+        for (to, rot) in [
+            (GridPt { x: 0, y: 0 }, Rot::Deg0),
+            (GridPt { x: 3, y: 0 }, Rot::Deg90),
+            (GridPt { x: 3, y: 3 }, Rot::Deg180),
+            (GridPt { x: 0, y: 3 }, Rot::Deg270),
+        ] {
+            let id = state.part_insts[0].id;
+            apply_command(&mut state, Command::MoveRotatePartInst { part_id: id, to, rot }).unwrap();
+            assert!(!run_drc(&state).iter().any(|issue| issue.code == "PART_COLLISION"));
+        }
+        let id = state.part_insts[0].id;
+        apply_command(&mut state, Command::MovePartInst { part_id: id, to: GridPt { x: 0, y: 0 } }).unwrap();
+        apply_command(&mut state, Command::ResizeBoard { width: 1, height: 1, profile: None }).unwrap();
+        let before = as_json(&state);
+        assert!(apply_command(&mut state, Command::MovePartInst { part_id: id, to: GridPt { x: -1, y: 0 } }).is_err());
+        assert_eq!(as_json(&state), before);
+        assert_eq!(state.part_defs[0].id, def_id);
+    }
+
+    #[test]
+    fn occupied_collision_outside_the_board_still_rejects_placement() {
+        let mut state = test_state();
+        state.part_defs[0].occupied = vec![GridPt { x: -1, y: -1 }];
+        let mut other = state.part_defs[0].clone();
+        other.id = Uuid::new_v4();
+        other.name = "Other".to_owned();
+        other.occupied = vec![GridPt { x: -2, y: -1 }];
+        let def_id = other.id;
+        state.part_defs.push(other);
+        let before = as_json(&state);
+        let result = apply_command(&mut state, Command::AddPartInst {
+            def_id, at: GridPt { x: 1, y: 0 }, rot: Rot::Deg0, refdes: "U2".to_owned(),
+        });
+        assert!(result.unwrap_err().contains("collides"));
+        assert_eq!(as_json(&state), before);
+    }
+
+    #[test]
     fn delete_net_removes_its_wires_and_pin_assignments_only() {
         let mut state = test_state();
         let deleted_net = state.nets[0].id;
@@ -1099,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn replace_part_defs_rolls_back_when_existing_part_goes_outside_board() {
+    fn replace_part_defs_rolls_back_when_existing_pin_goes_outside_board() {
         let mut state = test_state();
         let before_json = as_json(&state);
         let def_id = state.part_defs[0].id;
@@ -1112,7 +1162,7 @@ mod tests {
                     name: "Test Part".to_owned(),
                     pins: vec![PinDef {
                         name: "1".to_owned(),
-                        pos: GridPt { x: 0, y: 0 },
+                        pos: GridPt { x: -1, y: 0 },
                     }],
                     occupied: vec![GridPt { x: -1, y: 0 }],
                 }],

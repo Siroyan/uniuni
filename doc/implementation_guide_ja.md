@@ -145,7 +145,7 @@ uniuni/
   - Pin/Occupied最小件数
   - Pin名/Pin座標/Occupied座標の重複
 - Part配置整合:
-  - ボード外配置禁止
+  - Pinの基板外・接続不可位置への配置を禁止。Occupiedの基板外への張り出しは許可
   - Part間衝突禁止
 - Wire整合:
   - 最短長（2点以上）
@@ -154,7 +154,7 @@ uniuni/
   - 自動確定時に異なる既存Netを接続しない
 - Board整合:
   - 正のサイズのみ許可
-  - 既存部品/配線が盤外になるサイズ変更を拒否
+  - 既存Pin/配線が盤外または接続不可位置になるサイズ変更を拒否。Occupiedの盤外化は許可
 - `ReplacePartDefs` は失敗時ロールバック
 
 ### 6.5 DRC
@@ -224,7 +224,7 @@ uniuni/
 - 旧スキーマ（v1）読込時は v2 へ移行
 - 内蔵カタログv4への初回更新時は不足する6部品を追加し、変更のないCapacitor Radialの旧標準画像とPin Header 1x2の画像を差し替える。後者は利用者の絵も描き直し指定に従って差し替える
 - 内蔵カタログv5への初回更新時は不足する8部品を追加し、カテゴリ未設定の部品にIDごとの既定カテゴリを設定する。利用者が設定済みのカテゴリは維持する。`partCategories.ts` が表示順・ラベルと組み込みIDの分類を定義する
-- 内蔵カタログv6では `legacyTopViewArt.ts` の旧標準画像と一致する部品だけ真上図へ更新する。形状変更を伴う4種類の配置済みインスタンスは、回転を考慮して配置原点を補正し、ピンの絶対位置を維持する。候補の保存状態を検証し、Occupiedが基板外・他部品と衝突する場合だけ更新を保留して次回起動時に再判定する
+- 内蔵カタログv6では `legacyTopViewArt.ts` の旧標準画像と一致する部品だけ真上図へ更新する。形状変更を伴う4種類の配置済みインスタンスは、回転を考慮して配置原点を補正し、ピンの絶対位置を維持する。候補の保存状態を検証し、Pinが接続不可位置になるか、Occupiedが他部品と衝突する場合だけ更新を保留して次回起動時に再判定する
 - 内蔵カタログv7では `xhConnectorPartDefs` の2P～6P・Top/Sideを不足分だけ追加する。`scripts/draw-xh-connectors.mjs` がJST XHのKiCadフットプリント寸法を穴8ドットのPNGへ描き、`scripts/embed-part-art.mjs` がデータURLを再生成する
 - 内蔵カタログv8では `datasheetPartDefs` のリレー、LED、SOT-23変換基板を不足分だけ追加する。`scripts/draw-datasheet-parts.mjs` は提供された3つのPDFの寸法から穴8ドットの上面PNGを生成し、`scripts/embed-part-art.mjs` がデータURLへ埋め込む。変換基板の右2穴の内部導通は現行のPartDefで表現できないため、独立したピン `3A`/`3B` として登録する
 - 内蔵カタログv9ではAZ8462-3の画像とOccupiedを6×3穴に縮める。`updateBuiltInTopViews` が旧標準画像・ピン・Occupiedに一致する保存済み部品を更新し、配置済みの場合は回転した原点補正でピンの絶対座標を維持する。変更済みの画像や形状は維持する
@@ -360,3 +360,13 @@ DC-DCはCN2の逆順を維持し、負のoccupiedで本体の張り出しを含�
 
 `defaultParts.ts` の `waveshareBuckPartDef` と `addMissingWaveshareBuck` を起動時v12移行で適用する。上面PNGは `draw-module-parts.mjs` で生成する。
 指定品は29035のSMD／半穴版で、入力ピッチは3.5mm。整数グリッドへ直接実装可能とは扱わず、Wiredという名前と出典文書で配線接続用の近似モデルであることを示す。
+
+## 18. Occupiedの盤外許可・SPDT 3×3（カタログv13）
+
+Coreは配置・移動・回転・定義差替え・ResizeBoard・DRCでPinの基板内判定を行う。
+Occupiedは基板内外を問わず全セルを占有マップへ登録し、部品同士の衝突判定を維持する。
+Webプレビュー、Fallback、Import/復元の検証も同じPin基準へ統一する。配線は引き続き全点が基板内である必要がある。
+
+SPDTは `updateBuiltInTopViews` で標準3×2を3×3へ更新する。旧画像は `legacyTopViewArt.ts` に保持し、
+`node scripts/draw-slide-switch.mjs` で24×24 PNGの下側へ透明な8pxを追加して、既存の絵・Pin原点を保つ。
+利用者の画像や表示変換は保持し、独自のOccupied形状は変更しない。拡張で衝突する既存配置は更新を保留する。

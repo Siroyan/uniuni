@@ -7,7 +7,7 @@ import { legacyTopViewArt } from "../src/legacyTopViewArt";
 
 type ExportedProject = {
   part_defs: Array<{ id: string; name: string; pins: Array<{ name: string; pos: { x: number; y: number } }>; occupied: unknown[] }>;
-  part_insts: Array<{ def_id: string; refdes: string; at: { x: number; y: number }; net_assign: Record<string, string> }>;
+  part_insts: Array<{ def_id: string; refdes: string; rot: string; at: { x: number; y: number }; net_assign: Record<string, string> }>;
   nets: Array<{ id: string; name: string }>;
   wires: Array<{ net_id: string; path: unknown[] }>;
 };
@@ -888,4 +888,91 @@ test("Waveshare降圧モジュールを旧ライブラリに追加し、配置�
   await page.reload();
   await expect(page.locator(".library-header span")).toHaveText("43 items");
   await expect(card).toHaveCount(0);
+});
+
+test("SPDTの旧3x2定義を3x3へ更新し、Occupiedが基板外でも移動・回転・保存できる", async ({ page }) => {
+  await openApp(page);
+  const original = await exportProject(page);
+  const spdt = original.part_defs.find((def) => def.name === "Slide Switch SPDT")!;
+  // Wait for the initial autosave before replacing it with the migration fixture.
+  await expect.poll(() => page.evaluate(async (expected) => new Promise<boolean>((resolve, reject) => {
+    const request = indexedDB.open("uniuni-db");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
+      read.onsuccess = () => { db.close(); resolve(read.result?.coreStateJson ? JSON.stringify(JSON.parse(read.result.coreStateJson)) === JSON.stringify(expected) : false); };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  }), original)).toBe(true);
+  const legacyDefs = original.part_defs.map((def) => def.id === spdt.id ? {
+    ...def, occupied: (def.occupied as Array<{ x: number; y: number }>).filter((pt) => pt.y < 2),
+    imageDataUrl: legacyTopViewArt["slide-switch-spdt"]
+  } : def);
+  await page.evaluate(async ({ defs, saved, defId }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("uniuni-db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(["part_library", "project_snapshots"], "readwrite");
+      tx.objectStore("part_library").put({ schemaVersion: 2, builtInCatalogVersion: 12, partDefs: defs }, "default_library");
+      tx.objectStore("project_snapshots").put({ schemaVersion: 1, selectedNetId: null, coreStateJson: JSON.stringify({ ...saved,
+        board: { width: 3, height: 3, grid_pitch_mm: 2.54 }, part_defs: defs,
+        part_insts: [{ id: crypto.randomUUID(), def_id: defId, at: { x: 0, y: 0 }, rot: "Deg0", refdes: "SW1", net_assign: {} }]
+      }) }, "active_project");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, { defs: legacyDefs, saved: original, defId: spdt.id });
+  await page.reload();
+  await expect(page.getByText(/現在: 3x3 grid/)).toBeVisible();
+  const editor = page.getByRole("complementary", { name: "Part Editor" });
+  await editor.locator("select.net-select").first().selectOption({ label: "Slide Switch SPDT" });
+  await expect(editor.getByRole("img", { name: /ドット絵キャンバス/ })).toHaveAttribute("height", "24");
+  const migrated = await exportProject(page);
+  expect(migrated.part_defs.find((def) => def.id === spdt.id)?.occupied).toHaveLength(9);
+  expect(migrated.part_insts[0].at).toEqual({ x: 0, y: 0 });
+  await clickGrid(page, 1, 1);
+  await page.keyboard.press("m");
+  await clickGrid(page, 0, -1);
+  await expect(page.locator(".workspace-hint span").last()).toHaveText("選択: SW1");
+  const top = await exportProject(page);
+  expect(top.part_insts[0].at).toEqual({ x: 0, y: -1 });
+  // Shrinking is allowed while the pins fit, even when both body edges overhang.
+  await page.locator("#board-height-input").fill("1");
+  await page.getByRole("button", { name: "Apply Size" }).click();
+  await expect(page.getByText(/現在: 3x1 grid/)).toBeVisible();
+  await page.locator("#board-height-input").fill("3");
+  await page.getByRole("button", { name: "Apply Size" }).click();
+  await expect(page.getByText(/現在: 3x3 grid/)).toBeVisible();
+  for (const [x, y, rot] of [[1, 0, "Deg90"], [2, 3, "Deg180"], [1, 2, "Deg270"]] as const) {
+    await page.keyboard.press("m");
+    await page.locator("canvas.board-canvas").hover({ position: gridPosition(x, y) });
+    await page.keyboard.press("r");
+    await clickGrid(page, x, y);
+    const moved = await exportProject(page);
+    expect(moved.part_insts[0].at).toEqual({ x, y });
+    expect(moved.part_insts[0].rot).toBe(rot);
+  }
+  // The current pins lie at x=2, so a 2-column board would put them outside.
+  await page.locator("#board-width-input").fill("2");
+  await page.getByRole("button", { name: "Apply Size" }).click();
+  await expect(page.locator(".error-text")).toContainText("Error:");
+  await expect(page.getByText(/現在: 3x3 grid/)).toBeVisible();
+  await expect.poll(() => page.evaluate(async () => new Promise<unknown>((resolve) => {
+    const request = indexedDB.open("uniuni-db");
+    request.onsuccess = () => {
+      const db = request.result;
+      const read = db.transaction("project_snapshots").objectStore("project_snapshots").get("active_project");
+      read.onsuccess = () => { db.close(); const state = JSON.parse(read.result.coreStateJson); resolve(state.part_insts[0]?.rot); };
+    };
+  }))).toBe("Deg270");
+  await page.reload();
+  const restored = await exportProject(page);
+  expect(restored.part_insts[0].at).toEqual({ x: 1, y: 2 });
+  expect(restored.part_insts[0].rot).toBe("Deg270");
+  await expect(page.getByText("DRC Issues: 0", { exact: true })).toBeVisible();
 });

@@ -200,13 +200,13 @@ test("top-view migration moves placed stock parts without moving their pins and 
   assert.deepEqual(projectSavedFirst.partDefs[0].pins, cap.pins);
   assert.equal(projectSavedFirst.coreStateJson, placed.coreStateJson);
 
-  const blocked = updateBuiltInTopViews([oldCap], snapshot(0));
-  assert.equal(blocked.partDefs[0], oldCap);
-  assert.equal(blocked.coreStateJson, snapshot(0));
-  assert.deepEqual(blocked.blockedNames, [cap.name]);
-  const blockedAfterLibrarySave = updateBuiltInTopViews([cap], snapshot(0));
-  assert.deepEqual(blockedAfterLibrarySave.partDefs[0].pins, oldCap.pins);
-  assert.equal(blockedAfterLibrarySave.partDefs[0].imageDataUrl, oldCap.imageDataUrl);
+  const overhanging = updateBuiltInTopViews([oldCap], snapshot(0));
+  assert.deepEqual(overhanging.partDefs[0].occupied, cap.occupied);
+  assert.deepEqual(JSON.parse(overhanging.coreStateJson!).part_insts[0].at, { x: -1, y: 5 });
+  assert.deepEqual(overhanging.blockedNames, []);
+  const afterLibrarySave = updateBuiltInTopViews([cap], snapshot(0));
+  assert.deepEqual(afterLibrarySave.partDefs[0].pins, cap.pins);
+  assert.deepEqual(JSON.parse(afterLibrarySave.coreStateJson!).part_insts[0].at, { x: -1, y: 5 });
   const upgraded = updateBuiltInTopViews([oldCap, oldLed], null);
   assert.deepEqual(upgraded.partDefs[0].pins, cap.pins);
   assert.deepEqual(upgraded.partDefs[1].occupied, led.occupied);

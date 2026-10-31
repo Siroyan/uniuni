@@ -128,12 +128,12 @@ test("旧ライブラリには初期部品の絵を一度だけ追加し、利�
     });
     db.close();
     return [snapshot.builtInCatalogVersion, snapshot.partDefs[0].imageAssetId];
-  })).toEqual([12, null]);
+  })).toEqual([13, null]);
   await page.reload();
   await expect(page.locator(".part-card img")).toHaveCount(43);
 });
 
-test("電解コンデンサの旧配置はピンを動かさず更新し、基板端だけ保留する", async ({ page }) => {
+test("電解コンデンサの旧配置は基板端でもピンを動かさず更新する", async ({ page }) => {
   await page.goto("./");
   await expect(page.getByText(/Core: WASM/)).toBeVisible();
   const editor = page.getByRole("complementary", { name: "Part Editor" });
@@ -285,10 +285,10 @@ test("電解コンデンサの旧配置はピンを動かさず更新し、基�
   await page.reload();
   await expect(editor.getByText("core is not ready")).toBeHidden();
   await selector.selectOption({ label: "Capacitor Electrolytic" });
-  await expect(canvas).toHaveAttribute("width", "16");
-  await expect(canvas).toHaveAttribute("height", "16");
-  await expect(page.locator(".part-card").filter({ hasText: "Capacitor Electrolytic" }).locator("img")).toHaveAttribute("src", legacyTopViewArt["capacitor-electrolytic"]);
-  await waitForSavedCap(0, 4);
+  await expect(canvas).toHaveAttribute("width", "32");
+  await expect(canvas).toHaveAttribute("height", "24");
+  await expect(capImage).toHaveAttribute("src", currentArt!);
+  await waitForSavedCap(-1, 12);
 
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {

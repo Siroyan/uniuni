@@ -43,7 +43,7 @@ export function canPlacePart(
   if (!candidateDef) return false;
 
   const occupiedCandidate = absoluteOccupied(candidateDef, candidate);
-  if (!occupiedCandidate.every((pt) => isInsideBoard(board, pt))) {
+  if (!absolutePins(candidateDef, candidate).every((pt) => isInsideBoard(board, pt))) {
     return false;
   }
 

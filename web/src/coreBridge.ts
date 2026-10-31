@@ -79,6 +79,13 @@ function absoluteOccupied(def: CorePartDef, inst: CorePartInst): GridPt[] {
   });
 }
 
+function absolutePinPoints(def: CorePartDef, inst: CorePartInst): GridPt[] {
+  return def.pins.map((pin) => {
+    const turned = rotateRelative(pin.pos, inst.rot);
+    return { x: inst.at.x + turned.x, y: inst.at.y + turned.y };
+  });
+}
+
 function isInsideBoard(board: Board, pt: GridPt): boolean {
   return isBoardPoint(board, pt);
 }
@@ -93,7 +100,7 @@ function canPlacePart(state: CoreProjectState, candidate: CorePartInst, ignoreId
     profile: state.board.profile
   };
   const occupied = absoluteOccupied(def, candidate);
-  if (!occupied.every((pt) => isInsideBoard(board, pt))) return false;
+  if (!absolutePinPoints(def, candidate).every((pt) => isInsideBoard(board, pt))) return false;
 
   for (const part of state.part_insts) {
     if (part.id === ignoreId) continue;
@@ -138,7 +145,7 @@ function validateResizeTarget(state: CoreProjectState, width: number, height: nu
     if (!partDef) {
       throw new Error("part definition not found");
     }
-    for (const pt of absoluteOccupied(partDef, part)) {
+    for (const pt of absolutePinPoints(partDef, part)) {
       if (!isInsideBoard(resizedBoard, pt)) {
         throw new Error("board resize would place part outside board");
       }
@@ -519,10 +526,14 @@ function fallbackDrcJson(stateJson: string): string {
       collision = "part definition not found";
       break;
     }
+    if (!absolutePinPoints(def, part).every((pt) => isInsideBoard(board, pt))) {
+      collision = "part pin outside board";
+      break;
+    }
     for (const pt of absoluteOccupied(def, part)) {
       const key = `${pt.x}:${pt.y}`;
-      if (!isInsideBoard(board, pt) || occupied.has(key)) {
-        collision = isInsideBoard(board, pt) ? "part-part occupancy collision" : "part occupancy outside board";
+      if (occupied.has(key)) {
+        collision = "part-part occupancy collision";
         break;
       }
       occupied.add(key);
