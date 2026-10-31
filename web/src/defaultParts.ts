@@ -368,8 +368,8 @@ export const modulePartDefs: PartDef[] = [
         name: `CN2.${index + 1} ${signal}`, pos: { x: 10, y: 5 - index }
       }))
     ],
-    // Include cells touched by the 28.5 x 16 mm body beyond the pin rows.
-    occupied: occupiedRectangle(13, 8).map(({ x, y }) => ({ x: x - 1, y: y - 1 })),
+    // Match the illustration area without the former one-cell outer margin.
+    occupied: occupiedRectangle(11, 6),
     imageDataUrl: builtInPartArt["ae-mymgk00506ersr-5v0"],
     imagePixelated: true,
     imageScale: 1,
@@ -472,6 +472,7 @@ export const defaultPartDefs: PartDef[] = [
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
+  "85e0e1ec-a1e8-5bb0-aefe-a6963c6d0735": "ae-mymgk00506ersr-5v0",
   "4bb91cd4-5cee-4cc1-97b4-e75305b5f101": "slide-switch-spdt",
   "fabe901c-a809-5a44-b19f-4d99248069ab": "az8462-3",
   "77750a90-4823-4cdf-bfea-a3b36e7872a8": "capacitor-electrolytic",
@@ -484,6 +485,10 @@ const topViewArtById: Record<string, string> = {
 };
 
 const oldTopViewFootprints: Record<string, Pick<PartDef, "pins" | "occupied">> = {
+  "85e0e1ec-a1e8-5bb0-aefe-a6963c6d0735": {
+    pins: modulePartDefs[0].pins,
+    occupied: occupiedRectangle(13, 8).map(({ x, y }) => ({ x: x - 1, y: y - 1 }))
+  },
   "4bb91cd4-5cee-4cc1-97b4-e75305b5f101": {
     pins: [{ name: "1", pos: { x: 0, y: 1 } }, { name: "C", pos: { x: 1, y: 1 } }, { name: "2", pos: { x: 2, y: 1 } }],
     occupied: occupiedRectangle(3, 2)
@@ -522,7 +527,7 @@ type SavedTopViewState = {
 
 type TopViewUpdate = { partDefs: PartDef[]; coreStateJson: string | null; blockedNames: string[] };
 
-/** Upgrade stock geometry only when pins and collisions remain valid; preserve SPDT custom artwork. */
+/** Upgrade stock geometry only when pins and collisions remain valid; preserve custom artwork for occupied-only changes. */
 export function updateBuiltInTopViews(existing: PartDef[], coreStateJson: string | null): TopViewUpdate {
   const canonicalById = new Map(defaultPartDefs.map((def) => [def.id, def]));
   let stateJson = coreStateJson;
@@ -539,16 +544,16 @@ export function updateBuiltInTopViews(existing: PartDef[], coreStateJson: string
   const updated = existing.map((def) => {
     const name = topViewArtById[def.id];
     const canonical = canonicalById.get(def.id);
-    const isSpdt = name === "slide-switch-spdt";
+    const isOccupancyOnlyUpdate = name === "slide-switch-spdt" || name === "ae-mymgk00506ersr-5v0";
     if (!name || !canonical || def.name !== canonical.name
-      || (!isSpdt && ((def.imageScale ?? 1) !== 1 || (def.imageOffsetX ?? 0) !== 0 || (def.imageOffsetY ?? 0) !== 0))) return def;
+      || (!isOccupancyOnlyUpdate && ((def.imageScale ?? 1) !== 1 || (def.imageOffsetX ?? 0) !== 0 || (def.imageOffsetY ?? 0) !== 0))) return def;
     const oldFootprint = oldTopViewFootprints[def.id] ?? canonical;
     const matchesFootprint = (candidate: Pick<PartDef, "pins" | "occupied">, reference: Pick<PartDef, "pins" | "occupied">): boolean =>
       JSON.stringify(candidate.pins) === JSON.stringify(reference.pins)
       && JSON.stringify(candidate.occupied) === JSON.stringify(reference.occupied);
-    const preserveSpdtImage = isSpdt && def.imageDataUrl !== legacyTopViewArt[name] && def.imageDataUrl !== canonical.imageDataUrl;
-    const hasOldStock = (isSpdt || def.imageDataUrl === legacyTopViewArt[name]) && matchesFootprint(def, oldFootprint);
-    const hasNewStock = (isSpdt || def.imageDataUrl === canonical.imageDataUrl) && matchesFootprint(def, canonical);
+    const preserveCustomImage = isOccupancyOnlyUpdate && def.imageDataUrl !== legacyTopViewArt[name] && def.imageDataUrl !== canonical.imageDataUrl;
+    const hasOldStock = (isOccupancyOnlyUpdate || def.imageDataUrl === legacyTopViewArt[name]) && matchesFootprint(def, oldFootprint);
+    const hasNewStock = (isOccupancyOnlyUpdate || def.imageDataUrl === canonical.imageDataUrl) && matchesFootprint(def, canonical);
     if (!hasOldStock && !hasNewStock) return def;
     if (oldTopViewFootprints[def.id] && validSavedState && stateJson) {
       const candidate = JSON.parse(stateJson) as SavedTopViewState;
@@ -581,7 +586,7 @@ export function updateBuiltInTopViews(existing: PartDef[], coreStateJson: string
             blockedNames.push(def.name);
             if (hasOldStock) return def;
             return { ...def, pins: oldFootprint.pins, occupied: oldFootprint.occupied,
-              imageDataUrl: preserveSpdtImage ? def.imageDataUrl : legacyTopViewArt[name] };
+              imageDataUrl: preserveCustomImage ? def.imageDataUrl : legacyTopViewArt[name] };
           }
         }
       }
@@ -591,8 +596,8 @@ export function updateBuiltInTopViews(existing: PartDef[], coreStateJson: string
       ...def,
       pins: canonical.pins.map((pin) => ({ name: pin.name, pos: { ...pin.pos } })),
       occupied: canonical.occupied.map((cell) => ({ ...cell })),
-      imageDataUrl: preserveSpdtImage ? def.imageDataUrl : canonical.imageDataUrl,
-      imagePixelated: preserveSpdtImage ? def.imagePixelated : true
+      imageDataUrl: preserveCustomImage ? def.imageDataUrl : canonical.imageDataUrl,
+      imagePixelated: preserveCustomImage ? def.imagePixelated : true
     };
   });
   const changed = updated.some((def, index) => def !== existing[index]);

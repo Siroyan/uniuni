@@ -61,10 +61,12 @@ function canvas(width, height) {
   return { rect, disc, png };
 }
 
-// The DC-DC footprint starts at (-1,-1); pin (0,0) is pixel (12,12).
+// Trim one outer cell per side: 11x6 footprint, pin (0,0) at pixel (4,4).
+// Translate the former drawing by (-8,-8) to keep artwork aligned to the pins.
 function powerModule() {
-  const c = canvas(104, 64);
-  const { rect, disc } = c;
+  const c = canvas(88, 48);
+  const rect = (x0, y0, x1, y1, fill) => c.rect(x0 - 8, y0 - 8, x1 - 8, y1 - 8, fill);
+  const disc = (x, y, radius, fill) => c.disc(x - 8, y - 8, radius, fill);
   rect(7, 7, 97, 57, color.greenEdge);
   rect(8, 8, 96, 56, color.pcb);
   rect(9, 9, 95, 10, color.pcbLight);
