@@ -1,4 +1,5 @@
-import { ARDUINO_PROFILE, isBoardPoint } from "./boardPresets";
+import { ARDUINO_PROFILE } from "./boardPresets";
+import { extendWireDraft } from "./wireDrawing";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
@@ -126,10 +127,6 @@ function nextRefdes(parts: PartInst[], defId: string): string {
   const prefix = defPrefixById[defId] ?? "U";
   const used = parts.filter((part) => part.refdes.startsWith(prefix)).length;
   return `${prefix}${used + 1}`;
-}
-
-function isAdjacent(a: GridPt, b: GridPt): boolean {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 }
 
 function findAddedPartId(before: PartInst[], after: PartInst[]): string | null {
@@ -1399,15 +1396,7 @@ export function App(): JSX.Element {
 
   const handleGridClick = (grid: GridPt): void => {
     if (tool === "wire") {
-      if (!isBoardPoint(board, grid)) return;
-      const last = wireDraftPath[wireDraftPath.length - 1];
-      if (!last) {
-        setWireDraftPath([grid]);
-        return;
-      }
-      if (last.x === grid.x && last.y === grid.y) return;
-      if (!isAdjacent(last, grid)) return;
-      setWireDraftPath((prev) => [...prev, grid]);
+      setWireDraftPath((prev) => extendWireDraft(prev, grid, board));
       return;
     }
 
@@ -1723,7 +1712,7 @@ export function App(): JSX.Element {
   const isCustomBoardPreset = boardPresetId === "custom";
   const selectedPlaceDef = partDefs.find((def) => def.id === placeDefId);
   const toolHint = tool === "wire"
-    ? "基板の穴を順に選んで確定します。接続先のネットとピンは自動で割り当てます。"
+    ? "直前の点と同じ行・列の終点を選ぶと直線でつながります。曲がり角を選び、Enterで確定します。接続先のネットとピンは自動で割り当てます。"
     : tool === "place"
       ? `${selectedPlaceDef?.name ?? "部品"}を基板に配置します。回転は R キーでも操作できます。`
       : "部品や配線を選択できます。移動は M キー、回転は R キーです。";

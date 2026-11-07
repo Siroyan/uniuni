@@ -608,6 +608,33 @@ test("手動配線を確定できる", async ({ page }) => {
   expect(project.wires[0]?.path.length).toBe(3);
 });
 
+test("離れた点まで四方向に直線補完し、途中のピン接続とUndo/Redoを維持する", async ({ page }) => {
+  await openApp(page);
+  await page.locator(".part-card").filter({ hasText: "Resistor Vertical 2-pin" }).click();
+  await clickGrid(page, 5, 8);
+  await page.keyboard.press("w");
+  await clickGrid(page, 3, 8);
+  await clickGrid(page, 3, 8); // Duplicate: no extra path point.
+  await clickGrid(page, 8, 9); // Diagonal: keep the previous endpoint.
+  for (const [x, y] of [[8, 8], [8, 4], [4, 4], [4, 6]]) await clickGrid(page, x, y);
+  await page.keyboard.press("Enter");
+
+  const expected = [
+    ...Array.from({ length: 6 }, (_, i) => ({ x: 3 + i, y: 8 })),
+    ...Array.from({ length: 4 }, (_, i) => ({ x: 8, y: 7 - i })),
+    ...Array.from({ length: 4 }, (_, i) => ({ x: 7 - i, y: 4 })),
+    { x: 4, y: 5 }, { x: 4, y: 6 }
+  ];
+  const project = await exportProject(page);
+  expect(project.wires).toHaveLength(1);
+  expect(project.wires[0].path).toEqual(expected);
+  expect(project.part_insts[0].net_assign).toEqual({ "1": project.wires[0].net_id, "2": project.wires[0].net_id });
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  expect((await exportProject(page)).wires).toHaveLength(0);
+  await page.getByRole("button", { name: "やり直す" }).click();
+  expect((await exportProject(page)).wires).toEqual(project.wires);
+});
+
 test("線を引いて確定するだけで両端のピンが同じネットになる", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("r");

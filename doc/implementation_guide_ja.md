@@ -375,3 +375,7 @@ SPDTは `updateBuiltInTopViews` で標準3×2を3×3へ更新する。旧画像�
 
 `modulePartDefs[0]` のOccupiedは11×6。`draw-module-parts.mjs` は元の絵を(-8,-8)px移動して88×48pxへ切り詰め、各ピンを同じ基板座標へ描く。
 旧13×8形状と画像を `oldTopViewFootprints` / `legacyTopViewArt` に保持する。`updateBuiltInTopViews` はSPDTと同様のOccupiedだけの変更として安全に更新し、Pin、配置原点、配線、独自画像・表示変換を維持する。
+
+## 配線クリックの直線補完
+
+`wireDrawing.ts` の `extendWireDraft` で同じ行・列へのクリックを1マス刻みの区間に展開し、`App.tsx` で下書きに追加する。同一点・斜め・盤外・途中に専用基板の接続不可位置がある区間は下書きを変更しない。Coreへは従来と同じ全格子点の経路を渡し、接続先Net/Pin判定、検証、保存形式を維持する。
