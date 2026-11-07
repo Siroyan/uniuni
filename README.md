@@ -8,7 +8,7 @@ Browser-based universal perfboard CAD (MVP bootstrap).
   - `core`: Rust domain model + command application + DRC + wasm-bindgen bridge
 - Implemented up to MVP Step 7 baseline:
   - part placement/move/rotate/delete
-  - manual one-step Manhattan wiring + wire delete
+  - manual horizontal/vertical wiring with intermediate grid-point interpolation + wire delete
   - net rename + pin-to-net assignment
   - DRC run and issue display
   - undo/redo (snapshot history)
