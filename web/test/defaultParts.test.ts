@@ -7,8 +7,8 @@ import { categorizeParts, partCategory } from "../src/partCategories";
 import { legacyTopViewArt } from "../src/legacyTopViewArt";
 import type { PartDef } from "../src/types";
 
-test("all 44 built-in drawings match their footprints and source PNGs", () => {
-  assert.equal(defaultPartDefs.length, 44);
+test("all 68 built-in drawings match their footprints and source PNGs", () => {
+  assert.equal(defaultPartDefs.length, 68);
   for (const def of defaultPartDefs) {
     assert.equal(def.imagePixelated, true);
     assert.match(def.imageDataUrl ?? "", /^data:image\/png;base64,/);

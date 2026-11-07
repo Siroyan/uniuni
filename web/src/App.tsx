@@ -4,6 +4,7 @@ import { ActionIcon } from "./ActionIcon";
 import { BoardCanvas } from "./BoardCanvas";
 import { PixelArtEditor } from "./PixelArtEditor";
 import { addBuiltInArtwork, addMissingAdditionalParts, addMissingModules, addMissingWaveshareBuck, addMissingDatasheetParts, addMissingNewestParts, addMissingNextParts, addMissingPinHeaders, addMissingVerticalResistor, addMissingXhConnectors, correctBuiltInArtwork, defaultPartDefs, pinHeaderPartDefs, updateBuiltInTopViews, xhConnectorPartDefs } from "./defaultParts";
+import { addMissingGenericParts, genericRefdesPrefixes } from "./genericParts";
 import { categorizeParts, isPartCategory, PART_CATEGORIES, partCategory } from "./partCategories";
 import {
   applyCoreCommandJson,
@@ -83,6 +84,7 @@ const BOARD_PRESETS = [
 type BoardPresetId = "custom" | (typeof BOARD_PRESETS)[number]["id"];
 
 const defPrefixById: Record<string, string> = {
+  ...genericRefdesPrefixes,
   "ad7ecaa0-4c74-4a0f-a7ba-a0f1fa0f12a1": "R",
   "5c0eae40-4fa5-44e8-b542-25776b21cb09": "R",
   "f222f718-6ff6-42a6-b2ba-4c62090d8ca5": "C",
@@ -531,6 +533,7 @@ export function App(): JSX.Element {
             if (catalogVersion < 10) effectivePartDefs = addMissingVerticalResistor(effectivePartDefs);
             if (catalogVersion < 11) effectivePartDefs = addMissingModules(effectivePartDefs);
             if (catalogVersion < 12) effectivePartDefs = addMissingWaveshareBuck(effectivePartDefs);
+            if (catalogVersion < 15) effectivePartDefs = addMissingGenericParts(effectivePartDefs);
           }
         } catch (err) {
           warnings.push(`部品ライブラリ読込に失敗（既定にフォールバック）: ${asMessage(err)}`);

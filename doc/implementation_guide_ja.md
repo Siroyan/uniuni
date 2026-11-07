@@ -375,3 +375,11 @@ SPDTは `updateBuiltInTopViews` で標準3×2を3×3へ更新する。旧画像�
 
 `modulePartDefs[0]` のOccupiedは11×6。`draw-module-parts.mjs` は元の絵を(-8,-8)px移動して88×48pxへ切り詰め、各ピンを同じ基板座標へ描く。
 旧13×8形状と画像を `oldTopViewFootprints` / `legacyTopViewArt` に保持する。`updateBuiltInTopViews` はSPDTと同様のOccupiedだけの変更として安全に更新し、Pin、配置原点、配線、独自画像・表示変換を維持する。
+
+## 20. 汎用リード間隔・トランジスタ（カタログv15）
+
+`genericParts.ts` は20種類の間隔別部品と4種類のトランジスタを定義し、`defaultParts.ts` へ追加する。
+`App.tsx` のv15移行で `addMissingGenericParts` を一度だけ適用する。IDまたは名前が一致する利用者定義を優先し、移行後の削除は復活させない。
+カテゴリは定義自身に設定し、参照名は `genericRefdesPrefixes` でR/C/L/D/Qへ対応する。Coreの型・検証とZIPスキーマは変更しない。
+`draw-generic-parts.mjs` が透明パレットPNGを決定的に生成し、既存の `embed-part-art.mjs` で埋め込む。
+詳しい座標と近似条件は `doc/parts/generic-parts.md` を参照。
