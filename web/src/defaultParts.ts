@@ -1,4 +1,5 @@
 import type { GridPt, PartDef, Rot } from "./types";
+import { genericPartDefs } from "./genericParts";
 import { builtInPartArt } from "./builtInPartArt";
 import { partCategory } from "./partCategories";
 import { legacyTopViewArt } from "./legacyTopViewArt";
@@ -468,7 +469,8 @@ export const defaultPartDefs: PartDef[] = [
   ...datasheetPartDefs,
   verticalResistorPartDef,
   ...modulePartDefs,
-  waveshareBuckPartDef
+  waveshareBuckPartDef,
+  ...genericPartDefs
 ].map((def) => ({ ...def, category: partCategory(def) }));
 
 const topViewArtById: Record<string, string> = {
