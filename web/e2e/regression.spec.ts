@@ -232,7 +232,7 @@ test("部品を連続配置できる", async ({ page }) => {
 test("ピンヘッダーを選んで配置できる", async ({ page }) => {
   await openApp(page);
   const library = await exportProject(page);
-  expect(library.part_defs).toHaveLength(44);
+  expect(library.part_defs).toHaveLength(68);
   const header = library.part_defs.find((def) => def.name === "Pin Header 2x3");
   expect(header?.pins.map((pin) => [pin.name, pin.pos.x, pin.pos.y])).toEqual([
     ["1", 0, 0], ["2", 1, 0],
@@ -710,7 +710,7 @@ test("不正な盤面を含む ZIP はインポートされない", async ({ pag
   await page.locator('input[type="file"][accept="application/zip,.zip"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: bytes });
   await expect(page.getByText(/unsupported project schema_version/)).toBeVisible();
   const project = await exportProject(page);
-  expect(project.part_defs).toHaveLength(44);
+  expect(project.part_defs).toHaveLength(68);
 });
 
 test("設計データはブラウザーに保存され、外部へ送信されない", async ({ page }) => {
@@ -835,7 +835,7 @@ test("Waveshare降圧モジュールを旧ライブラリに追加し、配置�
   await openApp(page);
   const name = "Waveshare DC5-36-TO-DC3V3-5 Wired";
   const oldDefs = (await exportProject(page)).part_defs.filter((def) => def.name !== name);
-  expect(oldDefs).toHaveLength(43);
+  expect(oldDefs).toHaveLength(67);
   await page.evaluate(async (defs) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("uniuni-db");

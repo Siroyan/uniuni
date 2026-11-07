@@ -39,7 +39,7 @@ export const transistorPackagePartDefs: PartDef[] = packages.map((pkg, index) =>
   category: "semiconductor",
   pins: pkg.pins.map(([x, y], i) => ({ name: String(i + 1), pos: { x, y } })),
   occupied: rectangle(pkg.width, pkg.height),
-  imageDataUrl: builtInPartArt[`transistor-${pkg.name.toLowerCase()}`],
+  imageDataUrl: builtInPartArt[`transistor-${pkg.name.toLowerCase()}` as keyof typeof builtInPartArt],
   imagePixelated: true, imageScale: 1, imageOffsetX: 0, imageOffsetY: 0
 }));
 
